@@ -1,0 +1,12 @@
+# Build outputs
+build/bin/
+*.exe
+
+# Frontend
+frontend/node_modules/
+
+# Local config / secrets
+vpn_profiles.json
+*.pcap
+*.pcapng
+*.log

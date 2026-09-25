@@ -1,0 +1,13 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "EasyConnectGUI",
+  "outputfilename": "EasyConnectGUI",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "mam15mon",
+    "email": "mam15mon@users.noreply.github.com"
+  }
+}
