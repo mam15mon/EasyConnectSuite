@@ -12,6 +12,8 @@ import (
 	"io"
 	stdlog "log"
 	"net"
+	"os"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -53,6 +55,9 @@ type Options struct {
 	OnLog func(line string)
 	// OnStatus receives lifecycle transitions.
 	OnStatus func(Status)
+	// LogFile, when set, receives a persistent copy of every engine log
+	// line so post-mortem analysis survives a UI-level crash.
+	LogFile string
 }
 
 type Engine struct {
@@ -65,6 +70,7 @@ type Engine struct {
 
 	stopOnce sync.Once
 	logClose io.Closer
+	logFile  *os.File
 }
 
 // Start performs the whole login + service bring-up synchronously (the
@@ -275,23 +281,35 @@ func Start(opts Options) (*Engine, error) {
 	vpnStack.SetupResolve(localResolver)
 	vpnStack.SetupIPPool(vpnResolver.IPPool)
 
-	go vpnStack.Run()
+	e.goWithRecovery("gvisor stack Run", func() {
+		vpnStack.Run()
+	})
 
 	vpnDialer := dial.NewDialer(vpnStack, vpnResolver, ipResources, conf.ProxyAll, conf.DialDirectProxy)
 
 	if conf.SocksBind != "" {
-		go service.ServeSocks5(conf.SocksBind, vpnDialer, vpnResolver, conf.SocksUser, conf.SocksPasswd)
+		e.goWithRecovery("SOCKS5 server", func() {
+			service.ServeSocks5(conf.SocksBind, vpnDialer, vpnResolver, conf.SocksUser, conf.SocksPasswd)
+		})
 	}
 	if conf.HTTPBind != "" {
-		go service.ServeHTTP(conf.HTTPBind, vpnDialer)
+		e.goWithRecovery("HTTP proxy server", func() {
+			service.ServeHTTP(conf.HTTPBind, vpnDialer)
+		})
 	}
 
 	for _, portForwarding := range conf.PortForwardingList {
 		switch portForwarding.NetworkType {
 		case "tcp":
-			go service.ServeTCPForwarding(vpnDialer.Dial, portForwarding.BindAddress, portForwarding.RemoteAddress)
+			pf := portForwarding
+			e.goWithRecovery("TCP forwarding "+pf.BindAddress, func() {
+				service.ServeTCPForwarding(vpnDialer.Dial, pf.BindAddress, pf.RemoteAddress)
+			})
 		case "udp":
-			go service.ServeUDPForwarding(vpnStack, portForwarding.BindAddress, portForwarding.RemoteAddress)
+			pf := portForwarding
+			e.goWithRecovery("UDP forwarding "+pf.BindAddress, func() {
+				service.ServeUDPForwarding(vpnStack, pf.BindAddress, pf.RemoteAddress)
+			})
 		default:
 			log.Printf("Port forwarding: unknown network type %s. Aborting", portForwarding.NetworkType)
 		}
@@ -306,7 +324,9 @@ func Start(opts Options) (*Engine, error) {
 				keepAliveCancel()
 				return nil
 			})
-			go service.KeepAlive(keepAliveCtx, vpnResolver, vpnDialer, conf.KeepAliveURL)
+			e.goWithRecovery("keepalive", func() {
+				service.KeepAlive(keepAliveCtx, vpnResolver, vpnDialer, conf.KeepAliveURL)
+			})
 		}
 	}
 
@@ -375,23 +395,52 @@ func (e *Engine) emitStatusFull(s Status) {
 
 // startLogCapture redirects the engine log (upstream zju-connect logs
 // through the standard library logger) into an OnLog callback so the GUI
-// can show the same stream it used to scrape from the subprocess stdout.
+// can show the same stream it used to scrape from the subprocess stdout,
+// and — when Options.LogFile is set — tees every line into a persistent
+// file so a crash leaves an activity trail behind.
 func (e *Engine) startLogCapture() {
-	if e.opts.OnLog == nil {
-		return
+	var writers []io.Writer
+
+	if e.opts.OnLog != nil {
+		pr, pw := io.Pipe()
+		e.logClose = pw
+		writers = append(writers, pw)
+		go func() {
+			scanner := bufio.NewScanner(pr)
+			scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+			for scanner.Scan() {
+				e.opts.OnLog(scanner.Text())
+			}
+		}()
 	}
 
-	pr, pw := io.Pipe()
-	e.logClose = pw
-	stdlog.SetOutput(pw)
-
-	go func() {
-		scanner := bufio.NewScanner(pr)
-		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		for scanner.Scan() {
-			e.opts.OnLog(scanner.Text())
+	if e.opts.LogFile != "" {
+		if f := openEngineLogFile(e.opts.LogFile); f != nil {
+			e.logFile = f
+			writers = append(writers, f)
 		}
-	}()
+	}
+
+	if len(writers) > 0 {
+		if len(writers) == 1 {
+			stdlog.SetOutput(writers[0])
+		} else {
+			stdlog.SetOutput(io.MultiWriter(writers...))
+		}
+	}
+}
+
+// openEngineLogFile opens (or rotates) the persistent engine log.
+func openEngineLogFile(path string) *os.File {
+	if info, err := os.Stat(path); err == nil && info.Size() > 8*1024*1024 {
+		_ = os.Rename(path, path+".old")
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil
+	}
+	_, _ = f.WriteString(fmt.Sprintf("\n=== engine session started %s ===\n", time.Now().Format(time.RFC3339)))
+	return f
 }
 
 func (e *Engine) stopLogCapture() {
@@ -403,4 +452,23 @@ func (e *Engine) stopLogCapture() {
 		_ = e.logClose.Close()
 		e.logClose = nil
 	}
+	if e.logFile != nil {
+		_, _ = e.logFile.WriteString(fmt.Sprintf("=== engine session ended %s ===\n", time.Now().Format(time.RFC3339)))
+		_ = e.logFile.Close()
+		e.logFile = nil
+	}
+}
+
+// goWithRecovery runs fn in a goroutine that logs (instead of silently
+// dying) if the code panics. Panics in goroutines kill the whole process
+// otherwise — the exact overnight failure mode we are guarding against.
+func (e *Engine) goWithRecovery(name string, fn func()) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("engine goroutine %q panicked: %v\n%s", name, r, debug.Stack())
+			}
+		}()
+		fn()
+	}()
 }

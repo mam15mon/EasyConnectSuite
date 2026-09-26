@@ -315,10 +315,19 @@ func (a *App) StartVPN() string {
 		runtime.EventsEmit(a.ctx, "vpn-status", a.status)
 	}
 
+	logDir := ""
+	if appData := os.Getenv("APPDATA"); appData != "" {
+		logDir = filepath.Join(appData, "EasyConnectVPN", "logs")
+		_ = os.MkdirAll(logDir, 0755)
+	} else {
+		logDir = "."
+	}
+
 	opts := engine.Options{
 		Config:   a.buildEngineConfig(profile),
 		OnLog:    a.forwardEngineLog,
 		OnStatus: a.handleEngineStatus,
+		LogFile:  filepath.Join(logDir, "engine.log"),
 	}
 	a.mu.Unlock()
 

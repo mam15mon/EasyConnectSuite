@@ -5,6 +5,7 @@ go 1.25.6
 require (
 	github.com/mythologyli/zju-connect v0.0.0-00010101000000-000000000000
 	github.com/wailsapp/wails/v2 v2.11.0
+	golang.org/x/sys v0.45.0
 	inet.af/netaddr v0.0.0-20230525184311-b8eac61e914a
 )
 
@@ -63,7 +64,6 @@ require (
 	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.45.0 // indirect
