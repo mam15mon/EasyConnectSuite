@@ -19,56 +19,88 @@ type L3Conn struct {
 	recvErrCount int
 }
 
-// try best to read, if return err!=nil, please panic
+// safeClose closes c, converting a Close-time panic (e.g. utls methods on
+// a typed-nil *UConn) into a no-op. The recv/send conns are assigned from
+// (*tls.UConn, error) returns; a failed dial leaves a typed-nil in the
+// interface, and calling Close on it panics — which used to kill the
+// whole read loop right after a successful re-login.
+func safeClose(c io.Closer) {
+	if c == nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+	_ = c.Close()
+}
+
+// Read tries to keep the recv stream alive: on error it re-handshakes the
+// recv connection with the current token. A non-nil return means the
+// token/session itself is dead — the caller should run a full re-login.
 func (c *L3Conn) Read(p []byte) (n int, err error) {
 	c.recvLock.Lock()
 	defer c.recvLock.Unlock()
-	for n, err = c.recvConn.Read(p); err != nil && c.recvErrCount < 5; {
+
+	for {
+		n, err = c.recvConn.Read(p)
+		if err == nil {
+			return
+		}
+		if c.recvErrCount >= 5 {
+			return
+		}
 
 		log.Printf("Error occurred while receiving, retrying: %v", err)
 
 		// Do handshake again and create a new recvConn
-		_ = c.recvConn.Close()
-		c.recvConn, err = c.easyConnectClient.RecvConn()
-		if err != nil {
-			return 0, err
+		safeClose(c.recvConn)
+		c.recvConn = nil
+		newConn, dialErr := c.easyConnectClient.RecvConn()
+		if dialErr != nil {
+			// Old token rejected by the server — propagate so the caller
+			// triggers the re-login campaign.
+			return 0, dialErr
 		}
+		c.recvConn = newConn
 		c.recvErrCount++
-		if c.recvErrCount >= 5 {
-			return 0, err
-		}
+
+		// loop: actually retry the read on the fresh connection
 	}
-	return
 }
 
-// try best to write, if return err!=nil, please panic
+// Write mirrors Read for the send stream.
 func (c *L3Conn) Write(p []byte) (n int, err error) {
 	c.sendLock.Lock()
 	defer c.sendLock.Unlock()
-	for n, err = c.sendConn.Write(p); err != nil && c.sendErrCount < 5; {
+
+	for {
+		n, err = c.sendConn.Write(p)
+		if err == nil {
+			return
+		}
+		if c.sendErrCount >= 5 {
+			return
+		}
+
 		log.Printf("Error occurred while sending, retrying: %v", err)
 
 		// Do handshake again and create a new sendConn
-		_ = c.sendConn.Close()
-		c.sendConn, err = c.easyConnectClient.SendConn()
-		if err != nil {
-			return 0, err
+		safeClose(c.sendConn)
+		c.sendConn = nil
+		newConn, dialErr := c.easyConnectClient.SendConn()
+		if dialErr != nil {
+			return 0, dialErr
 		}
+		c.sendConn = newConn
 		c.sendErrCount++
-		if c.sendErrCount >= 5 {
-			return 0, err
-		}
 	}
-	return
 }
 
 func (c *L3Conn) Close() error {
-	if c.sendConn != nil {
-		_ = c.sendConn.Close()
-	}
-	if c.recvConn != nil {
-		_ = c.recvConn.Close()
-	}
+	safeClose(c.sendConn)
+	c.sendConn = nil
+	safeClose(c.recvConn)
+	c.recvConn = nil
 	return nil
 }
 
@@ -83,12 +115,15 @@ func (c *Client) NewL3Conn() (io.ReadWriteCloser, error) {
 	conn.sendConn, err = c.SendConn()
 	if err != nil {
 		log.Printf("Error occurred while creating sendConn: %v", err)
+		safeClose(conn.sendConn)
 		return nil, err
 	}
 
 	conn.recvConn, err = c.RecvConn()
 	if err != nil {
 		log.Printf("Error occurred while creating recvConn: %v", err)
+		safeClose(conn.sendConn)
+		safeClose(conn.recvConn)
 		return nil, err
 	}
 	return conn, nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -134,16 +135,16 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 					return list.Len(), nil
 				}
 
-				// Server-initiated SHUTDOWN (cmd 0x08) or any other send
-				// failure usually means the session is dead. Instead of
-				// panicking / os.Exit like the upstream CLI, try to
-				// re-login and rebuild the tunnel; drop the packet if
-				// that fails (the TCP/UDP flows will recover).
-				log.Printf("WritePackets: send error: %v; trying re-login", err)
-				if ep.owner != nil && ep.owner.rebuildL3Conn(err) {
-					continue
-				}
-				return list.Len(), nil
+					// Server-initiated SHUTDOWN (cmd 0x08) or any other send
+					// failure usually means the session is dead. Instead of
+					// panicking / os.Exit like the upstream CLI, try to
+					// re-login and rebuild the tunnel; drop the packet if
+					// that fails (the TCP/UDP flows will recover).
+					log.Printf("WritePackets: send error: %v; trying re-login", err)
+					if ep.owner != nil && ep.owner.rebuildL3Conn(l3Conn, err) {
+						continue
+					}
+					return list.Len(), nil
 			}
 			log.DebugPrintf("Send: wrote %d bytes", n)
 			log.DebugDumpHex(buf[:n])
@@ -276,9 +277,7 @@ func (s *Stack) Close() error {
 		s.endpoint.l3Conn = nil
 		s.endpoint.connMu.Unlock()
 
-		if conn != nil {
-			_ = conn.Close()
-		}
+		safeCloseL3(conn)
 	}
 	s.gvisorStack.Close()
 	return nil
@@ -297,13 +296,37 @@ func (s *Stack) reportFatal(cause error) {
 	}
 }
 
+// safeCloseL3 closes an L3 connection, converting Close-time panics into
+// no-ops (utls can panic closing broken/typed-nil conns).
+func safeCloseL3(conn io.ReadWriteCloser) {
+	if conn == nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+	_ = conn.Close()
+}
+
+// dropBrokenConn detaches (and closes) the current L3 connection after an
+// unexpected failure so the rebuild campaign installs a fresh one.
+func (s *Stack) dropBrokenConn() {
+	s.endpoint.connMu.Lock()
+	conn := s.endpoint.l3Conn
+	s.endpoint.l3Conn = nil
+	s.endpoint.connMu.Unlock()
+	safeCloseL3(conn)
+}
+
 // rebuildL3Conn tries to recover a dead L3 tunnel with a serialized
 // re-login campaign: up to maxReloginAttempts login attempts with a
 // cooldown between them. Callers (read loop and packet writers) block on
 // the mutex while one campaign runs — the tunnel is dead for them anyway.
+// broken is the connection the error came from; when nil or already
+// replaced, another path has rebuilt the tunnel and we are done.
 // Returns true only when the tunnel is usable again; every false return
 // is final (terminal shutdown or fatal already reported).
-func (s *Stack) rebuildL3Conn(cause error) bool {
+func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 	if errors.Is(cause, easyconnect.ErrSangforShutdown) {
 		log.Printf("L3 tunnel: server returned SHUTDOWN (session terminated by server)")
 	}
@@ -318,6 +341,14 @@ func (s *Stack) rebuildL3Conn(cause error) bool {
 	if s.reloginFunc == nil {
 		s.reportFatal(cause)
 		return false
+	}
+
+	s.endpoint.connMu.RLock()
+	current := s.endpoint.l3Conn
+	s.endpoint.connMu.RUnlock()
+	if current != nil && broken != nil && current != broken {
+		log.Printf("L3 tunnel already rebuilt by another path, continuing")
+		return true
 	}
 
 	for {
@@ -337,13 +368,13 @@ func (s *Stack) rebuildL3Conn(cause error) bool {
 		s.lastReloginTime = time.Now()
 		log.Printf("L3 tunnel error: %v; re-login attempt %d/%d", cause, s.reloginFailures+1, maxReloginAttempts)
 
-		if err := s.reloginFunc(); err != nil {
+		if err := s.callRelogin(); err != nil {
 			s.reloginFailures++
 			log.Printf("Re-login failed (%d/%d): %v", s.reloginFailures, maxReloginAttempts, err)
 			continue
 		}
 
-		newConn, err := s.endpoint.client.NewL3Conn()
+		newConn, err := s.newL3ConnSafe()
 		if err != nil {
 			s.reloginFailures++
 			log.Printf("Re-login succeeded but L3 handshake failed (%d/%d): %v", s.reloginFailures, maxReloginAttempts, err)
@@ -355,9 +386,7 @@ func (s *Stack) rebuildL3Conn(cause error) bool {
 		s.endpoint.l3Conn = newConn
 		s.endpoint.connMu.Unlock()
 
-		if oldConn != nil && oldConn != newConn {
-			_ = oldConn.Close()
-		}
+		safeCloseL3(oldConn)
 
 		s.reloginFailures = 0
 		log.Printf("Re-login success, L3 tunnel rebuilt")
@@ -365,45 +394,94 @@ func (s *Stack) rebuildL3Conn(cause error) bool {
 	}
 }
 
+// callRelogin invokes the registered re-login callback, converting a
+// panic inside it into an error so one bad attempt cannot kill the
+// calling read loop.
+func (s *Stack) callRelogin() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("re-login panicked: %v", r)
+			log.Printf("Re-login panicked: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return s.reloginFunc()
+}
+
+// newL3ConnSafe wraps NewL3Conn with the same panic guard.
+func (s *Stack) newL3ConnSafe() (conn io.ReadWriteCloser, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			conn = nil
+			err = fmt.Errorf("L3 handshake panicked: %v", r)
+			log.Printf("L3 handshake panicked: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return s.endpoint.client.NewL3Conn()
+}
+
+// Run keeps the L3 tunnel alive for the lifetime of the stack: it reads
+// inbound packets until the tunnel dies (error OR panic), then runs the
+// re-login campaign and starts over. It only returns when the engine is
+// shutting down or the failure has been reported as fatal — it never
+// exits silently.
 func (s *Stack) Run() {
-	var connErr error
-	conn, connErr := s.endpoint.client.NewL3Conn()
-	if connErr != nil {
+	for {
 		if hook_func.IsTerminal() {
 			return
 		}
-		log.Printf("Failed to create L3 connection: %v", connErr)
-		s.reportFatal(connErr)
-		return
-	}
 
-	s.endpoint.connMu.Lock()
-	s.endpoint.l3Conn = conn
-	s.endpoint.connMu.Unlock()
+		err := s.readLoopOnce()
+
+		if hook_func.IsTerminal() {
+			return
+		}
+		if err == nil {
+			// l3Conn cleared externally (Stack.Close); terminal hooks
+			// handle the rest.
+			return
+		}
+
+		if !s.rebuildL3Conn(nil, err) {
+			// fatal already reported through the engine
+			return
+		}
+	}
+}
+
+// readLoopOnce reads inbound packets from the current L3 connection until
+// it fails. A recovered panic is converted into an error (and the broken
+// conn detached) so an unexpected bug cannot silently kill the reader
+// goroutine — which previously left the UI stuck in "connecting" forever.
+func (s *Stack) readLoopOnce() (cause error) {
+	defer func() {
+		if r := recover(); r != nil {
+			cause = fmt.Errorf("L3 read loop panicked: %v", r)
+			log.Printf("gVisor read loop recovered: %v\n%s", r, debug.Stack())
+			s.dropBrokenConn()
+		}
+	}()
+
+	s.endpoint.connMu.RLock()
+	conn := s.endpoint.l3Conn
+	s.endpoint.connMu.RUnlock()
+
+	if conn == nil {
+		var err error
+		conn, err = s.newL3ConnSafe()
+		if err != nil {
+			return fmt.Errorf("create L3 connection: %w", err)
+		}
+		s.endpoint.connMu.Lock()
+		s.endpoint.l3Conn = conn
+		s.endpoint.connMu.Unlock()
+	}
 
 	// Read from VPN server and send to gVisor stack
 	buf := make([]byte, maxInboundPacketSize)
 	for {
-		s.endpoint.connMu.RLock()
-		conn := s.endpoint.l3Conn
-		s.endpoint.connMu.RUnlock()
-		if conn == nil {
-			// Closed by Stack.Close(); terminal hooks handle the rest.
-			return
-		}
-
 		n, err := conn.Read(buf)
 		if err != nil {
-			if hook_func.IsTerminal() {
-				return
-			}
-			// Upstream panicked here and killed the whole process on
-			// server-side disconnects. Try to re-login and keep going
-			// instead (EasyConnect Suite fork).
-			if s.rebuildL3Conn(err) {
-				continue
-			}
-			return
+			return err
 		}
 		log.DebugPrintf("Recv: read %d bytes", n)
 		log.DebugDumpHex(buf[:n])
