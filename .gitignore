@@ -10,3 +10,4 @@ vpn_profiles.json
 *.pcap
 *.pcapng
 *.log
+build/android/zju-connect-android-arm64
