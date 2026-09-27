@@ -195,14 +195,15 @@ function renderResources(rows) {
     return;
   }
 
-  const ipRows = rows.filter(r => r.kind === 'ip');
-  const domainRows = rows.filter(r => r.kind === 'domain');
+  const kindOf = (r) => String(r.kind || r.Kind || '').toLowerCase();
+  const ipRows = rows.filter(r => kindOf(r) === 'ip');
+  const domainRows = rows.filter(r => kindOf(r) === 'domain');
 
   const makeRow = (r) => `
     <div class="resource-row">
-      <span class="resource-icon">${r.kind === 'ip' ? '🔢' : '🌐'}</span>
-      <span class="resource-target">${r.target}</span>
-      <span class="resource-meta">${r.ports} · ${r.protocol}</span>
+      <span class="resource-icon">${kindOf(r) === 'ip' ? '🔢' : '🌐'}</span>
+      <span class="resource-target">${r.target || r.Target || ''}</span>
+      <span class="resource-meta">${(r.ports || r.Ports || '') + ' · ' + (r.protocol || r.Protocol || '')}</span>
     </div>`;
 
   const makeGroup = (title, list) => list.length
@@ -478,7 +479,9 @@ async function initApp() {
   if (window.runtime) {
     window.runtime.EventsOn('vpn-status', (status) => {
       updateStatusUI(status);
-      if (!status.running) {
+      if (status.state === 'connected') {
+        refreshResources();
+      } else if (!status.running) {
         refreshResources();
       }
     });

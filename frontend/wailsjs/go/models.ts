@@ -1,10 +1,10 @@
 export namespace engine {
 	
 	export class ResourceEntry {
-	    Kind: string;
-	    Target: string;
-	    Ports: string;
-	    Protocol: string;
+	    kind: string;
+	    target: string;
+	    ports: string;
+	    protocol: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ResourceEntry(source);
@@ -12,10 +12,10 @@ export namespace engine {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.Kind = source["Kind"];
-	        this.Target = source["Target"];
-	        this.Ports = source["Ports"];
-	        this.Protocol = source["Protocol"];
+	        this.kind = source["kind"];
+	        this.target = source["target"];
+	        this.ports = source["ports"];
+	        this.protocol = source["protocol"];
 	    }
 	}
 

@@ -51,11 +51,13 @@ type Status struct {
 
 // ResourceEntry is one row of the server-authorized resource list shown in
 // the GUI (mirrors the resource page of the official client).
+// The json tags matter: Wails serializes these straight to the frontend,
+// which reads the lowercase field names.
 type ResourceEntry struct {
-	Kind     string // "ip" or "domain"
-	Target   string // single IP, IP range or domain name
-	Ports    string // human-readable port range
-	Protocol string // human-readable protocol
+	Kind     string `json:"kind"`     // "ip" or "domain"
+	Target   string `json:"target"`   // single IP, IP range or domain name
+	Ports    string `json:"ports"`    // human-readable port range
+	Protocol string `json:"protocol"` // human-readable protocol
 }
 
 type Options struct {
