@@ -79,9 +79,9 @@ type Engine struct {
 	dnsName   string
 	resources []ResourceEntry
 
-	stopOnce sync.Once
-	logClose io.Closer
-	logFile  *os.File
+	stopOnce  sync.Once
+	logClose  io.Closer
+	logWriter *rotatingWriter
 }
 
 // Start performs the whole login + service bring-up synchronously (the
@@ -501,9 +501,9 @@ func (e *Engine) startLogCapture() {
 	}
 
 	if e.opts.LogFile != "" {
-		if f := openEngineLogFile(e.opts.LogFile); f != nil {
-			e.logFile = f
-			writers = append(writers, f)
+		if w, err := newRotatingWriter(e.opts.LogFile, engineLogLimit); err == nil {
+			e.logWriter = w
+			writers = append(writers, w)
 		}
 	}
 
@@ -513,20 +513,94 @@ func (e *Engine) startLogCapture() {
 		} else {
 			stdlog.SetOutput(io.MultiWriter(writers...))
 		}
+		stdlog.Printf("=== engine session started %s ===", time.Now().Format(time.RFC3339))
 	}
 }
 
-// openEngineLogFile opens (or rotates) the persistent engine log.
-func openEngineLogFile(path string) *os.File {
-	if info, err := os.Stat(path); err == nil && info.Size() > 8*1024*1024 {
-		_ = os.Rename(path, path+".old")
+// engineLogLimit caps engine.log; one .old generation is kept, so the log
+// directory holds at most ~2x this size forever.
+const engineLogLimit = 8 * 1024 * 1024
+
+// rotatingWriter is a size-capped file writer: when the current file
+// reaches limit bytes it is renamed to path+".old" (single generation,
+// previous .old deleted) and a fresh file is opened — even mid-session,
+// so months of uptime cannot grow the log without bound.
+type rotatingWriter struct {
+	path  string
+	limit int64
+
+	mu   sync.Mutex
+	file *os.File
+	size int64
+}
+
+func newRotatingWriter(path string, limit int64) (*rotatingWriter, error) {
+	if limit <= 0 {
+		limit = engineLogLimit
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	w := &rotatingWriter{path: path, limit: limit}
+	if err := w.open(); err != nil {
+		return nil, err
+	}
+	return w, nil
+}
+
+func (w *rotatingWriter) open() error {
+	if info, err := os.Stat(w.path); err == nil && info.Size() >= w.limit {
+		_ = os.Rename(w.path, w.path+".old")
+	}
+	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
+		return err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return err
+	}
+	w.file = f
+	w.size = info.Size()
+	return nil
+}
+
+func (w *rotatingWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.file == nil {
+		if err := w.open(); err != nil {
+			return 0, err
+		}
+	}
+
+	if w.size+int64(len(p)) > w.limit {
+		_ = w.file.Close()
+		_ = os.Remove(w.path + ".old")
+		if err := os.Rename(w.path, w.path+".old"); err != nil {
+			// Rotation failed (e.g. file locked by a viewer): keep
+			// appending to the same file rather than losing lines.
+			if err := w.open(); err != nil {
+				return 0, err
+			}
+		} else if err := w.open(); err != nil {
+			return 0, err
+		}
+	}
+
+	n, err := w.file.Write(p)
+	w.size += int64(n)
+	return n, err
+}
+
+func (w *rotatingWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.file == nil {
 		return nil
 	}
-	_, _ = f.WriteString(fmt.Sprintf("\n=== engine session started %s ===\n", time.Now().Format(time.RFC3339)))
-	return f
+	err := w.file.Close()
+	w.file = nil
+	return err
 }
 
 func (e *Engine) stopLogCapture() {
@@ -538,10 +612,10 @@ func (e *Engine) stopLogCapture() {
 		_ = e.logClose.Close()
 		e.logClose = nil
 	}
-	if e.logFile != nil {
-		_, _ = e.logFile.WriteString(fmt.Sprintf("=== engine session ended %s ===\n", time.Now().Format(time.RFC3339)))
-		_ = e.logFile.Close()
-		e.logFile = nil
+	if e.logWriter != nil {
+		stdlog.Printf("=== engine session ended %s ===", time.Now().Format(time.RFC3339))
+		_ = e.logWriter.Close()
+		e.logWriter = nil
 	}
 }
 
