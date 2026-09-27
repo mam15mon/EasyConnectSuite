@@ -16,6 +16,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"runtime/debug"
@@ -493,6 +495,15 @@ func (c *Client) requestConfig() (string, error) {
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
 	}(resp.Body)
+
+	// EasyConnect Suite fork: persist the raw resource list so an empty
+	// parse result can be diagnosed from the actual server payload.
+	if dir := os.Getenv("APPDATA"); dir != "" {
+		logDir := filepath.Join(dir, "EasyConnectVPN", "logs")
+		if err := os.MkdirAll(logDir, 0755); err == nil {
+			_ = os.WriteFile(filepath.Join(logDir, "rclist.xml"), buf.Bytes(), 0644)
+		}
+	}
 
 	return buf.String(), nil
 }

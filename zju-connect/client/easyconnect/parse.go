@@ -79,7 +79,10 @@ func (c *Client) parseResources(resources string) error {
 		return errors.New("no Rcs element found")
 	}
 
-	for _, rc := range element.SelectElements("Rc") {
+	rcEntries := element.SelectElements("Rc")
+	log.Printf("Resource list: %d Rc entries from server", len(rcEntries))
+
+	for _, rc := range rcEntries {
 		if rc.SelectAttr("type").Value == "1" || rc.SelectAttr("type").Value == "2" {
 			var protocol string
 			protoStr := rc.SelectAttr("proto").Value
