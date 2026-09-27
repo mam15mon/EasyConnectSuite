@@ -212,6 +212,8 @@ func Start(opts Options) (*Engine, error) {
 	}
 
 	e.resources = buildResourceEntries(ipResources, domainResources, dnsResource)
+	log.Printf("Server authorized resources: %d IP segments, %d domains, %d DNS entries",
+		len(ipResources), len(domainResources), len(dnsResource))
 
 	e.emitStatus(PhaseConnecting, "创建虚拟网络栈...")
 

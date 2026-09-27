@@ -188,15 +188,8 @@ function formatSeconds(sec) {
 const resourceBody = document.getElementById('resource-body');
 
 // Render the server-authorized resource list (IP segments / domains).
-async function refreshResources() {
-  if (!window.go || !window.go.main || !window.go.main.App) return;
-  let rows = [];
-  try {
-    rows = await window.go.main.App.GetVPNResources() || [];
-  } catch (err) {
-    console.error('GetVPNResources error:', err);
-  }
-
+function renderResources(rows) {
+  rows = rows || [];
   if (!rows.length) {
     resourceBody.innerHTML = '<div class="log-line log-system">连接 VPN 后将在此显示服务器授权访问的内网资源。</div>';
     return;
@@ -219,6 +212,15 @@ async function refreshResources() {
   resourceBody.innerHTML =
     makeGroup('IP 资源', ipRows) +
     makeGroup('域名资源', domainRows);
+}
+
+async function refreshResources() {
+  if (!window.go || !window.go.main || !window.go.main.App) return;
+  try {
+    renderResources(await window.go.main.App.GetVPNResources());
+  } catch (err) {
+    console.error('GetVPNResources error:', err);
+  }
 }
 
 document.getElementById('btn-refresh-resources').addEventListener('click', () => {
@@ -476,11 +478,15 @@ async function initApp() {
   if (window.runtime) {
     window.runtime.EventsOn('vpn-status', (status) => {
       updateStatusUI(status);
-      if (status.state === 'connected') {
-        refreshResources();
-      } else if (!status.running) {
+      if (!status.running) {
         refreshResources();
       }
+    });
+
+    // The backend pushes the authorized resource list right after login
+    // completes (the "connected" status event fires too early to fetch).
+    window.runtime.EventsOn('vpn-resources', (rows) => {
+      renderResources(rows);
     });
 
     window.runtime.EventsOn('status-tick', (status) => {

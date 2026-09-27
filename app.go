@@ -351,6 +351,12 @@ func (a *App) StartVPN() string {
 
 	a.engine = eng
 	a.resources = eng.Resources()
+	if a.ctx != nil {
+		// Push the resource list after it is actually stored: the
+		// "connected" vpn-status event fires mid-login, before this
+		// assignment, so a frontend fetch triggered by it races empty.
+		runtime.EventsEmit(a.ctx, "vpn-resources", a.resources)
+	}
 	a.mu.Unlock()
 	return "OK"
 }
