@@ -22,6 +22,10 @@ export function GetStatus() {
   return window['go']['main']['App']['GetStatus']();
 }
 
+export function GetVPNResources() {
+  return window['go']['main']['App']['GetVPNResources']();
+}
+
 export function SaveProfile(arg1) {
   return window['go']['main']['App']['SaveProfile'](arg1);
 }

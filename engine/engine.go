@@ -15,6 +15,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,6 +49,15 @@ type Status struct {
 	DNS      string
 }
 
+// ResourceEntry is one row of the server-authorized resource list shown in
+// the GUI (mirrors the resource page of the official client).
+type ResourceEntry struct {
+	Kind     string // "ip" or "domain"
+	Target   string // single IP, IP range or domain name
+	Ports    string // human-readable port range
+	Protocol string // human-readable protocol
+}
+
 type Options struct {
 	Config configs.Config
 
@@ -66,7 +76,8 @@ type Engine struct {
 
 	running atomic.Bool
 
-	dnsName string
+	dnsName   string
+	resources []ResourceEntry
 
 	stopOnce sync.Once
 	logClose io.Closer
@@ -199,6 +210,8 @@ func Start(opts Options) (*Engine, error) {
 			}
 		}
 	}
+
+	e.resources = buildResourceEntries(ipResources, domainResources, dnsResource)
 
 	e.emitStatus(PhaseConnecting, "创建虚拟网络栈...")
 
@@ -343,6 +356,79 @@ func Start(opts Options) (*Engine, error) {
 // Running reports whether the engine is up.
 func (e *Engine) Running() bool {
 	return e.running.Load()
+}
+
+// Resources returns the server-authorized resource list for display.
+func (e *Engine) Resources() []ResourceEntry {
+	return e.resources
+}
+
+// buildResourceEntries flattens the parsed server resources into
+// display rows.
+func buildResourceEntries(ipResources []client.IPResource, domainResources client.DomainResources, dnsResource map[string][]net.IP) []ResourceEntry {
+	entries := make([]ResourceEntry, 0, len(ipResources)+len(domainResources)+len(dnsResource))
+
+	for _, r := range ipResources {
+		entries = append(entries, ResourceEntry{
+			Kind:     "ip",
+			Target:   formatIPRange(r.IPMin, r.IPMax),
+			Ports:    formatPortRange(r.PortMin, r.PortMax),
+			Protocol: formatProtocol(r.Protocol),
+		})
+	}
+	for domain, rules := range domainResources {
+		ports, proto := "全部端口", "全部协议"
+		if len(rules) > 0 {
+			ports = formatPortRange(rules[0].PortMin, rules[0].PortMax)
+			proto = formatProtocol(rules[0].Protocol)
+		}
+		entries = append(entries, ResourceEntry{
+			Kind:     "domain",
+			Target:   domain,
+			Ports:    ports,
+			Protocol: proto,
+		})
+	}
+	for host, ips := range dnsResource {
+		if len(ips) > 0 {
+			entries = append(entries, ResourceEntry{
+				Kind:     "domain",
+				Target:   host + " → " + ips[0].String(),
+				Ports:    "固定解析",
+				Protocol: "-",
+			})
+		}
+	}
+	return entries
+}
+
+func formatIPRange(ipMin, ipMax net.IP) string {
+	if ipMin == nil {
+		return "-"
+	}
+	if ipMax == nil || ipMin.Equal(ipMax) {
+		return ipMin.String()
+	}
+	return ipMin.String() + " ~ " + ipMax.String()
+}
+
+func formatPortRange(portMin, portMax int) string {
+	if portMin <= 1 && portMax >= 65535 {
+		return "全部端口"
+	}
+	if portMin == portMax {
+		return strconv.Itoa(portMin)
+	}
+	return strconv.Itoa(portMin) + "-" + strconv.Itoa(portMax)
+}
+
+func formatProtocol(protocol string) string {
+	switch protocol {
+	case "", "all":
+		return "全部协议"
+	default:
+		return strings.ToUpper(protocol)
+	}
 }
 
 // Stop tears the engine down through the upstream terminal-hook chain

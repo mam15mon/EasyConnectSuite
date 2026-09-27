@@ -71,8 +71,8 @@ app.innerHTML = `
       </div>
     </div>
 
-    <!-- Right Panel: Terminal Log -->
-    <div class="card terminal-card">
+    <!-- Right Panel: Authorized Resources -->
+    <div class="card terminal-card resource-card">
       <div class="terminal-header">
         <div class="terminal-title">
           <div class="terminal-dots">
@@ -80,15 +80,14 @@ app.innerHTML = `
             <span class="terminal-dot dot-yellow"></span>
             <span class="terminal-dot dot-green"></span>
           </div>
-          <span>底层协议控制台 (Live Stream)</span>
+          <span>可用内网资源 (服务器授权)</span>
         </div>
         <div class="terminal-actions">
-          <button class="btn-terminal" id="btn-copy-log" title="复制所有控制台输出">📋 复制全部日志</button>
-          <button class="btn-terminal" id="btn-clear-log" title="清空日志输出">🗑️ 清空</button>
+          <button class="btn-terminal" id="btn-refresh-resources" title="刷新资源列表">🔄 刷新</button>
         </div>
       </div>
-      <div class="terminal-body" id="terminal-body">
-        <div class="log-line log-system">[系统就绪] EasyConnect 多配置客户端已启动。</div>
+      <div class="terminal-body" id="resource-body">
+        <div class="log-line log-system">连接 VPN 后将在此显示服务器授权访问的内网资源。</div>
       </div>
     </div>
   </div>
@@ -187,27 +186,46 @@ function formatSeconds(sec) {
   return `${h}:${m}:${s}`;
 }
 
-const terminalBody = document.getElementById('terminal-body');
-function appendLog(line) {
-  const div = document.createElement('div');
-  div.className = 'log-line';
-  
-  if (line.includes('started') || line.includes('success') || line.includes('connected')) {
-    div.classList.add('log-success');
-  } else if (line.includes('error') || line.includes('failed') || line.includes('panic')) {
-    div.classList.add('log-error');
-  } else if (line.includes('warning') || line.includes('Warn')) {
-    div.classList.add('log-warn');
-  } else if (line.startsWith('[系统')) {
-    div.classList.add('log-system');
-  } else {
-    div.classList.add('log-info');
+const resourceBody = document.getElementById('resource-body');
+
+// Render the server-authorized resource list (IP segments / domains).
+async function refreshResources() {
+  if (!window.go || !window.go.main || !window.go.main.App) return;
+  let rows = [];
+  try {
+    rows = await window.go.main.App.GetVPNResources() || [];
+  } catch (err) {
+    console.error('GetVPNResources error:', err);
   }
 
-  div.innerText = line;
-  terminalBody.appendChild(div);
-  terminalBody.scrollTop = terminalBody.scrollHeight;
+  if (!rows.length) {
+    resourceBody.innerHTML = '<div class="log-line log-system">连接 VPN 后将在此显示服务器授权访问的内网资源。</div>';
+    return;
+  }
+
+  const ipRows = rows.filter(r => r.kind === 'ip');
+  const domainRows = rows.filter(r => r.kind === 'domain');
+
+  const makeRow = (r) => `
+    <div class="resource-row">
+      <span class="resource-icon">${r.kind === 'ip' ? '🔢' : '🌐'}</span>
+      <span class="resource-target">${r.target}</span>
+      <span class="resource-meta">${r.ports} · ${r.protocol}</span>
+    </div>`;
+
+  const makeGroup = (title, list) => list.length
+    ? `<div class="resource-group">${title} (${list.length})</div>` + list.map(makeRow).join('')
+    : '';
+
+  resourceBody.innerHTML =
+    makeGroup('IP 资源', ipRows) +
+    makeGroup('域名资源', domainRows);
 }
+
+document.getElementById('btn-refresh-resources').addEventListener('click', () => {
+  refreshResources();
+  showToast('资源列表已刷新');
+});
 
 // Elements
 const profileSelect = document.getElementById('profile-select');
@@ -343,7 +361,6 @@ profileSelect.addEventListener('change', async (e) => {
   await window.go.main.App.SetActiveProfile(id);
   const p = cachedProfiles.find(item => item.id === id);
   updateProfileView(p);
-  appendLog(`[配置切换] 当前激活: ${p.name} (${p.server}:${p.port})`);
 });
 
 // Open Modal for Edit
@@ -436,32 +453,14 @@ document.getElementById('btn-modal-save').addEventListener('click', async () => 
 // Toggle VPN Connection
 btnToggle.addEventListener('click', async () => {
   if (currentStatus.running) {
-    appendLog('[系统指令] 正在停止 VPN 隧道...');
     await window.go.main.App.StopVPN();
   } else {
-    appendLog(`[系统指令] 正在连接: ${activeProfile.name} (${activeProfile.server}:${activeProfile.port})...`);
     updateStatusUI({ running: true, state: 'connecting' });
     const res = await window.go.main.App.StartVPN();
     if (res !== 'OK') {
-      appendLog('[启动失败] ' + res);
+      showToast('[连接失败] ' + res);
       updateStatusUI({ running: false, state: 'disconnected' });
     }
-  }
-});
-
-// Clear logs
-document.getElementById('btn-clear-log').addEventListener('click', () => {
-  terminalBody.innerHTML = '';
-});
-
-// Copy all logs
-document.getElementById('btn-copy-log').addEventListener('click', () => {
-  const lines = Array.from(document.querySelectorAll('.log-line')).map(el => el.innerText).join('\n');
-  if (lines) {
-    navigator.clipboard.writeText(lines);
-    showToast('全部控制台日志已复制到剪贴板');
-  } else {
-    showToast('暂无日志可复制');
   }
 });
 
@@ -485,10 +484,11 @@ async function initApp() {
   if (window.runtime) {
     window.runtime.EventsOn('vpn-status', (status) => {
       updateStatusUI(status);
-    });
-
-    window.runtime.EventsOn('vpn-log', (line) => {
-      appendLog(line);
+      if (status.state === 'connected') {
+        refreshResources();
+      } else if (!status.running) {
+        refreshResources();
+      }
     });
 
     window.runtime.EventsOn('status-tick', (status) => {
@@ -507,13 +507,11 @@ async function initApp() {
       await refreshProfiles();
       const status = await window.go.main.App.GetStatus();
       updateStatusUI(status);
-      appendLog('[系统就绪] 界面与配置已成功加载。');
-    } else {
-      appendLog('[警告] 未检测到 Go 后端通信通道，请重启应用。');
+      refreshResources();
     }
   } catch (err) {
     console.error('Init error:', err);
-    appendLog('[初始化异常] ' + err);
+    showToast('[初始化异常] ' + err);
   }
 }
 

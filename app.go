@@ -64,6 +64,7 @@ type App struct {
 	startTime    time.Time
 	tickerCancel context.CancelFunc
 	configPath   string
+	resources    []engine.ResourceEntry
 }
 
 // NewApp creates a new App application struct
@@ -325,7 +326,6 @@ func (a *App) StartVPN() string {
 
 	opts := engine.Options{
 		Config:   a.buildEngineConfig(profile),
-		OnLog:    a.forwardEngineLog,
 		OnStatus: a.handleEngineStatus,
 		LogFile:  filepath.Join(logDir, "engine.log"),
 	}
@@ -350,6 +350,7 @@ func (a *App) StartVPN() string {
 	}
 
 	a.engine = eng
+	a.resources = eng.Resources()
 	a.mu.Unlock()
 	return "OK"
 }
@@ -380,11 +381,16 @@ func (a *App) buildEngineConfig(profile Profile) configs.Config {
 	return conf
 }
 
-func (a *App) forwardEngineLog(line string) {
-	if a.ctx != nil {
-		runtime.EventsEmit(a.ctx, "vpn-log", line)
-	}
+// GetVPNResources returns the server-authorized resource list of the
+// current connection (IP segments / domains with ports), mirroring the
+// resource page of the official EasyConnect client.
+func (a *App) GetVPNResources() []engine.ResourceEntry {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.resources
 }
+
+
 
 // handleEngineStatus translates engine lifecycle events into the VPNStatus
 // the frontend and tray already understand. Called from engine goroutines.
@@ -420,12 +426,14 @@ func (a *App) handleEngineStatus(s engine.Status) {
 		a.status.Running = false
 		a.status.State = "disconnected"
 		a.startTime = time.Time{}
+		a.resources = nil
 
 	case engine.PhaseError:
 		a.status.Running = false
 		a.status.State = "error"
 		a.status.LastError = s.Message
 		a.startTime = time.Time{}
+		a.resources = nil
 	}
 
 	a.syncTrayTooltipLocked()

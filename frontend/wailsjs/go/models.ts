@@ -1,3 +1,26 @@
+export namespace engine {
+	
+	export class ResourceEntry {
+	    Kind: string;
+	    Target: string;
+	    Ports: string;
+	    Protocol: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ResourceEntry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Kind = source["Kind"];
+	        this.Target = source["Target"];
+	        this.Ports = source["Ports"];
+	        this.Protocol = source["Protocol"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
 	export class Profile {
