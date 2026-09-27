@@ -19,7 +19,6 @@ app.innerHTML = `
         <span class="status-dot"></span>
         <span id="status-text">未连接</span>
       </div>
-      <button class="btn-min" id="btn-minimize" title="隐藏至系统托盘后台运行">🗕 最小化到托盘</button>
     </div>
   </header>
 
@@ -461,13 +460,6 @@ btnToggle.addEventListener('click', async () => {
       showToast('[连接失败] ' + res);
       updateStatusUI({ running: false, state: 'disconnected' });
     }
-  }
-});
-
-// Minimize to system tray
-document.getElementById('btn-minimize').addEventListener('click', () => {
-  if (window.runtime && window.runtime.WindowHide) {
-    window.runtime.WindowHide();
   }
 });
 
