@@ -11,3 +11,4 @@ vpn_profiles.json
 *.pcapng
 *.log
 build/android/zju-connect-android-arm64
+build/android/zju-mobile.aar

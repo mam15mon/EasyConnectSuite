@@ -17,14 +17,22 @@ var loginMu sync.Mutex
 func Login(server string, username string, password string) string {
 	log.Init()
 
-	return login(server, username, password)
+	return login(server, username, password, "")
+}
+
+// LoginWithTOTP logs in with a TOTP second factor (EasyConnect Suite fork:
+// servers that require 2FA reject plain Login).
+func LoginWithTOTP(server string, username string, password string, totpSecret string) string {
+	log.Init()
+
+	return login(server, username, password, totpSecret)
 }
 
 func DebugLogin(server string, username string, password string) string {
 	log.Init()
 	log.EnableDebug()
 
-	return login(server, username, password)
+	return login(server, username, password, "")
 }
 
 func Logout() {
@@ -41,7 +49,7 @@ func Logout() {
 	}
 }
 
-func login(server string, username string, password string) string {
+func login(server string, username string, password string, totpSecret string) string {
 	loginMu.Lock()
 	defer loginMu.Unlock()
 
@@ -52,8 +60,9 @@ func login(server string, username string, password string) string {
 	newClient := easyconnect.NewClient(easyconnect.Options{
 		Server: server,
 		Auth: easyconnect.AuthOptions{
-			Username: username,
-			Password: password,
+			Username:   username,
+			Password:   password,
+			TOTPSecret: totpSecret,
 		},
 		UnderlayDialer: newUnderlay,
 	})
