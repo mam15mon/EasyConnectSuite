@@ -69,3 +69,27 @@ termux-wake-lock                       # 保持 CPU 唤醒
 3. 需要本机安装 Android Studio + NDK 才能产出 AAR/APK
 
 需要时按此路径推进。
+
+---
+
+## 正式 App(android-app/,已完成 v1)
+
+全局 TUN 接管:所有 App 的流量无感走 VPN,无需配置代理。构建产物已放在桌面
+(`EC隧道.apk`,debug 签名直接安装)。
+
+- 工程结构:`android-app/`(Gradle + Kotlin,两个源文件:
+  `MainActivity` 表单 + `TunnelService` VpnService)
+- 引擎经 `build/android/zju-mobile.aar` 集成(构建脚本 `build/android/build.sh`)
+- 关键设计:`addDisallowedApplication(自身)`——本 App 自己的流量绕过 VPN,
+  避免引擎到服务器的连接被回环进隧道;DNS 由引擎登录后下发
+- 断线自动重连:会话到期(约 8 小时 20 分)隧道断开后,服务自动重新登录并
+  重建 VPN 接口,无需人工干预;失败按 3s/6s/…退避重试
+
+### 重新构建 APK
+
+```
+bash build/android/build.sh                # 引擎 AAR(先)
+cd android-app && gradle assembleDebug     # APK(后)
+```
+
+需要 ANDROID_HOME(已配置)与 Gradle 8.9(已装在 ~/tools/gradle-8.9)。

@@ -72,22 +72,18 @@ func (s *Stack) Run() {
 		for {
 			n, err := s.l3Conn.Read(buf)
 			if err != nil {
-				if hook_func.IsTerminal() {
-					return
-				}
-				panic(err)
+				// EasyConnect Suite fork: return instead of panic — the
+				// mobile embedding (Android) would crash the whole app.
+				log.Printf("L3 read error, tunnel down: %v", err)
+				return
 			}
 			log.DebugPrintf("Recv: read %d bytes", n)
 			log.DebugDumpHex(buf[:n])
 
 			err = s.endpoint.Write(buf[:n])
 			if err != nil {
-				if hook_func.IsTerminal() {
-					return
-				} else {
-					log.Printf("Error occurred while writing to TUN stack: %v", err)
-					panic(err)
-				}
+				log.Printf("Error occurred while writing to TUN stack: %v", err)
+				return
 			}
 		}
 	}()
@@ -97,12 +93,10 @@ func (s *Stack) Run() {
 	for {
 		n, err := s.endpoint.Read(buf)
 		if err != nil {
-			if hook_func.IsTerminal() {
-				return
-			} else {
-				log.Printf("Error occurred while reading from TUN stack: %v", err)
-				panic(err)
-			}
+			// EasyConnect Suite fork: return instead of panic (the fd
+			// being closed on disconnect surfaces here).
+			log.Printf("Error occurred while reading from TUN stack: %v", err)
+			return
 		}
 
 		if n < zctcpip.IPv4PacketMinLength {

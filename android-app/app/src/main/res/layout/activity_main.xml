@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="EC 隧道"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:textColor="#1F2328" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            android:text="EasyConnect 内网通道 · 全局 TUN 接管"
+            android:textSize="13sp"
+            android:textColor="#5C6168" />
+
+        <TextView style="@style/FieldLabel" android:text="服务器地址" />
+        <EditText
+            android:id="@+id/etServer"
+            style="@style/FieldInput"
+            android:hint="vpn.example.com 或 IP" />
+
+        <TextView style="@style/FieldLabel" android:text="端口" />
+        <EditText
+            android:id="@+id/etPort"
+            style="@style/FieldInput"
+            android:inputType="number"
+            android:text="443" />
+
+        <TextView style="@style/FieldLabel" android:text="账号" />
+        <EditText
+            android:id="@+id/etUsername"
+            style="@style/FieldInput" />
+
+        <TextView style="@style/FieldLabel" android:text="密码" />
+        <EditText
+            android:id="@+id/etPassword"
+            style="@style/FieldInput"
+            android:inputType="textPassword" />
+
+        <TextView style="@style/FieldLabel" android:text="TOTP 密钥(无二次认证可留空)" />
+        <EditText
+            android:id="@+id/etTotp"
+            style="@style/FieldInput" />
+
+        <Button
+            android:id="@+id/btnToggle"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:layout_marginTop="24dp"
+            android:text="连接"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:text="未连接"
+            android:textSize="13sp"
+            android:textColor="#5C6168" />
+    </LinearLayout>
+</ScrollView>

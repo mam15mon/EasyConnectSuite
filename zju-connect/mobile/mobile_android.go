@@ -2,6 +2,7 @@ package mobile
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/log"
@@ -13,6 +14,7 @@ var vpnClient *easyconnect.Client
 var vpnUnderlay *underlay.Dialer
 var vpnClientMu sync.Mutex
 var loginMu sync.Mutex
+var tunnelRunning atomic.Bool
 
 func Login(server string, username string, password string) string {
 	log.Init()
@@ -107,6 +109,28 @@ func login(server string, username string, password string, totpSecret string) s
 	return clientIP.String()
 }
 
+// DNSServer returns the VPN-side DNS server of the current session, or ""
+// when not logged in / not provided. The Android VpnService advertises it
+// to the system.
+func DNSServer() string {
+	vpnClientMu.Lock()
+	client := vpnClient
+	vpnClientMu.Unlock()
+	if client == nil {
+		return ""
+	}
+	dns, err := client.DNSServer()
+	if err != nil {
+		return ""
+	}
+	return dns
+}
+
+// TunnelRunning reports whether the TUN forwarding loop is alive.
+func TunnelRunning() bool {
+	return tunnelRunning.Load()
+}
+
 func StartStack(fd int) {
 	vpnClientMu.Lock()
 	client := vpnClient
@@ -117,9 +141,20 @@ func StartStack(fd int) {
 
 	vpnTUNStack, err := tun.NewStack(client, false, false, nil)
 	if err != nil {
+		log.Printf("tun stack setup failed: %v", err)
 		return
 	}
 
 	vpnTUNStack.SetupTun(fd)
+
+	tunnelRunning.Store(true)
+	defer tunnelRunning.Store(false)
+	defer func() {
+		// The read loops return on tunnel death; a residual panic must
+		// not take the whole Android app down.
+		if r := recover(); r != nil {
+			log.Printf("tun stack stopped: %v", r)
+		}
+	}()
 	vpnTUNStack.Run()
 }
