@@ -14,6 +14,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed all:frontend/dist
@@ -61,6 +62,17 @@ func main() {
 		MinWidth:          840,
 		MinHeight:         600,
 		HideWindowOnClose: true,
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId: "EasyConnectSuite-6f1c2a90-INSTANCE",
+			OnSecondInstanceLaunch: func(data options.SecondInstanceData) {
+				// 再次双击 exe 时,把已运行实例的窗口唤到前台,
+				// 而不是悄悄再起一个连不上端口的实例
+				if app.ctx != nil {
+					wailsRuntime.WindowShow(app.ctx)
+					wailsRuntime.WindowUnminimise(app.ctx)
+				}
+			},
+		},
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
