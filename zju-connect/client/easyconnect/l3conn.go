@@ -42,6 +42,17 @@ func (c *L3Conn) Read(p []byte) (n int, err error) {
 	defer c.recvLock.Unlock()
 
 	for {
+		if c.recvConn == nil {
+			// Previous call left the conn nil after a failed re-dial:
+			// re-dial instead of calling Read on a nil interface (that
+			// panic killed the whole process on gvisor goroutines).
+			newConn, dialErr := c.easyConnectClient.RecvConn()
+			if dialErr != nil {
+				return 0, dialErr
+			}
+			c.recvConn = newConn
+		}
+
 		n, err = c.recvConn.Read(p)
 		if err == nil {
 			return
@@ -74,6 +85,18 @@ func (c *L3Conn) Write(p []byte) (n int, err error) {
 	defer c.sendLock.Unlock()
 
 	for {
+		if c.sendConn == nil {
+			// Previous call left the conn nil after a failed re-dial
+			// (network down): re-dial, and on failure propagate the
+			// error so the caller runs the re-login campaign. Calling
+			// Write on the nil interface here is what crashed the app.
+			newConn, dialErr := c.easyConnectClient.SendConn()
+			if dialErr != nil {
+				return 0, dialErr
+			}
+			c.sendConn = newConn
+		}
+
 		n, err = c.sendConn.Write(p)
 		if err == nil {
 			return

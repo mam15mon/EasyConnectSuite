@@ -13,7 +13,6 @@ import (
 	"github.com/miekg/dns"
 	tun "github.com/mythologyli/sing-tun"
 	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/internal/ippool"
 	"github.com/mythologyli/zju-connect/internal/ipresource"
 	"github.com/mythologyli/zju-connect/internal/zcdns"

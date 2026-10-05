@@ -114,8 +114,18 @@ func (ep *Endpoint) Close() {}
 
 func (ep *Endpoint) SetOnCloseAction(func()) {}
 
-// WritePackets is called when get packets from gVisor stack. Then it sends them to VPN server
-func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error) {
+// WritePackets is called when get packets from gVisor stack. Then it sends them to VPN server.
+// It runs on gVisor-internal goroutines that no recover protects, so any
+// panic here would kill the whole process — guard it (EasyConnect Suite fork).
+func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (written int, terr tcpip.Error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("WritePackets recovered from panic: %v\n%s", r, debug.Stack())
+			written = list.Len()
+			terr = nil
+		}
+	}()
+
 	for _, packetBuffer := range list.AsSlice() {
 		buf := joinPacketSlices(packetBuffer.AsSlices())
 
