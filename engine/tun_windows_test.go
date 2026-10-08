@@ -111,3 +111,59 @@ func TestDNSDoesNotOverrideMoreSpecificSystemRoutes(t *testing.T) {
 		t.Fatal("DNS added a /32 over the server's /8 and would defeat longest-prefix routing")
 	}
 }
+
+func TestTUNDNSSiblingDomainStillUsesServerIPAndPortPermissions(t *testing.T) {
+	vpn := &recordingVPNStack{}
+	const host = "one.console.res.zb-chinatower.com"
+	ip := net.ParseIP("172.31.108.6")
+	domains := client.DomainResources{"asc.res.zb-chinatower.com": {{PortMin: 1, PortMax: 65535, Protocol: "all"}}}
+	resolver := resolve.NewResolver(vpn, "", "", 30, domains, map[string][]net.IP{host: {ip}}, false)
+	defer resolver.Close()
+	resource := ipRange("172.31.0.0", "172.31.255.255")
+	resource.PortMin, resource.PortMax, resource.Protocol = 443, 443, "tcp"
+	policy := &connectionPolicy{resolver: resolver, domains: domains, ips: []client.IPResource{resource}}
+	policy.tunDialer = dial.NewDialer(vpn, resolver, policy.ips, true, "")
+	backend := &fakeRoutes{present: map[string]bool{"172.31.0.0/16": true}}
+	ingress := &tunIngress{ctx: context.Background(), policy: policy, routes: newRouteManager(backend), bindings: make(map[netip.Addr][]client.DomainResource)}
+	request := new(dns.Msg)
+	request.SetQuestion(host+".", dns.TypeA)
+	data, err := request.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err = ingress.answerDNS(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := new(dns.Msg)
+	if err := response.Unpack(data); err != nil {
+		t.Fatal(err)
+	}
+	if response.Rcode != dns.RcodeSuccess || len(response.Answer) != 1 || !response.Answer[0].(*dns.A).A.Equal(ip) {
+		t.Fatalf("unexpected DNS response: %v", response)
+	}
+	conn, err := ingress.dial(context.Background(), "tcp", M.ParseSocksaddr(ip.String()+":443"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	for _, address := range []string{ip.String() + ":80", "172.32.108.6:443"} {
+		if _, err := ingress.dial(context.Background(), "tcp", M.ParseSocksaddr(address)); !errors.Is(err, dial.ErrACLDenied) {
+			t.Fatalf("unauthorized destination %s: %v", address, err)
+		}
+	}
+	if vpn.calls != 1 || len(ingress.bindings) != 0 || len(backend.present) != 1 {
+		t.Fatal("sibling DNS resolution changed server permissions or routing")
+	}
+}
+
+func TestTUNDNSRefreshCannotRestoreClosedOrReplacedSession(t *testing.T) {
+	policy := &connectionPolicy{domains: client.DomainResources{"old.internal.example": nil}}
+	for _, closed := range []bool{false, true} {
+		ingress := &tunIngress{ctx: context.Background(), policy: &connectionPolicy{}, closed: closed}
+		// A nil backend would panic if the obsolete refresh changed DNS rules.
+		if err := ingress.RefreshDNS(policy); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
