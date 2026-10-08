@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -21,6 +22,32 @@ import (
 
 	"github.com/mythologyli/zju-connect/stack"
 )
+
+func TestTUNVirtualAddressesStayInUpperHalfAndOutsideFakeIPPool(t *testing.T) {
+	upper := netip.MustParsePrefix("198.19.128.0/17")
+	clash := netip.MustParsePrefix("198.19.0.0/17")
+	atrust := netip.MustParsePrefix("198.18.0.0/16")
+	prefix := netip.MustParsePrefix(tunPrefix)
+	dnsAddress := netip.MustParseAddr(tunDNS)
+	if prefix.Bits() != 30 || !prefix.Contains(dnsAddress) {
+		t.Fatal("TUN and DNS must share the dedicated /30")
+	}
+	for _, address := range []netip.Addr{prefix.Addr(), dnsAddress} {
+		if !upper.Contains(address) || clash.Contains(address) || atrust.Contains(address) {
+			t.Fatalf("virtual address overlaps another client: %s", address)
+		}
+	}
+	resolver := resolve.NewResolver(&recordingVPNStack{}, "", "", 30, nil, nil, false)
+	defer resolver.Close()
+	pool := netip.MustParsePrefix("198.19.192.0/18")
+	for i := 0; i < 16382; i++ {
+		ip := resolver.IPPool.GenerateIP("host-"+strconv.Itoa(i)+".internal", nil)
+		address, ok := netip.AddrFromSlice(ip.To4())
+		if !ok || !upper.Contains(address) || !pool.Contains(address) || prefix.Contains(address) || clash.Contains(address) || atrust.Contains(address) {
+			t.Fatalf("fake IP overlaps TUN, DNS or another client: %s", ip)
+		}
+	}
+}
 
 // Stub stack avoids login, sockets, adapters, routes, and DNS policy changes.
 type recordingVPNStack struct {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,19 @@ import (
 )
 
 var domainResourceMatchSink bool
+
+func TestFakeIPPoolStaysInDedicatedUpper19819Range(t *testing.T) {
+	resolver := NewResolver(nil, "", "", 30, nil, nil, false)
+	defer resolver.Close()
+	pool := netip.MustParsePrefix("198.19.192.0/18")
+	for i := 0; i < 16382; i++ {
+		ip := resolver.IPPool.GenerateIP(fmt.Sprintf("host-%d.internal", i), nil)
+		address, ok := netip.AddrFromSlice(ip.To4())
+		if !ok || !pool.Contains(address) {
+			t.Fatalf("fake IP escaped the dedicated address pool: %s", ip)
+		}
+	}
+}
 
 func TestTCPPrefersL3UsesSelectedResource(t *testing.T) {
 	if TCPPrefersL3(context.Background()) {
