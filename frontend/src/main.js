@@ -7,81 +7,211 @@ const app = document.querySelector('#app');
 app.innerHTML = `
   <header class="top">
     <div class="brand">
-      <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="#1f2328" stroke-width="1.8">
-        <circle cx="12" cy="12" r="9"/>
-        <circle cx="12" cy="12" r="3.2" fill="#047857" stroke="none"/>
-        <path d="M12 3v5.8M12 15.2V21M3 12h5.8M15.2 12H21"/>
-      </svg>
-      <span class="brand-name">隧道值班台</span>
-      <span class="brand-sub">EasyConnect 内网通道</span>
+      <div class="brand-icon-wrap">
+        <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <path d="M9 12l2 2 4-4"/>
+        </svg>
+      </div>
+      <div>
+        <span class="brand-name">EasyConnect Suite</span>
+      </div>
+      <span class="brand-badge">内置网关</span>
     </div>
+
     <div class="top-status">
-      <span class="uptime" id="uptime-display">00:00:00</span>
-      <span class="lamp" id="state-lamp"></span>
-      <span class="top-state-word" id="top-state-word">未连接</span>
+      <div class="uptime-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span class="uptime" id="uptime-display">00:00:00</span>
+      </div>
+      <div class="status-pill">
+        <span class="lamp" id="state-lamp"></span>
+        <span class="top-state-word" id="top-state-word">未连接</span>
+      </div>
     </div>
   </header>
 
   <div class="deck">
+    <!-- 左侧控制栏 -->
     <div class="deck-col-left">
-      <!-- 隧道主机板 -->
-      <section class="panel master">
-        <div class="state-line"><span class="state-word" id="state-word">未连接</span></div>
-        <div class="state-note" id="state-note">通道未建立</div>
-
-        <button class="master-switch" id="btn-toggle">
-          <span id="btn-label">建立隧道</span>
-        </button>
-
-        <dl class="readouts">
-          <div class="readout"><dt>虚拟内网 IP</dt><dd class="pending" id="client-ip-val">—</dd></div>
-          <div class="readout"><dt>内网 DNS</dt><dd class="pending" id="dns-val">—</dd></div>
-          <div class="readout"><dt>SOCKS5 代理</dt><dd id="socks-port-val">127.0.0.1:1080</dd></div>
-          <div class="readout"><dt>HTTP 代理</dt><dd id="http-port-val">127.0.0.1:1081</dd></div>
-        </dl>
-      </section>
-
-      <!-- 服务器配置 -->
-      <section class="panel">
-        <div class="panel-head">
-          <span class="panel-title">服务器配置</span>
-          <div style="display:flex;gap:6px">
-            <button class="btn-chip" id="btn-new-profile">新建</button>
-            <button class="btn-chip" id="btn-edit-profile">编辑</button>
-            <button class="btn-chip danger" id="btn-del-profile" title="删除当前配置">删除</button>
+      <!-- 隧道核心状态卡片 -->
+      <section class="card hero-card">
+        <div class="hero-state-header">
+          <div class="hero-state-title-wrap">
+            <div class="state-radar">
+              <span class="state-radar-dot"></span>
+              <span class="state-radar-ring"></span>
+            </div>
+            <span class="state-word" id="state-word">未连接</span>
           </div>
         </div>
-        <div class="profiles-body">
-          <div class="profile-row">
+        <div class="state-note" id="state-note">通道未建立</div>
+
+        <div class="master-btn-wrap">
+          <button class="master-switch" id="btn-toggle">
+            <svg id="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+            <span id="btn-label">建立隧道</span>
+          </button>
+        </div>
+
+        <div class="telemetry-grid">
+          <div class="telemetry-item" id="item-client-ip" title="点击复制虚拟内网 IP">
+            <div class="telemetry-label-row">
+              <span class="telemetry-label">虚拟内网 IP</span>
+              <svg class="copy-hint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </div>
+            <span class="telemetry-val pending" id="client-ip-val">—</span>
+          </div>
+
+          <div class="telemetry-item" id="item-dns" title="点击复制内网 DNS">
+            <div class="telemetry-label-row">
+              <span class="telemetry-label">内网 DNS</span>
+              <svg class="copy-hint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </div>
+            <span class="telemetry-val pending" id="dns-val">—</span>
+          </div>
+
+          <div class="telemetry-item" id="item-socks" title="点击复制 SOCKS5 地址">
+            <div class="telemetry-label-row">
+              <span class="telemetry-label">SOCKS5 代理</span>
+              <svg class="copy-hint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </div>
+            <span class="telemetry-val" id="socks-port-val">127.0.0.1:1080</span>
+          </div>
+
+          <div class="telemetry-item" id="item-http" title="点击复制 HTTP 代理地址">
+            <div class="telemetry-label-row">
+              <span class="telemetry-label">HTTP 代理</span>
+              <svg class="copy-hint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </div>
+            <span class="telemetry-val" id="http-port-val">127.0.0.1:1081</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 服务器节点配置卡片 -->
+      <section class="card profiles-card">
+        <div class="card-head">
+          <div class="card-title-group">
+            <svg class="card-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+              <line x1="6" y1="6" x2="6.01" y2="6"/>
+              <line x1="6" y1="18" x2="6.01" y2="18"/>
+            </svg>
+            <span class="card-title">节点配置</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="profile-select-wrap">
             <select class="profile-select" id="profile-select"></select>
+            <svg class="profile-select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </div>
+          <div class="profile-actions-row">
+            <button class="btn-chip" id="btn-new-profile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              <span>新建</span>
+            </button>
+            <button class="btn-chip" id="btn-edit-profile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+              <span>编辑</span>
+            </button>
+            <button class="btn-chip danger" id="btn-del-profile" title="删除当前配置">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+              <span>删除</span>
+            </button>
           </div>
         </div>
       </section>
     </div>
 
-    <!-- 可达资源 -->
+    <!-- 右侧可达资源网格 -->
     <div class="deck-col-right">
-      <section class="panel routes">
-        <div class="panel-head">
-          <div>
-            <span class="panel-title">可达资源</span>
-            <span class="panel-count" id="route-count"></span>
+      <section class="card routes-card">
+        <div class="card-head">
+          <div class="card-title-group">
+            <svg class="card-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+            <span class="card-title">可达内网资源</span>
+            <span class="panel-count-badge" id="route-count"></span>
           </div>
-          <div style="display:flex;gap:6px;align-items:center">
-            <input class="routes-filter" id="routes-filter" type="text" placeholder="筛选 IP / 域名" />
-            <button class="btn-icon" id="btn-refresh-resources" title="刷新资源列表">刷新</button>
+
+          <div class="routes-toolbar">
+            <div class="routes-search-wrap">
+              <svg class="routes-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input class="routes-filter" id="routes-filter" type="text" placeholder="快速筛选 IP / 域名..." />
+            </div>
+            <button class="btn-icon-action" id="btn-refresh-resources" title="重新从网关拉取资源列表">
+              <svg id="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"/>
+                <polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              <span>刷新</span>
+            </button>
           </div>
         </div>
+
         <div class="route-table" id="route-table">
-          <div class="route-empty">连接后在此列出服务器授权的内网资源</div>
+          <div class="route-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M5 12h14"/>
+              <path d="M12 5l7 7-7 7"/>
+            </svg>
+            <span>建立隧道后，在此展示服务端授权访问的内网网段与域名映射</span>
+          </div>
         </div>
       </section>
     </div>
   </div>
 
   <footer class="hint-bar">
-    <span>关闭窗口即最小化到托盘，隧道保持运行</span>
-    <span>日志存于 <code>%APPDATA%\\EasyConnectVPN\\logs</code></span>
+    <div class="hint-left">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+        <line x1="8" y1="21" x2="16" y2="21"/>
+        <line x1="12" y1="17" x2="12" y2="21"/>
+      </svg>
+      <span>关闭窗口将最小化到系统托盘，网络通道与代理服务保持常驻</span>
+    </div>
+    <div>
+      <span>日志目录：</span>
+      <code id="log-path-hint" title="点击复制日志路径">%APPDATA%\\EasyConnectVPN\\logs</code>
+    </div>
   </footer>
 
   <!-- Profile 编辑弹窗 -->
@@ -94,54 +224,55 @@ app.innerHTML = `
       <div class="modal-body">
         <input type="hidden" id="form-id" />
         <div class="form-group">
-          <label class="form-label">配置名称（备注）</label>
-          <input type="text" class="form-input" id="form-name" placeholder="例如：公司生产环境" />
+          <label class="form-label">节点名称（备注）</label>
+          <input type="text" class="form-input" id="form-name" placeholder="例如：公司生产环境、学校内网" />
         </div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">VPN 服务器地址</label>
-            <input type="text" class="form-input" id="form-server" placeholder="vpn.example.com 或 IP" />
+            <input type="text" class="form-input" id="form-server" placeholder="vpn.example.com 或公网 IP" />
           </div>
           <div class="form-group">
-            <label class="form-label">端口</label>
+            <label class="form-label">服务端口</label>
             <input type="number" class="form-input" id="form-port" value="443" />
           </div>
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">账号</label>
-            <input type="text" class="form-input" id="form-username" />
+            <label class="form-label">登录账号</label>
+            <input type="text" class="form-input" id="form-username" placeholder="用户名" />
           </div>
           <div class="form-group">
-            <label class="form-label">密码</label>
-            <input type="password" class="form-input" id="form-password" />
+            <label class="form-label">登录密码</label>
+            <input type="password" class="form-input" id="form-password" placeholder="••••••••" />
           </div>
         </div>
 
         <label class="toggle-row">
           <input type="checkbox" id="form-enable-2fa" />
-          <span>二次认证（连接时自动提交 TOTP）</span>
+          <span>二次认证（登录时自动提交 TOTP 动态码）</span>
         </label>
         <div class="form-group" id="form-totp-container" style="display:none">
-          <label class="form-label">TOTP Secret（Base32）</label>
+          <label class="form-label">TOTP 动态秘钥 (Base32)</label>
           <input type="text" class="form-input" id="form-totp" placeholder="例如 JBSWY3DPEHPK3PXP" />
         </div>
 
         <label class="toggle-row">
           <input type="checkbox" id="form-enable-keepalive" />
-          <span>自定义会话保活地址（默认用引擎内置探测）</span>
+          <span>自定义会话保活地址（默认使用内置轻量探测）</span>
         </label>
         <div class="form-group" id="form-keepalive-container" style="display:none">
-          <label class="form-label">保活 URL（连接期间定期经隧道访问）</label>
+          <label class="form-label">保活目标 URL（连接期间定期心跳探测）</label>
           <input type="text" class="form-input" id="form-keepalive-url" placeholder="http://172.31.112.1" />
         </div>
+
         <label class="toggle-row">
           <input type="checkbox" id="form-disable-keepalive" />
-          <span>完全禁用会话保活（不推荐）</span>
+          <span>完全禁用会话保活心跳（不推荐）</span>
         </label>
 
         <div class="form-group">
-          <label class="form-label">绑定物理网卡</label>
+          <label class="form-label">出口物理网卡</label>
           <select class="form-select" id="form-nic">
             <option value="以太网">以太网</option>
             <option value="WLAN">WLAN</option>
@@ -167,6 +298,15 @@ function showToast(msg) {
   setTimeout(() => toast.classList.remove('show'), 2200);
 }
 
+function copyToClipboard(text, label) {
+  if (!text || text === '—') return;
+  navigator.clipboard.writeText(text).then(() => {
+    showToast(`已复制 ${label}: ${text}`);
+  }).catch(() => {
+    showToast(`复制失败: ${text}`);
+  });
+}
+
 function formatSeconds(sec) {
   const h = Math.floor(sec / 3600).toString().padStart(2, '0');
   const m = Math.floor((sec % 3600) / 60).toString().padStart(2, '0');
@@ -190,6 +330,23 @@ const httpPortVal = document.getElementById('http-port-val');
 const routeTable = document.getElementById('route-table');
 const routeCount = document.getElementById('route-count');
 const routesFilter = document.getElementById('routes-filter');
+
+// 遥测点击复制
+document.getElementById('item-client-ip').addEventListener('click', () => {
+  copyToClipboard(clientIpVal.innerText, '虚拟 IP');
+});
+document.getElementById('item-dns').addEventListener('click', () => {
+  copyToClipboard(dnsVal.innerText, '内网 DNS');
+});
+document.getElementById('item-socks').addEventListener('click', () => {
+  copyToClipboard(socksPortVal.innerText, 'SOCKS5 代理');
+});
+document.getElementById('item-http').addEventListener('click', () => {
+  copyToClipboard(httpPortVal.innerText, 'HTTP 代理');
+});
+document.getElementById('log-path-hint').addEventListener('click', () => {
+  copyToClipboard('%APPDATA%\\EasyConnectVPN\\logs', '日志目录');
+});
 
 // ---------- 弹窗元素 ----------
 
@@ -273,20 +430,20 @@ function updateStatusUI(status) {
   if (status.state === 'connected') {
     btnLabel.innerText = '断开隧道';
     btnToggle.disabled = false;
-    stateNote.innerText = '通道工作正常，流量经代理端口进出';
+    stateNote.innerText = 'VPN 通道工作正常，流量经本地代理端口直接转发';
   } else if (status.state === 'connecting') {
-    btnLabel.innerText = '正在握手';
+    btnLabel.innerText = '正在握手…';
     btnToggle.disabled = true;
-    stateNote.innerText = status.lastError || '正在登录并建立隧道…';
+    stateNote.innerText = status.lastError || '正在发起认证并协商加密隧道，请稍候…';
   } else if (status.state === 'error') {
     btnLabel.innerText = '重新建立';
     btnToggle.disabled = false;
-    stateNote.innerText = status.lastError || '连接失败，可重试';
+    stateNote.innerText = status.lastError || '连接建立失败，可检查配置后重试';
   } else {
     btnLabel.innerText = '建立隧道';
     btnToggle.disabled = false;
     stateNote.innerText = activeProfile
-      ? `将连接 ${activeProfile.name}（${activeProfile.server}:${activeProfile.port}）`
+      ? `准备连接节点「${activeProfile.name}」（${activeProfile.server}:${activeProfile.port}）`
       : '通道未建立';
     uptimeDisplay.innerText = '00:00:00';
   }
@@ -434,7 +591,15 @@ function renderResources(rows) {
     : lastResourceRows;
 
   if (!lastResourceRows.length) {
-    routeTable.innerHTML = '<div class="route-empty">连接后在此列出服务器授权的内网资源</div>';
+    routeTable.innerHTML = `
+      <div class="route-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="2" y1="12" x2="22" y2="12"/>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+        <span>建立隧道后，在此展示服务端授权访问的内网网段与域名映射</span>
+      </div>`;
     routeCount.innerText = '';
     return;
   }
@@ -444,34 +609,57 @@ function renderResources(rows) {
   routeCount.innerText = keyword ? `${shown}/${lastResourceRows.length}` : `共 ${lastResourceRows.length} 条`;
 
   if (!shown) {
-    routeTable.innerHTML = `<div class="route-empty">没有匹配「${keyword}」的资源</div>`;
+    routeTable.innerHTML = `
+      <div class="route-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <span>未搜索到匹配「${keyword}」的资源</span>
+      </div>`;
     return;
   }
 
   const ipRows = rows2.filter(r => kindOf(r) === 'ip');
   const domainRows = rows2.filter(r => kindOf(r) === 'domain');
 
-  const makeRow = (r) => `
+  const makeRow = (r, isIp) => `
     <div class="route-row">
-      <span class="route-target">${r.target || r.Target || ''}</span>
+      <div class="route-target-wrap">
+        <svg class="route-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          ${isIp
+            ? '<rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>'
+            : '<circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'}
+        </svg>
+        <span class="route-target" title="${r.target || r.Target || ''}">${r.target || r.Target || ''}</span>
+      </div>
       <span class="route-badge">${(r.ports || r.Ports || '')} · ${r.protocol || r.Protocol || ''}</span>
     </div>`;
 
-  const makeGroup = (title, list) => list.length
-    ? `<div class="route-group">${title} · ${list.length}</div>` + list.map(makeRow).join('')
+  const makeGroup = (title, list, isIp) => list.length
+    ? `<div class="route-group"><span>${title}</span><span class="route-group-badge">${list.length}</span></div>` +
+      list.map(item => makeRow(item, isIp)).join('')
     : '';
 
   routeTable.innerHTML =
-    makeGroup('IP 段', ipRows) +
-    makeGroup('域名', domainRows);
+    makeGroup('内网 IP 段', ipRows, true) +
+    makeGroup('域名映射解析', domainRows, false);
 }
 
 async function refreshResources() {
-  if (!window.go || !window.go.main || !window.go.main.App) return;
+  const refreshBtn = document.getElementById('btn-refresh-resources');
+  if (refreshBtn) refreshBtn.classList.add('spinning');
   try {
-    renderResources(await window.go.main.App.GetVPNResources());
+    if (window.go && window.go.main && window.go.main.App) {
+      renderResources(await window.go.main.App.GetVPNResources());
+      showToast('资源列表已刷新');
+    }
   } catch (err) {
     console.error('GetVPNResources error:', err);
+  } finally {
+    setTimeout(() => {
+      if (refreshBtn) refreshBtn.classList.remove('spinning');
+    }, 500);
   }
 }
 
@@ -485,8 +673,8 @@ document.getElementById('btn-refresh-resources').addEventListener('click', () =>
 
 function loadPreviewData() {
   const demoProfiles = [
-    { id: 'p1', name: 'IDC 生产 (带2FA)', server: '111.205.145.240', port: 58443, enable2FA: true },
-    { id: 'p2', name: '测试环境', server: '10.0.0.8', port: 443, enable2FA: false },
+    { id: 'p1', name: 'IDC 生产节点 (带2FA)', server: '111.205.145.240', port: 58443, enable2FA: true },
+    { id: 'p2', name: '测试开发集群', server: '10.0.0.8', port: 443, enable2FA: false },
   ];
   cachedProfiles = demoProfiles;
   activeProfile = demoProfiles[0];
