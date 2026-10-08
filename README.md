@@ -43,3 +43,9 @@ go build ./...     # 仅编译验证
 ```
 
 `vpn_profiles.json` 配置与原 EasyConnectGUI 完全兼容,可直接复用。
+
+## Windows TUN 模式
+
+GUI 支持按服务器资源分流的 IPv4 TCP/UDP TUN，同时保留本地 SOCKS5/HTTP 代理。相同前缀使用较低 metric，不改变其他客户端更具体路由的优先级。域名解析使用限定到 VPN 资源的 Windows NRPT；重登录会更新资源，断开会清理本程序创建的路由和 DNS 规则。
+
+配置、共存及验证方法见 [Windows TUN 模式](docs/windows-tun.md)。

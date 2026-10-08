@@ -1,0 +1,64 @@
+# Windows TUN 模式
+
+在服务器配置中勾选 **TUN 模式**，保存后重新连接。旧配置默认仍使用代理模式。
+
+## 使用方式
+
+1. 退出旧的 EasyConnectGUI 实例，再以管理员身份运行新版本。
+2. 编辑配置，选择实际联网的出口网卡，例如 `WLAN`。自动选择也可使用，但多 VPN 同时运行时建议明确指定出口。
+3. 勾选 TUN 模式，保存并连接。
+4. Windows 中会出现 `EasyConnect Suite` 网卡，地址为 `198.18.255.1/30`。SOCKS5 `127.0.0.1:1080` 和 HTTP `127.0.0.1:1081` 继续可用。
+
+Wintun 由现有 sing-tun 依赖内嵌，本实现无需另外放置 `wintun.dll`。
+
+## 与 aTrust、Clash 共存
+
+- 仅导入 VPN 下发的 IPv4 资源范围，不自动加入整个 `10.0.0.0/8`，也不添加全局默认路由。
+- EasyConnect 网卡 metric 和资源路由 metric 都设为 `0`。相同前缀与 aTrust 的总 metric `1` 比较时，EasyConnect 优先。
+- 不同前缀仍遵循最长匹配。例如 EasyConnect 的 `/8` 不会覆盖 aTrust 的 `/16`。
+- 不修改 aTrust 或 Clash 的网卡 metric、路由、DNS 配置。Clash 原有的 `198.19` 地址范围和 `10.0.0.0/8` 绕过保持原设置。
+- 如果另一个客户端在相同前缀上也使用总 metric `0`，两者可能打平；本版本不会自动修改其他客户端。
+
+## 域名与 DNS
+
+仅为 VPN 下发的域名与固定解析名称添加带有 `EasyConnectSuite resource TUN` 标记的 Windows NRPT 规则，指向虚拟 DNS `198.18.255.2`。DNS 通过 TUN 内部处理，无需占用本机的 `53` 端口。
+
+域名解析结果已经属于服务器 IP 资源范围时，保留原资源路由的前缀；仅域名资源、且没有相应 IP 资源路由时，才添加解析地址的 `/32` 路由。端口和 TCP/UDP 权限继续由 VPN 引擎校验。匹配失败不会再次直连同一个 TUN 路由。
+
+重登录后重新获取资源、替换路由与域名解析规则。断开时关闭 TUN 和活动连接，撤销本程序创建的路由与标记规则。
+
+本模式目前支持 IPv4 TCP/UDP。ICMP/ping 不作为连通性验证依据；IPv6 资源不经此 TUN。浏览器或应用自带的 DNS-over-HTTPS 可能绕过 Windows 域名策略，应使用系统 DNS 或显式 SOCKS5 访问内网域名。原有更具体的 NRPT 策略也可能影响 DNS 选择。
+
+## 验证与排查
+
+连接后在 PowerShell 中查看：
+
+```powershell
+Get-NetIPInterface -InterfaceAlias 'EasyConnect Suite' -AddressFamily IPv4
+Get-NetRoute -InterfaceAlias 'EasyConnect Suite' -PolicyStore ActiveStore
+Get-DnsClientNrptRule | Where-Object Comment -eq 'EasyConnectSuite resource TUN'
+```
+
+使用实际开放的业务端口验证，而不是 ping，例如 `Test-NetConnection <内网IP> -Port <业务端口>`。同时确认 aTrust 的独立资源和 Clash 的普通代理流量仍可使用。断开后再查看，确认本程序的路由和标记规则已经清理。
+
+日志位于 `%APPDATA%\EasyConnectVPN\logs\engine.log`。初始化失败或资源路由失败会作为连接错误返回；代理端口占用会记入日志。
+
+如果强制结束进程后遗留了本程序的 DNS 标记，可在管理员 PowerShell 中清理：
+
+```powershell
+Get-DnsClientNrptRule |
+  Where-Object Comment -eq 'EasyConnectSuite resource TUN' |
+  ForEach-Object { Remove-DnsClientNrptRule -Name $_.Name -Force }
+Clear-DnsClientCache
+```
+
+## 开发验证
+
+```powershell
+go test ./...
+go vet ./...
+Set-Location zju-connect
+go test ./service ./dial ./resolve ./stack/gvisor ./client/easyconnect
+```
+
+路由、DNS 测试使用内存替身，不创建真实网卡或修改本机网络。真实连接与三客户端共存仍需在管理员权限下验证。

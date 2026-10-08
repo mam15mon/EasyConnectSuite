@@ -7,9 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/mythologyli/zju-connect/dial"
 	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/resolve"
 )
 
 const (
@@ -17,7 +15,7 @@ const (
 	keepAliveDrainLimit     = 32 << 10
 )
 
-func KeepAlive(ctx context.Context, resolver *resolve.Resolver, dialer *dial.Dialer, keepAliveURL string) {
+func KeepAlive(ctx context.Context, resolver ProxyResolver, dialer ProxyDialer, keepAliveURL string) {
 	if keepAliveURL != "" {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.DialContext = dialer.Dial
@@ -32,26 +30,13 @@ func KeepAlive(ctx context.Context, resolver *resolve.Resolver, dialer *dial.Dia
 		runHTTPKeepAlive(ctx, client, keepAliveURL, ticker.C)
 		return
 	} else {
-		remoteUDPResolver, err := resolver.RemoteUDPResolver()
-		if err != nil {
-			log.Printf("KeepAlive: %s", err)
-		}
-
-		remoteTCPResolver, err := resolver.RemoteTCPResolver()
-		if err != nil {
-			log.Printf("KeepAlive: %s", err)
-		}
-
-		if remoteUDPResolver == nil && remoteTCPResolver == nil {
-			log.Printf("KeepAlive: No remote resolver available")
-			return
-		}
-
 		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
 
 		for {
-			useTCP := false
+			remoteUDPResolver, _ := resolver.RemoteUDPResolver()
+			remoteTCPResolver, _ := resolver.RemoteTCPResolver()
+			useTCP := remoteUDPResolver == nil
 			requestCtx, cancel := context.WithTimeout(ctx, keepAliveRequestTimeout)
 
 			if remoteUDPResolver != nil {

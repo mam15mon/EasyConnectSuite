@@ -28,6 +28,7 @@ type Profile struct {
 	Enable2FA        bool   `json:"enable2FA"`
 	TotpSecret       string `json:"totpSecret"`
 	BindInterface    string `json:"bindInterface"`
+	TUNMode          bool   `json:"tunMode"`
 	DisableZjuConfig bool   `json:"disableZjuConfig"`
 	DisableKeepAlive bool   `json:"disableKeepAlive"`
 	KeepAliveURL     string `json:"keepAliveUrl"`
@@ -48,6 +49,7 @@ type VPNStatus struct {
 	DNS           string `json:"dns"`
 	SocksPort     string `json:"socksPort"`
 	HTTPPort      string `json:"httpPort"`
+	TUNMode       bool   `json:"tunMode"`
 	Duration      int64  `json:"duration"` // uptime seconds
 	LastError     string `json:"lastError"`
 }
@@ -308,6 +310,7 @@ func (a *App) StartVPN() string {
 		Running:       true,
 		State:         "connecting",
 		ActiveProfile: profile.Name,
+		TUNMode:       profile.TUNMode,
 		SocksPort:     "1080",
 		HTTPPort:      "1081",
 	}
@@ -325,9 +328,10 @@ func (a *App) StartVPN() string {
 	}
 
 	opts := engine.Options{
-		Config:   a.buildEngineConfig(profile),
-		OnStatus: a.handleEngineStatus,
-		LogFile:  filepath.Join(logDir, "engine.log"),
+		Config:      a.buildEngineConfig(profile),
+		OnStatus:    a.handleEngineStatus,
+		OnResources: a.handleResources,
+		LogFile:     filepath.Join(logDir, "engine.log"),
 	}
 	a.mu.Unlock()
 
@@ -376,7 +380,12 @@ func (a *App) buildEngineConfig(profile Profile) configs.Config {
 		conf.TOTPSecret = strings.TrimSpace(profile.TotpSecret)
 	}
 	conf.BindInterface = profile.BindInterface
-	conf.DisableZJUConfig = profile.DisableZjuConfig
+	conf.AutoDetectInterface = profile.BindInterface == ""
+	conf.TUNMode = profile.TUNMode
+	conf.AddRoute = profile.TUNMode
+	conf.SocksBind = "127.0.0.1:1080"
+	conf.HTTPBind = "127.0.0.1:1081"
+	conf.DisableZJUConfig = profile.DisableZjuConfig || profile.TUNMode
 
 	if profile.DisableKeepAlive {
 		conf.DisableKeepAlive = true
@@ -387,6 +396,15 @@ func (a *App) buildEngineConfig(profile Profile) configs.Config {
 	return conf
 }
 
+func (a *App) handleResources(entries []engine.ResourceEntry) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.resources = append([]engine.ResourceEntry(nil), entries...)
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "vpn-resources", a.resources)
+	}
+}
+
 // GetVPNResources returns the server-authorized resource list of the
 // current connection (IP segments / domains with ports), mirroring the
 // resource page of the official EasyConnect client.
@@ -395,8 +413,6 @@ func (a *App) GetVPNResources() []engine.ResourceEntry {
 	defer a.mu.Unlock()
 	return a.resources
 }
-
-
 
 // handleEngineStatus translates engine lifecycle events into the VPNStatus
 // the frontend and tray already understand. Called from engine goroutines.

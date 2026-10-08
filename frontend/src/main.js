@@ -271,6 +271,14 @@ app.innerHTML = `
           <span>完全禁用会话保活心跳（不推荐）</span>
         </label>
 
+        <label class="toggle-row">
+          <input type="checkbox" id="form-tun-mode" />
+          <span>TUN 模式（需要以管理员身份运行，仍保留本地代理）</span>
+        </label>
+        <div class="form-group">
+          <span class="form-label">按 VPN 下发的资源添加路由；相同前缀优先使用 EasyConnect，更具体的路由保持优先。</span>
+        </div>
+
         <div class="form-group">
           <label class="form-label">出口物理网卡</label>
           <select class="form-select" id="form-nic">
@@ -362,6 +370,7 @@ const formEnable2FA = document.getElementById('form-enable-2fa');
 const formTotpContainer = document.getElementById('form-totp-container');
 const formTotp = document.getElementById('form-totp');
 const formNic = document.getElementById('form-nic');
+const formTUNMode = document.getElementById('form-tun-mode');
 const formEnableKeepAlive = document.getElementById('form-enable-keepalive');
 const formKeepAliveContainer = document.getElementById('form-keepalive-container');
 const formKeepAliveUrl = document.getElementById('form-keepalive-url');
@@ -430,7 +439,9 @@ function updateStatusUI(status) {
   if (status.state === 'connected') {
     btnLabel.innerText = '断开隧道';
     btnToggle.disabled = false;
-    stateNote.innerText = 'VPN 通道工作正常，流量经本地代理端口直接转发';
+    stateNote.innerText = status.tunMode
+      ? 'TUN 已连接，按 VPN 资源分流；本地 SOCKS5 / HTTP 代理仍可使用'
+      : 'VPN 通道工作正常，流量经本地代理端口直接转发';
   } else if (status.state === 'connecting') {
     btnLabel.innerText = '正在握手…';
     btnToggle.disabled = true;
@@ -499,7 +510,12 @@ function openEditModal(profile) {
   formKeepAliveContainer.style.display = formEnableKeepAlive.checked ? 'block' : 'none';
   formDisableKeepAlive.checked = profile ? !!profile.disableKeepAlive : false;
 
+  formTUNMode.checked = !!(profile && profile.tunMode);
   formNic.innerHTML = '';
+  const autoOption = document.createElement('option');
+  autoOption.value = '';
+  autoOption.innerText = '自动选择出口';
+  formNic.appendChild(autoOption);
   detectedInterfaces.forEach(name => {
     const opt = document.createElement('option');
     opt.value = name;
@@ -550,6 +566,7 @@ document.getElementById('btn-modal-save').addEventListener('click', async () => 
     enable2FA: formEnable2FA.checked,
     totpSecret: formTotp.value.trim(),
     bindInterface: formNic.value,
+    tunMode: formTUNMode.checked,
     disableZjuConfig: true,
     disableKeepAlive: formDisableKeepAlive.checked,
     keepAliveUrl: formEnableKeepAlive.checked ? formKeepAliveUrl.value.trim() : '',

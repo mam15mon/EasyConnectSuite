@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/dial"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
 )
@@ -59,7 +58,7 @@ type httpProxy struct {
 	tunnels     map[*httpTunnel]struct{}
 }
 
-func newHTTPProxy(dialer *dial.Dialer) *httpProxy {
+func newHTTPProxy(dialer ProxyDialer) *httpProxy {
 	proxy := &httpProxy{
 		dialContext: dialer.Dial,
 		tunnels:     make(map[*httpTunnel]struct{}),
@@ -81,7 +80,7 @@ func newHTTPProxy(dialer *dial.Dialer) *httpProxy {
 	return proxy
 }
 
-func newHTTPHandler(dialer *dial.Dialer) http.Handler {
+func newHTTPHandler(dialer ProxyDialer) http.Handler {
 	return newHTTPProxy(dialer)
 }
 
@@ -219,7 +218,7 @@ func newHTTPServer(bindAddr string, handler http.Handler) *http.Server {
 	}
 }
 
-func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
+func ServeHTTP(bindAddr string, dialer ProxyDialer) {
 	proxy := newHTTPProxy(dialer)
 
 	log.Printf("HTTP server listening on %s", bindAddr)

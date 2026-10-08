@@ -1,8 +1,7 @@
 // Package engine adapts the zju-connect engine (originally a standalone
 // CLI in package main) into a library that the EasyConnect Suite GUI can
-// start, stop and observe in-process. Only the EasyConnect protocol over
-// the gVisor stack is wired up — the profile editor does not expose the
-// aTrust protocol, TUN mode or the TCP-tunnel stack.
+// start, stop and observe in-process. Optional Windows TUN ingress shares
+// the existing gVisor VPN engine and its reconnect handling.
 package engine
 
 import (
@@ -23,14 +22,11 @@ import (
 	"github.com/mythologyli/zju-connect/client"
 	easyconnectclient "github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/configs"
-	"github.com/mythologyli/zju-connect/dial"
 	"github.com/mythologyli/zju-connect/lifecycle"
 	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/mythologyli/zju-connect/service"
 	"github.com/mythologyli/zju-connect/stack/gvisor"
 	"github.com/mythologyli/zju-connect/underlay"
-	"inet.af/netaddr"
 )
 
 // Status phases reported through Options.OnStatus.
@@ -66,7 +62,8 @@ type Options struct {
 	// OnLog receives every log line produced by the engine.
 	OnLog func(line string)
 	// OnStatus receives lifecycle transitions.
-	OnStatus func(Status)
+	OnStatus    func(Status)
+	OnResources func([]ResourceEntry)
 	// LogFile, when set, receives a persistent copy of every engine log
 	// line so post-mortem analysis survives a UI-level crash.
 	LogFile string
@@ -78,8 +75,10 @@ type Engine struct {
 
 	running atomic.Bool
 
-	dnsName   string
-	resources []ResourceEntry
+	dnsName string
+	router  policyRouter
+	tun     atomic.Pointer[tunIngress]
+	fatal   atomic.Bool
 
 	stopOnce  sync.Once
 	logClose  io.Closer
@@ -98,7 +97,15 @@ func Start(opts Options) (*Engine, error) {
 
 	e := &Engine{conf: conf, opts: opts}
 
+	lifecycle.ResetTerminalFuncs()
 	e.startLogCapture()
+	started := false
+	defer func() {
+		if !started {
+			e.execTerminal()
+			e.stopLogCapture()
+		}
+	}()
 
 	// A previous engine run may have marked the global terminal registry
 	// as shut down; clear it so this run can register its hooks.
@@ -113,7 +120,6 @@ func Start(opts Options) (*Engine, error) {
 		LocalDNSServer: conf.LocalDNSServer,
 	})
 	if err != nil {
-		e.stopLogCapture()
 		return nil, fmt.Errorf("创建底层拨号器失败: %w", err)
 	}
 
@@ -144,7 +150,6 @@ func Start(opts Options) (*Engine, error) {
 	if err := vpnClient.Setup(); err != nil {
 		vpnClient.Close()
 		_ = underlayDialer.Close()
-		e.stopLogCapture()
 		return nil, fmt.Errorf("VPN 登录失败: %w", err)
 	}
 
@@ -157,66 +162,6 @@ func Start(opts Options) (*Engine, error) {
 		return underlayDialer.Close()
 	})
 
-	ipResources, err := vpnClient.IPResources()
-	if err != nil && !conf.DisableServerConfig {
-		log.Println("No IP resources")
-	}
-
-	ipSet, err := vpnClient.IPSet()
-	if err != nil && !conf.DisableServerConfig {
-		log.Println("No IP set")
-	}
-
-	domainResources, err := vpnClient.DomainResources()
-	if err != nil && !conf.DisableServerConfig {
-		log.Println("No domain resources")
-	}
-
-	dnsResource, err := vpnClient.DNSResource()
-	if err != nil && !conf.DisableServerConfig {
-		log.Println("No DNS resource")
-	}
-
-	if !conf.DisableZJUConfig {
-		if domainResources == nil {
-			domainResources = make(client.DomainResources)
-		}
-		domainResources["zju.edu.cn"] = []client.DomainResource{{
-			PortMin: 1, PortMax: 65535, Protocol: "all",
-		}}
-
-		if ipResources == nil {
-			ipResources = []client.IPResource{}
-		}
-		ipResources = append([]client.IPResource{{
-			IPMin: net.ParseIP("10.0.0.0"), IPMax: net.ParseIP("10.255.255.255"),
-			PortMin: 1, PortMax: 65535, Protocol: "all",
-		}}, ipResources...)
-
-		ipSetBuilder := netaddr.IPSetBuilder{}
-		if ipSet != nil {
-			ipSetBuilder.AddSet(ipSet)
-		}
-		ipSetBuilder.AddPrefix(netaddr.MustParseIPPrefix("10.0.0.0/8"))
-		ipSet, _ = ipSetBuilder.IPSet()
-	}
-
-	for _, customProxyDomain := range conf.CustomProxyDomain {
-		if domainResources != nil {
-			domainResources[customProxyDomain] = append(domainResources[customProxyDomain], client.DomainResource{
-				PortMin: 1, PortMax: 65535, Protocol: "all",
-			})
-		} else {
-			domainResources = client.DomainResources{
-				customProxyDomain: {{PortMin: 1, PortMax: 65535, Protocol: "all"}},
-			}
-		}
-	}
-
-	e.resources = buildResourceEntries(ipResources, domainResources, dnsResource)
-	log.Printf("Server authorized resources: %d IP segments, %d domains, %d DNS entries",
-		len(ipResources), len(domainResources), len(dnsResource))
-
 	e.emitStatus(PhaseConnecting, "创建虚拟网络栈...")
 
 	// The GUI always uses the gVisor L3 stack (upstream default).
@@ -224,95 +169,77 @@ func Start(opts Options) (*Engine, error) {
 	if err != nil {
 		vpnClient.Close()
 		_ = underlayDialer.Close()
-		e.stopLogCapture()
 		return nil, fmt.Errorf("gVisor 网络栈创建失败: %w", err)
 	}
 
+	e.registerTerminal("CloseVPNStack", func(ctx context.Context) error { return vpnStack.Close() })
+	policy, err := loadPolicy(conf, vpnClient, vpnStack)
+	if err != nil {
+		return nil, err
+	}
+	e.router.current.Store(policy)
+	e.dnsName = policy.dnsName
+	e.registerTerminal("CloseResolver", func(ctx context.Context) error {
+		if p := e.router.current.Load(); p != nil {
+			p.resolver.Close()
+		}
+		return nil
+	})
+	vpnStack.SetupIPPool(policy.resolver.IPPool)
 	vpnStack.SetupRelogin(func() error {
 		e.emitStatus(PhaseReconnecting, "连接中断，正在自动重新登录...")
-		setupErr := vpnClient.Setup()
-		if setupErr != nil {
-			return setupErr
+		if err := vpnClient.Setup(); err != nil {
+			return err
 		}
+		next, err := loadPolicy(conf, vpnClient, vpnStack)
+		if err != nil {
+			return err
+		}
+		if ingress := e.tun.Load(); ingress != nil {
+			if err := ingress.Update(next); err != nil {
+				next.resolver.Close()
+				return err
+			}
+		}
+		previous := e.router.current.Swap(next)
+		vpnStack.SetupIPPool(next.resolver.IPPool)
+		if previous != nil {
+			previous.resolver.Close()
+		}
+		e.dnsName = next.dnsName
+		if e.opts.OnResources != nil {
+			e.opts.OnResources(next.entries)
+		}
+
+		return nil
+	})
+	vpnStack.SetupRecovered(func() {
+		policy := e.router.current.Load()
 		clientIP := ""
-		if ip, ipErr := vpnClient.IP(); ipErr == nil {
+		if ip, err := vpnClient.IP(); err == nil {
 			clientIP = ip.String()
 		}
-		e.emitStatusFull(Status{Phase: PhaseConnected, Message: "重新登录成功，隧道已重建", ClientIP: clientIP, DNS: e.dnsName})
-		return nil
+		e.emitStatusFull(Status{Phase: PhaseConnected, Message: "隧道已重建，资源已更新", ClientIP: clientIP, DNS: policy.dnsName})
 	})
 	vpnStack.SetupFatalHandler(e.handleTunnelFatal)
-
-	e.registerTerminal("CloseVPNStack", func(ctx context.Context) error {
-		return vpnStack.Close()
-	})
-
-	useRemoteDNS := !conf.DisableRemoteDNS
-	remoteDNSServer := conf.RemoteDNSServer
-	policyDNSServers, _ := vpnClient.DNSServers()
-	if useRemoteDNS && remoteDNSServer == "auto" {
-		remoteDNSServer, err = vpnClient.DNSServer()
+	e.goWithRecovery("gvisor stack Run", func() { vpnStack.Run() })
+	if conf.TUNMode {
+		e.emitStatus(PhaseConnecting, "创建资源 TUN 并配置路由...")
+		ingress, err := startTUN(&e.router, policy)
 		if err != nil {
-			useRemoteDNS = false
-			remoteDNSServer = "10.10.0.21"
-			log.Println("No DNS server provided by server. Disable remote DNS")
-		} else {
-			log.Printf("Use DNS server %s provided by server", remoteDNSServer)
+			return nil, fmt.Errorf("TUN 启动失败: %w", err)
 		}
+		e.tun.Store(ingress)
+		e.registerTerminal("CloseTUNIngress", func(ctx context.Context) error { return ingress.Close() })
 	}
-	e.dnsName = remoteDNSServer
-
-	secondaryDNSServer := conf.SecondaryDNSServer
-	if secondaryDNSServer == "auto" {
-		secondaryDNSServer = "114.114.114.114"
-		if len(policyDNSServers) > 1 {
-			secondaryDNSServer = policyDNSServers[1]
-			log.Printf("Use secondary DNS server %s provided by server", secondaryDNSServer)
-		}
-	}
-
-	vpnResolver := resolve.NewResolver(
-		vpnStack,
-		remoteDNSServer,
-		secondaryDNSServer,
-		conf.DNSTTL,
-		domainResources,
-		dnsResource,
-		useRemoteDNS,
-	)
-	e.registerTerminal("CloseResolver", func(ctx context.Context) error {
-		vpnResolver.Close()
-		return nil
-	})
-
-	for _, customDns := range conf.CustomDNSList {
-		ipAddr := net.ParseIP(customDns.IP)
-		if ipAddr == nil {
-			log.Printf("Custom DNS for host name %s is invalid, SKIP", customDns.HostName)
-			continue
-		}
-		vpnResolver.SetPermanentDNS(customDns.HostName, ipAddr)
-		log.Printf("Add custom DNS: %s -> %s", customDns.HostName, customDns.IP)
-	}
-	localResolver := service.NewDnsServer(vpnResolver, []string{remoteDNSServer, conf.SecondaryDNSServer})
-	vpnStack.SetupResolve(localResolver)
-	vpnStack.SetupIPPool(vpnResolver.IPPool)
-
-	e.goWithRecovery("gvisor stack Run", func() {
-		vpnStack.Run()
-	})
-
-	vpnDialer := dial.NewDialer(vpnStack, vpnResolver, ipResources, conf.ProxyAll, conf.DialDirectProxy)
-
+	vpnDialer := &e.router
+	vpnResolver := &e.router
+	useRemoteDNS := policy.useRemoteDNS
 	if conf.SocksBind != "" {
-		e.goWithRecovery("SOCKS5 server", func() {
-			service.ServeSocks5(conf.SocksBind, vpnDialer, vpnResolver, conf.SocksUser, conf.SocksPasswd)
-		})
+		e.goWithRecovery("SOCKS5 server", func() { service.ServeSocks5(conf.SocksBind, vpnDialer, vpnResolver, conf.SocksUser, conf.SocksPasswd) })
 	}
 	if conf.HTTPBind != "" {
-		e.goWithRecovery("HTTP proxy server", func() {
-			service.ServeHTTP(conf.HTTPBind, vpnDialer)
-		})
+		e.goWithRecovery("HTTP proxy server", func() { service.ServeHTTP(conf.HTTPBind, vpnDialer) })
 	}
 
 	for _, portForwarding := range conf.PortForwardingList {
@@ -352,8 +279,12 @@ func Start(opts Options) (*Engine, error) {
 		clientIP = ip.String()
 	}
 
+	if e.fatal.Load() {
+		return nil, fmt.Errorf("VPN 隧道在启动期间断开")
+	}
 	e.running.Store(true)
 	e.emitStatusFull(Status{Phase: PhaseConnected, Message: "VPN 已连接", ClientIP: clientIP, DNS: e.dnsName})
+	started = true
 	return e, nil
 }
 
@@ -364,7 +295,10 @@ func (e *Engine) Running() bool {
 
 // Resources returns the server-authorized resource list for display.
 func (e *Engine) Resources() []ResourceEntry {
-	return e.resources
+	if p := e.router.current.Load(); p != nil {
+		return append([]ResourceEntry(nil), p.entries...)
+	}
+	return nil
 }
 
 // buildResourceEntries flattens the parsed server resources into
@@ -452,6 +386,7 @@ func (e *Engine) Stop() {
 // cannot be recovered even after the re-login campaign. It must never
 // kill the process — just clean up and surface the error.
 func (e *Engine) handleTunnelFatal(cause error) {
+	e.fatal.Store(true)
 	e.stopOnce.Do(func() {
 		e.running.Store(false)
 		log.Printf("Tunnel unrecoverable: %v; shutting down", cause)

@@ -38,11 +38,12 @@ type Stack struct {
 	// panicking the process we ask the owner to log in again, rebuild the
 	// L3 connection and keep serving. If re-login fails too many times in
 	// a row, we report the failure through fatalHandler and stop.
-	reloginMu       sync.Mutex
-	reloginFunc     func() error
-	fatalHandler    func(error)
-	reloginFailures int
-	lastReloginTime time.Time
+	reloginMu        sync.Mutex
+	reloginFunc      func() error
+	fatalHandler     func(error)
+	recoveredHandler func()
+	reloginFailures  int
+	lastReloginTime  time.Time
 }
 
 const NICID tcpip.NICID = 1
@@ -145,16 +146,16 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (written int, terr
 					return list.Len(), nil
 				}
 
-					// Server-initiated SHUTDOWN (cmd 0x08) or any other send
-					// failure usually means the session is dead. Instead of
-					// panicking / os.Exit like the upstream CLI, try to
-					// re-login and rebuild the tunnel; drop the packet if
-					// that fails (the TCP/UDP flows will recover).
-					log.Printf("WritePackets: send error: %v; trying re-login", err)
-					if ep.owner != nil && ep.owner.rebuildL3Conn(l3Conn, err) {
-						continue
-					}
-					return list.Len(), nil
+				// Server-initiated SHUTDOWN (cmd 0x08) or any other send
+				// failure usually means the session is dead. Instead of
+				// panicking / os.Exit like the upstream CLI, try to
+				// re-login and rebuild the tunnel; drop the packet if
+				// that fails (the TCP/UDP flows will recover).
+				log.Printf("WritePackets: send error: %v; trying re-login", err)
+				if ep.owner != nil && ep.owner.rebuildL3Conn(l3Conn, err) {
+					continue
+				}
+				return list.Len(), nil
 			}
 			log.DebugPrintf("Send: wrote %d bytes", n)
 			log.DebugDumpHex(buf[:n])
@@ -278,6 +279,13 @@ func (s *Stack) SetupFatalHandler(f func(error)) {
 	s.reloginMu.Unlock()
 }
 
+// SetupRecovered is called after a new L3 connection has been installed.
+func (s *Stack) SetupRecovered(f func()) {
+	s.reloginMu.Lock()
+	s.recoveredHandler = f
+	s.reloginMu.Unlock()
+}
+
 // Close tears the stack down: closes the L3 tunnel (which unblocks the
 // Run read loop) and the gVisor netstack. Safe to call multiple times.
 func (s *Stack) Close() error {
@@ -342,14 +350,30 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 	}
 
 	s.reloginMu.Lock()
-	defer s.reloginMu.Unlock()
+	var fatalCause error
+	recovered := false
+	defer func() {
+		recoveredHandler := s.recoveredHandler
+		handler := s.fatalHandler
+		s.reloginMu.Unlock()
+		if recovered && recoveredHandler != nil {
+			recoveredHandler()
+		}
+		if fatalCause != nil {
+			if handler != nil {
+				handler(fatalCause)
+			} else {
+				log.Printf("gVisor fatal: %v", fatalCause)
+			}
+		}
+	}()
 
 	if hook_func.IsTerminal() {
 		return false
 	}
 
 	if s.reloginFunc == nil {
-		s.reportFatal(cause)
+		fatalCause = cause
 		return false
 	}
 
@@ -367,7 +391,7 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 		}
 
 		if s.reloginFailures >= maxReloginAttempts {
-			s.reportFatal(fmt.Errorf("L3 tunnel dead (%v): %d consecutive re-login attempts failed, giving up", cause, s.reloginFailures))
+			fatalCause = fmt.Errorf("L3 tunnel dead (%v): %d consecutive re-login attempts failed, giving up", cause, s.reloginFailures)
 			return false
 		}
 
@@ -399,6 +423,7 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 		safeCloseL3(oldConn)
 
 		s.reloginFailures = 0
+		recovered = true
 		log.Printf("Re-login success, L3 tunnel rebuilt")
 		return true
 	}

@@ -6,14 +6,12 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/mythologyli/zju-connect/dial"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/things-go/go-socks5"
 )
 
-func ServeSocks5(bindAddr string, dialer *dial.Dialer, resolver *resolve.Resolver, user string, password string) {
+func ServeSocks5(bindAddr string, dialer ProxyDialer, resolver ProxyResolver, user string, password string) {
 	var authMethods []socks5.Authenticator
 	if user != "" && password != "" {
 		authMethods = append(authMethods, socks5.UserPassAuthenticator{
