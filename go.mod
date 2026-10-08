@@ -3,13 +3,17 @@ module EasyConnectSuite
 go 1.25.6
 
 require (
+	github.com/miekg/dns v1.1.72
+	github.com/mythologyli/sing-tun v0.0.0-20260201144630-c04d9db95dc7
 	github.com/mythologyli/zju-connect v0.0.0-00010101000000-000000000000
-	github.com/wailsapp/wails/v2 v2.11.0
+	github.com/sagernet/sing v0.7.18
+	github.com/wailsapp/wails/v2 v2.12.0
 	golang.org/x/sys v0.45.0
 	inet.af/netaddr v0.0.0-20230525184311-b8eac61e914a
 )
 
 require (
+	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/beevik/etree v1.6.0 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
@@ -32,8 +36,6 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/metacubex/gvisor v0.0.0-20251227095601-261ec1326fe8 // indirect
-	github.com/miekg/dns v1.1.72 // indirect
-	github.com/mythologyli/sing-tun v0.0.0-20260201144630-c04d9db95dc7 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -44,7 +46,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sagernet/go-tun2socks v1.16.12-0.20220818015926-16cb67876a61 // indirect
 	github.com/sagernet/netlink v0.0.0-20240916134442-83396419aa8b // indirect
-	github.com/sagernet/sing v0.7.18 // indirect
 	github.com/samber/lo v1.49.1 // indirect
 	github.com/scjalliance/comshim v0.0.0-20251021001035-b69f3cdad6f3 // indirect
 	github.com/shadowsocks/go-shadowsocks2 v0.1.5 // indirect

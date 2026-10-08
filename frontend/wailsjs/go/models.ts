@@ -53,7 +53,7 @@ export namespace main {
 	        this.enable2FA = source["enable2FA"];
 	        this.totpSecret = source["totpSecret"];
 	        this.bindInterface = source["bindInterface"];
-	        this.tunMode = source["tunMode"] || false;
+	        this.tunMode = source["tunMode"];
 	        this.disableZjuConfig = source["disableZjuConfig"];
 	        this.disableKeepAlive = source["disableKeepAlive"];
 	        this.keepAliveUrl = source["keepAliveUrl"];
@@ -117,7 +117,7 @@ export namespace main {
 	        this.dns = source["dns"];
 	        this.socksPort = source["socksPort"];
 	        this.httpPort = source["httpPort"];
-	        this.tunMode = source["tunMode"] || false;
+	        this.tunMode = source["tunMode"];
 	        this.duration = source["duration"];
 	        this.lastError = source["lastError"];
 	    }
