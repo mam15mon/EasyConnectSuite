@@ -53,9 +53,20 @@ func setupCrashLog() {
 
 func main() {
 	setupCrashLog()
+	restartConfig, err := prepareTUNRestart(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		showTUNRestartError(err)
+		return
+	}
 	app := NewApp()
+	if restartConfig != "" {
+		app.configPath = restartConfig
+		app.initDefaultConfig()
+		app.loadConfigFile()
+	}
 
-	err := wails.Run(&options.App{
+	err = wails.Run(&options.App{
 		Title:             "EasyConnect VPN 管理器",
 		Width:             980,
 		Height:            700,

@@ -450,6 +450,78 @@ body[data-state="error"] .state-word {
     padding-left: 2px;
 }
 
+.tun-mode-control {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    margin-bottom: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--panel-inset);
+}
+
+.tun-mode-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.tun-mode-title {
+    font-weight: 700;
+}
+
+.tun-mode-note {
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.tun-mode-control input {
+    appearance: none;
+    flex: none;
+    width: 38px;
+    height: 22px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-full);
+    background: var(--panel-elevated);
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s;
+}
+
+.tun-mode-control input::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 2px;
+    left: 2px;
+    border-radius: 50%;
+    background: var(--text-primary);
+    transition: transform 0.2s;
+}
+
+.tun-mode-control input:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.tun-mode-control input:checked::before {
+    transform: translateX(16px);
+}
+
+.tun-mode-control input:focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: 3px;
+}
+
+.tun-mode-control input:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
 /* 建立/断开隧道主按钮 */
 .master-btn-wrap {
     margin-bottom: 20px;

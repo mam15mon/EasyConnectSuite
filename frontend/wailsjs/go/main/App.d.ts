@@ -19,6 +19,8 @@ export function SaveProfile(arg1:main.Profile):Promise<main.Profile>;
 
 export function SetActiveProfile(arg1:string):Promise<boolean>;
 
+export function SetTUNMode(arg1:boolean):Promise<boolean>;
+
 export function StartVPN():Promise<string>;
 
 export function StopVPN():Promise<string>;

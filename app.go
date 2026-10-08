@@ -63,6 +63,7 @@ type App struct {
 	status       VPNStatus
 	engine       *engine.Engine
 	starting     bool
+	restarting   bool
 	startTime    time.Time
 	tickerCancel context.CancelFunc
 	configPath   string
@@ -289,6 +290,10 @@ func (a *App) GetInterfaces() []string {
 // reported through vpn-status / vpn-log events.
 func (a *App) StartVPN() string {
 	a.mu.Lock()
+	if a.restarting {
+		a.mu.Unlock()
+		return "正在以管理员身份重新启动"
+	}
 	if a.engine != nil && a.engine.Running() {
 		a.mu.Unlock()
 		return "Already running"

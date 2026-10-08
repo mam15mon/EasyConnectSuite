@@ -50,6 +50,14 @@ app.innerHTML = `
         </div>
         <div class="state-note" id="state-note">通道未建立</div>
 
+        <label class="tun-mode-control">
+          <span class="tun-mode-copy">
+            <span class="tun-mode-title">TUN 模式</span>
+            <span class="tun-mode-note" id="tun-mode-note">自动分流内网流量，保留本地代理</span>
+          </span>
+          <input type="checkbox" id="tun-mode-toggle" role="switch" aria-label="TUN 模式" disabled />
+        </label>
+
         <div class="master-btn-wrap">
           <button class="master-switch" id="btn-toggle">
             <svg id="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -271,13 +279,6 @@ app.innerHTML = `
           <span>完全禁用会话保活心跳（不推荐）</span>
         </label>
 
-        <label class="toggle-row">
-          <input type="checkbox" id="form-tun-mode" />
-          <span>TUN 模式（需要以管理员身份运行，仍保留本地代理）</span>
-        </label>
-        <div class="form-group">
-          <span class="form-label">按 VPN 下发的资源添加路由；相同前缀优先使用 EasyConnect，更具体的路由保持优先。</span>
-        </div>
 
         <div class="form-group">
           <label class="form-label">出口物理网卡</label>
@@ -326,6 +327,8 @@ function formatSeconds(sec) {
 
 const profileSelect = document.getElementById('profile-select');
 const btnToggle = document.getElementById('btn-toggle');
+const tunModeToggle = document.getElementById('tun-mode-toggle');
+const tunModeNote = document.getElementById('tun-mode-note');
 const btnLabel = document.getElementById('btn-label');
 const uptimeDisplay = document.getElementById('uptime-display');
 const stateWord = document.getElementById('state-word');
@@ -370,7 +373,6 @@ const formEnable2FA = document.getElementById('form-enable-2fa');
 const formTotpContainer = document.getElementById('form-totp-container');
 const formTotp = document.getElementById('form-totp');
 const formNic = document.getElementById('form-nic');
-const formTUNMode = document.getElementById('form-tun-mode');
 const formEnableKeepAlive = document.getElementById('form-enable-keepalive');
 const formKeepAliveContainer = document.getElementById('form-keepalive-container');
 const formKeepAliveUrl = document.getElementById('form-keepalive-url');
@@ -378,6 +380,7 @@ const formDisableKeepAlive = document.getElementById('form-disable-keepalive');
 
 let cachedProfiles = [];
 let activeProfile = null;
+let modeSaving = false;
 let currentStatus = { running: false, state: 'disconnected' };
 let detectedInterfaces = ['以太网', 'WLAN'];
 let lastResourceRows = [];
@@ -459,6 +462,15 @@ function updateStatusUI(status) {
     uptimeDisplay.innerText = '00:00:00';
   }
 
+  tunModeToggle.checked = !!(status.running ? status.tunMode : activeProfile?.tunMode);
+  tunModeToggle.disabled = modeSaving || status.running || !activeProfile;
+  profileSelect.disabled = modeSaving;
+  if (modeSaving) btnToggle.disabled = true;
+  tunModeNote.innerText = modeSaving
+    ? '正在保存设置或等待管理员授权…'
+    : status.running
+      ? '断开连接后可切换模式'
+      : '开启时需要管理员授权；本地代理仍可用';
   updateInfoFields(status);
 }
 
@@ -510,7 +522,6 @@ function openEditModal(profile) {
   formKeepAliveContainer.style.display = formEnableKeepAlive.checked ? 'block' : 'none';
   formDisableKeepAlive.checked = profile ? !!profile.disableKeepAlive : false;
 
-  formTUNMode.checked = !!(profile && profile.tunMode);
   formNic.innerHTML = '';
   const autoOption = document.createElement('option');
   autoOption.value = '';
@@ -566,7 +577,7 @@ document.getElementById('btn-modal-save').addEventListener('click', async () => 
     enable2FA: formEnable2FA.checked,
     totpSecret: formTotp.value.trim(),
     bindInterface: formNic.value,
-    tunMode: formTUNMode.checked,
+    tunMode: !!cachedProfiles.find(profile => profile.id === formId.value.trim())?.tunMode,
     disableZjuConfig: true,
     disableKeepAlive: formDisableKeepAlive.checked,
     keepAliveUrl: formEnableKeepAlive.checked ? formKeepAliveUrl.value.trim() : '',
@@ -585,11 +596,49 @@ document.getElementById('btn-modal-save').addEventListener('click', async () => 
 
 // ---------- 连接 ----------
 
+async function saveTUNMode(enabled) {
+  modeSaving = true;
+  updateStatusUI(currentStatus);
+  let restarting = false;
+  try {
+    restarting = await window.go.main.App.SetTUNMode(enabled);
+    if (restarting) {
+      tunModeToggle.checked = enabled;
+      tunModeNote.innerText = '授权成功，正在以管理员身份重新启动…';
+      return true;
+    }
+    await refreshProfiles();
+    return false;
+  } finally {
+    if (!restarting) {
+      modeSaving = false;
+      updateStatusUI(currentStatus);
+    }
+  }
+}
+
+tunModeToggle.addEventListener('change', async () => {
+  const enabled = tunModeToggle.checked;
+  try {
+    await saveTUNMode(enabled);
+  } catch (err) {
+    showToast(String(err));
+  }
+});
+
 btnToggle.addEventListener('click', async () => {
   if (currentStatus.running) {
     await window.go.main.App.StopVPN();
   } else {
-    updateStatusUI({ running: true, state: 'connecting' });
+    if (activeProfile?.tunMode) {
+      try {
+        if (await saveTUNMode(true)) return;
+      } catch (err) {
+        showToast(String(err));
+        return;
+      }
+    }
+    updateStatusUI({ running: true, state: 'connecting', tunMode: !!activeProfile?.tunMode });
     const res = await window.go.main.App.StartVPN();
     if (res !== 'OK') {
       showToast('[连接失败] ' + res);
