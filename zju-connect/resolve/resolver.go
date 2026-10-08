@@ -422,7 +422,7 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 		}
 	}
 	var err error
-	resolver.IPPool, err = ippool.NewIPPool[[]client.DomainResource]("198.18.0.0/16")
+	resolver.IPPool, err = ippool.NewIPPool[[]client.DomainResource]("198.19.192.0/18")
 	if err != nil {
 		log.Fatalf("Create Fake IP Pool failed: %v", err)
 	}

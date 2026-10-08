@@ -31,8 +31,8 @@ import (
 )
 
 const tunName = "EasyConnect Suite"
-const tunPrefix = "198.18.255.1/30"
-const tunDNS = "198.18.255.2"
+const tunPrefix = "198.19.128.1/30"
+const tunDNS = "198.19.128.2"
 const nrptTag = "EasyConnectSuite resource TUN"
 
 type tunIngress struct {
