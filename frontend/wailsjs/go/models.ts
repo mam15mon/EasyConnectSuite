@@ -94,6 +94,8 @@ export namespace main {
 	
 	export class VPNStatus {
 	    running: boolean;
+	    stage: string;
+	    message: string;
 	    state: string;
 	    activeProfile: string;
 	    clientIp: string;
@@ -111,6 +113,8 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.running = source["running"];
+	        this.stage = source["stage"];
+	        this.message = source["message"];
 	        this.state = source["state"];
 	        this.activeProfile = source["activeProfile"];
 	        this.clientIp = source["clientIp"];
