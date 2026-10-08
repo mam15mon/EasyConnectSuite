@@ -32,20 +32,3 @@ func TestExistingProfilesStayInProxyMode(t *testing.T) {
 		t.Fatal("lost explicit interface binding")
 	}
 }
-
-func TestTUNDNSDomainsPersistAndDoNotAddProxyPermissions(t *testing.T) {
-	app := tunModeTestApp(t)
-	app.SaveProfile(Profile{ID: "second", TUNMode: true, TUNDNSDomains: []string{"one.console.res.zb-chinatower.com"}})
-	profile := readTUNTestConfig(t, app).Profiles[1]
-	conf := app.buildEngineConfig(profile)
-	if len(conf.TUNDNSDomains) != 1 || conf.TUNDNSDomains[0] != "one.console.res.zb-chinatower.com" {
-		t.Fatal("lost supplemental DNS domain after saving the profile")
-	}
-	if len(conf.CustomProxyDomain) != 0 || conf.ProxyAll {
-		t.Fatal("DNS configuration added VPN permissions")
-	}
-	conf.TUNDNSDomains[0] = "changed.example"
-	if profile.TUNDNSDomains[0] != "one.console.res.zb-chinatower.com" {
-		t.Fatal("engine configuration shares the saved DNS domain slice")
-	}
-}

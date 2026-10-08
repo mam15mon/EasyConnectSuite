@@ -265,12 +265,6 @@ app.innerHTML = `
           <input type="text" class="form-input" id="form-totp" placeholder="例如 JBSWY3DPEHPK3PXP" />
         </div>
 
-        <div class="form-group">
-          <label class="form-label">补充 TUN DNS 域名（逗号分隔）</label>
-          <input type="text" class="form-input" id="form-tun-dns-domains" placeholder="例如：app.internal.example" />
-          <div class="form-hint">这些域名及其子域名使用 VPN DNS，连接时生效。</div>
-        </div>
-
         <label class="toggle-row">
           <input type="checkbox" id="form-enable-keepalive" />
           <span>自定义会话保活地址（默认使用内置轻量探测）</span>
@@ -383,7 +377,6 @@ const formEnableKeepAlive = document.getElementById('form-enable-keepalive');
 const formKeepAliveContainer = document.getElementById('form-keepalive-container');
 const formKeepAliveUrl = document.getElementById('form-keepalive-url');
 const formDisableKeepAlive = document.getElementById('form-disable-keepalive');
-const formTUNDNSDomains = document.getElementById('form-tun-dns-domains');
 
 let cachedProfiles = [];
 let activeProfile = null;
@@ -528,7 +521,6 @@ function openEditModal(profile) {
   formKeepAliveUrl.value = (profile && profile.keepAliveUrl) ? profile.keepAliveUrl : '';
   formKeepAliveContainer.style.display = formEnableKeepAlive.checked ? 'block' : 'none';
   formDisableKeepAlive.checked = profile ? !!profile.disableKeepAlive : false;
-  formTUNDNSDomains.value = (profile?.tunDnsDomains || []).join(', ');
 
   formNic.innerHTML = '';
   const autoOption = document.createElement('option');
@@ -586,7 +578,6 @@ document.getElementById('btn-modal-save').addEventListener('click', async () => 
     totpSecret: formTotp.value.trim(),
     bindInterface: formNic.value,
     tunMode: !!cachedProfiles.find(profile => profile.id === formId.value.trim())?.tunMode,
-    tunDnsDomains: formTUNDNSDomains.value.split(/[,，\n]/).map(domain => domain.trim()).filter(Boolean),
     disableZjuConfig: true,
     disableKeepAlive: formDisableKeepAlive.checked,
     keepAliveUrl: formEnableKeepAlive.checked ? formKeepAliveUrl.value.trim() : '',

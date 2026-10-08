@@ -101,11 +101,7 @@ func (m *routeManager) close() error {
 
 func dnsNamespaces(policy *connectionPolicy) []string {
 	set := make(map[string]bool)
-	domains := append([]string(nil), policy.dnsDomains...)
 	for domain := range policy.domains {
-		domains = append(domains, domain)
-	}
-	for _, domain := range domains {
 		domain = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
 		wildcard := strings.HasPrefix(domain, "*.") || strings.HasPrefix(domain, ".")
 		domain = strings.TrimPrefix(strings.TrimPrefix(domain, "*"), ".")

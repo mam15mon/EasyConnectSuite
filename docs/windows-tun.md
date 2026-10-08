@@ -22,16 +22,7 @@ Wintun 由现有 sing-tun 依赖内嵌，本实现无需另外放置 `wintun.dll
 
 ## 域名与 DNS
 
-为 VPN 下发的域名、固定解析名称以及节点配置中的“补充 TUN DNS 域名”添加带有 `EasyConnectSuite resource TUN` 标记的 Windows NRPT 规则，指向虚拟 DNS `198.18.255.2`。DNS 通过 TUN 内部处理，无需占用本机的 `53` 端口。
-
-如果内网 IP 可访问，但域名报 `ERR_NAME_NOT_RESOLVED`，先比较系统解析和虚拟 DNS：
-
-```powershell
-Resolve-DnsName one.console.res.zb-chinatower.com -Type A -DnsOnly
-Resolve-DnsName one.console.res.zb-chinatower.com -Type A -Server 198.18.255.2 -DnsOnly
-```
-
-虚拟 DNS 成功而系统解析失败，说明该域名没有命中现有 DNS 规则。编辑当前节点，在“补充 TUN DNS 域名”中填入该完整域名（多个域名用逗号分隔），保存后断开并重新连接。仅填写域名，不带 `https://` 或路径；该域名及其子域名会使用 VPN DNS。补充 DNS 不会增加域名访问权限或扩大 IP 资源范围，目标 IP 和端口仍需在服务器授权列表中。配置随节点保存，重登录时重新应用，断开时一起清理。
+仅为 VPN 下发的域名与固定解析名称添加带有 `EasyConnectSuite resource TUN` 标记的 Windows NRPT 规则，指向虚拟 DNS `198.18.255.2`。DNS 通过 TUN 内部处理，无需占用本机的 `53` 端口。
 
 域名解析结果已经属于服务器 IP 资源范围时，保留原资源路由的前缀；仅域名资源、且没有相应 IP 资源路由时，才添加解析地址的 `/32` 路由。端口和 TCP/UDP 权限继续由 VPN 引擎校验。匹配失败不会再次直连同一个 TUN 路由。
 

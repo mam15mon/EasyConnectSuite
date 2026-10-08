@@ -34,7 +34,6 @@ export namespace main {
 	    totpSecret: string;
 	    bindInterface: string;
 	    tunMode: boolean;
-	    tunDnsDomains: string[];
 	    disableZjuConfig: boolean;
 	    disableKeepAlive: boolean;
 	    keepAliveUrl: string;
@@ -55,7 +54,6 @@ export namespace main {
 	        this.totpSecret = source["totpSecret"];
 	        this.bindInterface = source["bindInterface"];
 	        this.tunMode = source["tunMode"];
-	        this.tunDnsDomains = source["tunDnsDomains"];
 	        this.disableZjuConfig = source["disableZjuConfig"];
 	        this.disableKeepAlive = source["disableKeepAlive"];
 	        this.keepAliveUrl = source["keepAliveUrl"];
