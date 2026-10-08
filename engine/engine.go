@@ -39,6 +39,7 @@ const (
 )
 
 type Status struct {
+	Stage    string
 	Phase    string
 	Message  string
 	ClientIP string
@@ -111,7 +112,7 @@ func Start(opts Options) (*Engine, error) {
 	// as shut down; clear it so this run can register its hooks.
 	lifecycle.ResetTerminalFuncs()
 
-	e.emitStatus(PhaseConnecting, "初始化网络...")
+	e.emitProgress("准备中", "正在初始化网络…")
 
 	underlayDialer, err := underlay.New(underlay.Options{
 		InterfaceName:  conf.BindInterface,
@@ -145,7 +146,7 @@ func Start(opts Options) (*Engine, error) {
 	})
 
 	log.Printf("VPN protocol: %s", conf.Protocol)
-	e.emitStatus(PhaseConnecting, "登录 VPN 服务器...")
+	e.emitProgress("认证中", "正在验证账号并登录 VPN 服务器…")
 
 	if err := vpnClient.Setup(); err != nil {
 		vpnClient.Close()
@@ -162,7 +163,7 @@ func Start(opts Options) (*Engine, error) {
 		return underlayDialer.Close()
 	})
 
-	e.emitStatus(PhaseConnecting, "创建虚拟网络栈...")
+	e.emitProgress("建立隧道", "认证已通过，正在创建 VPN 网络栈…")
 
 	// The GUI always uses the gVisor L3 stack (upstream default).
 	vpnStack, err := gvisor.NewStack(vpnClient)
@@ -173,6 +174,7 @@ func Start(opts Options) (*Engine, error) {
 	}
 
 	e.registerTerminal("CloseVPNStack", func(ctx context.Context) error { return vpnStack.Close() })
+	e.emitProgress("加载资源", "正在加载 VPN 资源和访问规则…")
 	policy, err := loadPolicy(conf, vpnClient, vpnStack)
 	if err != nil {
 		return nil, err
@@ -231,14 +233,14 @@ func Start(opts Options) (*Engine, error) {
 	vpnStack.SetupFatalHandler(e.handleTunnelFatal)
 	e.goWithRecovery("gvisor stack Run", func() { vpnStack.Run() })
 	if conf.TUNMode {
-		e.emitStatus(PhaseConnecting, "创建资源 TUN 并配置路由...")
-		ingress, err := startTUN(&e.router, policy)
+		ingress, err := startTUN(&e.router, policy, e.emitProgress)
 		if err != nil {
 			return nil, fmt.Errorf("TUN 启动失败: %w", err)
 		}
 		e.tun.Store(ingress)
 		e.registerTerminal("CloseTUNIngress", func(ctx context.Context) error { return ingress.Close() })
 	}
+	e.emitProgress("启动代理", "正在启动本地 SOCKS5 / HTTP 代理…")
 	vpnDialer := &e.router
 	vpnResolver := &e.router
 	useRemoteDNS := policy.useRemoteDNS
@@ -413,6 +415,11 @@ func (e *Engine) execTerminal() {
 
 func (e *Engine) registerTerminal(name string, f lifecycle.TerminalFunc) {
 	lifecycle.RegisterTerminalFunc(name, f)
+}
+
+func (e *Engine) emitProgress(stage, message string) {
+	log.Printf("VPN startup [%s]: %s", stage, message)
+	e.emitStatusFull(Status{Phase: PhaseConnecting, Stage: stage, Message: message})
 }
 
 func (e *Engine) emitStatus(phase, message string) {

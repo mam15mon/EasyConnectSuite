@@ -43,6 +43,8 @@ type AppConfig struct {
 // VPNStatus contains current connection status
 type VPNStatus struct {
 	Running       bool   `json:"running"`
+	Stage         string `json:"stage"`
+	Message       string `json:"message"`
 	State         string `json:"state"` // "disconnected", "connecting", "connected", "error"
 	ActiveProfile string `json:"activeProfile"`
 	ClientIP      string `json:"clientIp"`
@@ -314,6 +316,8 @@ func (a *App) StartVPN() string {
 	a.status = VPNStatus{
 		Running:       true,
 		State:         "connecting",
+		Stage:         "准备中",
+		Message:       "正在准备连接…",
 		ActiveProfile: profile.Name,
 		TUNMode:       profile.TUNMode,
 		SocksPort:     "1080",
@@ -349,6 +353,8 @@ func (a *App) StartVPN() string {
 		a.startTime = time.Time{}
 		a.status.Running = false
 		a.status.State = "error"
+		a.status.Stage = ""
+		a.status.Message = err.Error()
 		a.status.LastError = err.Error()
 		a.syncTrayTooltipLocked()
 		if a.ctx != nil {
@@ -425,15 +431,19 @@ func (a *App) handleEngineStatus(s engine.Status) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	a.status.Stage = s.Stage
+	a.status.Message = s.Message
 	switch s.Phase {
 	case engine.PhaseConnecting:
 		a.status.Running = true
 		a.status.State = "connecting"
+		a.status.LastError = ""
 
 	case engine.PhaseReconnecting:
 		a.status.Running = true
 		a.status.State = "connecting"
-		a.status.LastError = s.Message
+		a.status.Stage = "重连中"
+		a.status.LastError = ""
 
 	case engine.PhaseConnected:
 		a.status.Running = true
@@ -479,7 +489,7 @@ func (a *App) syncTrayTooltipLocked() {
 				tip = fmt.Sprintf("EasyConnect VPN\n已连接: %s", a.status.ActiveProfile)
 			}
 		} else {
-			tip = fmt.Sprintf("EasyConnect VPN\n握手中: %s...", a.status.ActiveProfile)
+			tip = fmt.Sprintf("EasyConnect VPN\n%s: %s", a.status.Stage, a.status.ActiveProfile)
 		}
 	} else {
 		tip = "EasyConnect VPN (未连接)"

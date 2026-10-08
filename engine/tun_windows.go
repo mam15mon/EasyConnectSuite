@@ -55,7 +55,7 @@ type tunIngress struct {
 // sing-tun already embeds Wintun. The ingress converts TCP/UDP flows into
 // calls to our existing VPN dialer, so gVisor reconnect and IP updates remain
 // shared with SOCKS5. It never changes the system's default route.
-func startTUN(router *policyRouter, policy *connectionPolicy) (_ *tunIngress, err error) {
+func startTUN(router *policyRouter, policy *connectionPolicy, progress func(string, string)) (_ *tunIngress, err error) {
 	if !windows.GetCurrentProcessToken().IsElevated() {
 		return nil, fmt.Errorf("请以管理员身份运行 EasyConnectGUI 后启用 TUN")
 	}
@@ -66,6 +66,7 @@ func startTUN(router *policyRouter, policy *connectionPolicy) (_ *tunIngress, er
 			_ = t.Close()
 		}
 	}()
+	progress("创建 TUN", "正在创建 TUN 虚拟网卡…")
 	prefix := netip.MustParsePrefix(tunPrefix)
 	t.device, err = stun.New(stun.Options{Name: tunName, Inet4Address: []netip.Prefix{prefix}, MTU: 1400, AutoRoute: false, StrictRoute: false, Logger: tunLogger{}})
 	if err != nil {
@@ -77,6 +78,7 @@ func startTUN(router *policyRouter, policy *connectionPolicy) (_ *tunIngress, er
 	}
 	t.backend = &windowsRoutes{index: iface.Index}
 	t.routes = newRouteManager(t.backend)
+	progress("配置网卡", "正在配置 TUN 网卡和接口优先级…")
 	if err = t.backend.configure(); err != nil {
 		return nil, err
 	}
@@ -87,10 +89,9 @@ func startTUN(router *policyRouter, policy *connectionPolicy) (_ *tunIngress, er
 	if err = t.stack.Start(); err != nil {
 		return nil, err
 	}
-	if err = t.Update(policy); err != nil {
-		return nil, err
-	}
-	if err = t.RefreshDNS(policy); err != nil {
+	progress("识别 DNS", "正在通过 VPN DNS 识别内网域名区域…")
+	names := discoverDNSNamespaces(t.ctx, policy)
+	if err = t.update(policy, names, progress); err != nil {
 		return nil, err
 	}
 	log.Printf("TUN ready: %s; route metric 0, interface metric 0; DNS %s", tunName, tunDNS)
@@ -98,6 +99,10 @@ func startTUN(router *policyRouter, policy *connectionPolicy) (_ *tunIngress, er
 }
 
 func (t *tunIngress) Update(policy *connectionPolicy) error {
+	return t.update(policy, dnsNamespaces(policy), nil)
+}
+
+func (t *tunIngress) update(policy *connectionPolicy, names []string, progress func(string, string)) error {
 	prefixes, err := resourcePrefixes(policy.ips)
 	if err != nil {
 		return err
@@ -115,14 +120,21 @@ func (t *tunIngress) Update(policy *connectionPolicy) error {
 	if t.closed {
 		return errors.New("TUN closed")
 	}
+	if progress != nil {
+		progress("配置路由", fmt.Sprintf("正在配置 %d 条 VPN 资源路由…", len(prefixes)))
+	}
 	if err := t.routes.replace(prefixes); err != nil {
 		return err
 	}
-	if err := t.backend.setDNS(dnsNamespaces(policy)); err != nil {
+	if progress != nil {
+		progress("配置 DNS", "正在应用 VPN 分域 DNS 规则…")
+	}
+	if err := t.backend.setDNS(names); err != nil {
 		return err
 	}
 	t.bindings = make(map[netip.Addr][]client.DomainResource)
 	t.policy = policy
+	log.Printf("TUN DNS namespaces: %s", strings.Join(names, ", "))
 	return nil
 }
 
@@ -468,15 +480,17 @@ try {
       Get-DnsClientNrptRule | Where-Object { $_.Comment -eq $p.tag } | ForEach-Object { Remove-DnsClientNrptRule -Name $_.Name -Force }
     }
     'routes' {
+      $existingRoutes = @(Get-NetRoute -InterfaceIndex $p.index -PolicyStore ActiveStore -ErrorAction SilentlyContinue)
+      $existing = @{}
+      foreach ($route in $existingRoutes) { $existing[$route.DestinationPrefix] = $true }
       foreach ($prefix in $p.add) {
-        $existing = @(Get-NetRoute -InterfaceIndex $p.index -DestinationPrefix $prefix -PolicyStore ActiveStore -ErrorAction SilentlyContinue)
-        if ($existing.Count -eq 0) {
+        if (-not $existing.ContainsKey($prefix)) {
           New-NetRoute -InterfaceIndex $p.index -DestinationPrefix $prefix -NextHop '0.0.0.0' -RouteMetric 0 -PolicyStore ActiveStore | Out-Null
           $added += $prefix
         }
       }
       foreach ($prefix in $p.remove) {
-        Get-NetRoute -InterfaceIndex $p.index -DestinationPrefix $prefix -NextHop '0.0.0.0' -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false
+        $existingRoutes | Where-Object { $_.DestinationPrefix -eq $prefix -and $_.NextHop -eq '0.0.0.0' } | Remove-NetRoute -Confirm:$false
         $removed += $prefix
       }
     }

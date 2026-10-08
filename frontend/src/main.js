@@ -404,7 +404,7 @@ formDisableKeepAlive.addEventListener('change', () => {
 
 const STATE_WORDS = {
   connected: '已连接',
-  connecting: '握手中',
+  connecting: '连接中',
   disconnected: '未连接',
   error: '连接出错',
 };
@@ -435,7 +435,7 @@ function updateInfoFields(status) {
 function updateStatusUI(status) {
   currentStatus = status;
   document.body.dataset.state = status.state;
-  const word = STATE_WORDS[status.state] || '未连接';
+  const word = status.state === 'connecting' ? status.stage : STATE_WORDS[status.state];
   stateWord.innerText = word;
   topStateWord.innerText = word;
 
@@ -446,9 +446,9 @@ function updateStatusUI(status) {
       ? 'TUN 已连接，按 VPN 资源分流；本地 SOCKS5 / HTTP 代理仍可使用'
       : 'VPN 通道工作正常，流量经本地代理端口直接转发';
   } else if (status.state === 'connecting') {
-    btnLabel.innerText = '正在握手…';
+    btnLabel.innerText = status.stage + '…';
     btnToggle.disabled = true;
-    stateNote.innerText = status.lastError || '正在发起认证并协商加密隧道，请稍候…';
+    stateNote.innerText = status.message;
   } else if (status.state === 'error') {
     btnLabel.innerText = '重新建立';
     btnToggle.disabled = false;
@@ -638,7 +638,7 @@ btnToggle.addEventListener('click', async () => {
         return;
       }
     }
-    updateStatusUI({ running: true, state: 'connecting', tunMode: !!activeProfile?.tunMode });
+    updateStatusUI({ running: true, state: 'connecting', stage: '准备中', message: '正在准备连接…', tunMode: !!activeProfile?.tunMode });
     const res = await window.go.main.App.StartVPN();
     if (res !== 'OK') {
       showToast('[连接失败] ' + res);
