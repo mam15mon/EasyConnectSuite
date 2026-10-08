@@ -22,11 +22,15 @@ Wintun 由现有 sing-tun 依赖内嵌，本实现无需另外放置 `wintun.dll
 
 ## 域名与 DNS
 
-仅为 VPN 下发的域名与固定解析名称添加带有 `EasyConnectSuite resource TUN` 标记的 Windows NRPT 规则，指向虚拟 DNS `198.18.255.2`。DNS 通过 TUN 内部处理，无需占用本机的 `53` 端口。
+连接时自动为 VPN 下发的所有域名与固定解析名称添加带有 `EasyConnectSuite resource TUN` 标记的 Windows NRPT 规则，指向虚拟 DNS `198.18.255.2`。DNS 通过 TUN 内部处理，无需占用本机的 `53` 端口。
+
+程序还通过该 VPN 的 DNS 查询资源域名的 SOA 记录，自动识别其所属 DNS 区域，将区域及其子域名交给当前 VPN 解析。例如服务器只下发 `asc.res.zb-chinatower.com`，但 VPN DNS 返回所属区域 `res.zb-chinatower.com`，则 `one.console.res.zb-chinatower.com` 也会自动使用同一 VPN DNS，无需手动填写或修改 hosts。区域信息仅用于选择 DNS，不会增加资源访问权限。未返回有效 SOA 时不扩展对应区域；查询错误记录到日志。
+
+程序不通过截断域名来猜测区域，也不会添加根域、公共后缀或全局 DNS 规则。只修改本程序标记的规则；aTrust 的更具体域名策略仍按 Windows 的匹配规则选择，Clash 和其他域名的原有 DNS 设置保持原样。两个 VPN 若配置了完全相同的域名，则需要明确归属，单凭域名不能同时分配给两个 DNS。
 
 域名解析结果已经属于服务器 IP 资源范围时，保留原资源路由的前缀；仅域名资源、且没有相应 IP 资源路由时，才添加解析地址的 `/32` 路由。端口和 TCP/UDP 权限继续由 VPN 引擎校验。匹配失败不会再次直连同一个 TUN 路由。
 
-重登录后重新获取资源、替换路由与域名解析规则。断开时关闭 TUN 和活动连接，撤销本程序创建的路由与标记规则。
+重登录后重新获取资源、替换路由与域名解析规则，在 L3 隧道重建完成后重新查询 DNS 区域。断开时关闭 TUN 和活动连接，撤销本程序创建的路由与标记规则。
 
 本模式目前支持 IPv4 TCP/UDP。ICMP/ping 不作为连通性验证依据；IPv6 资源不经此 TUN。浏览器或应用自带的 DNS-over-HTTPS 可能绕过 Windows 域名策略，应使用系统 DNS 或显式 SOCKS5 访问内网域名。原有更具体的 NRPT 策略也可能影响 DNS 选择。
 

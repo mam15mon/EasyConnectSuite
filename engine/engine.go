@@ -215,6 +215,13 @@ func Start(opts Options) (*Engine, error) {
 	})
 	vpnStack.SetupRecovered(func() {
 		policy := e.router.current.Load()
+		if ingress := e.tun.Load(); ingress != nil {
+			e.goWithRecovery("TUN DNS zone refresh", func() {
+				if err := ingress.RefreshDNS(policy); err != nil {
+					log.Printf("TUN DNS zone refresh failed: %v", err)
+				}
+			})
+		}
 		clientIP := ""
 		if ip, err := vpnClient.IP(); err == nil {
 			clientIP = ip.String()

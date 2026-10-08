@@ -90,6 +90,9 @@ func startTUN(router *policyRouter, policy *connectionPolicy) (_ *tunIngress, er
 	if err = t.Update(policy); err != nil {
 		return nil, err
 	}
+	if err = t.RefreshDNS(policy); err != nil {
+		return nil, err
+	}
 	log.Printf("TUN ready: %s; route metric 0, interface metric 0; DNS %s", tunName, tunDNS)
 	return t, nil
 }
@@ -120,6 +123,22 @@ func (t *tunIngress) Update(policy *connectionPolicy) error {
 	}
 	t.bindings = make(map[netip.Addr][]client.DomainResource)
 	t.policy = policy
+	return nil
+}
+
+// Refresh after the VPN read loop is running, and after a replacement L3
+// tunnel is installed. DNS queries cannot complete inside the relogin callback.
+func (t *tunIngress) RefreshDNS(policy *connectionPolicy) error {
+	names := discoverDNSNamespaces(t.ctx, policy)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed || t.policy != policy {
+		return nil
+	}
+	if err := t.backend.setDNS(names); err != nil {
+		return err
+	}
+	log.Printf("TUN DNS namespaces: %s", strings.Join(names, ", "))
 	return nil
 }
 
