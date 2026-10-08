@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 	"sync/atomic"
 
 	"github.com/mythologyli/zju-connect/client"
@@ -26,6 +27,7 @@ type connectionPolicy struct {
 	ips          []client.IPResource
 	domains      client.DomainResources
 	dnsRecords   map[string][]net.IP
+	dnsDomains   []string
 	dnsName      string
 	useRemoteDNS bool
 	entries      []ResourceEntry
@@ -67,6 +69,16 @@ func (r *policyRouter) RemoteTCPResolver() (*net.Resolver, error) {
 }
 
 func loadPolicy(conf configs.Config, c client.Client, vpnStack stack.Stack) (*connectionPolicy, error) {
+	var dnsDomains []string
+	if conf.TUNMode {
+		for _, domain := range conf.TUNDNSDomains {
+			domain = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
+			if !validDomain(domain) {
+				return nil, fmt.Errorf("补充 TUN DNS 域名无效：%q（请填写域名，不要带协议或路径）", domain)
+			}
+			dnsDomains = append(dnsDomains, domain)
+		}
+	}
 	ips, ipErr := c.IPResources()
 	domains, domainErr := c.DomainResources()
 	records, _ := c.DNSResource()
@@ -115,7 +127,7 @@ func loadPolicy(conf configs.Config, c client.Client, vpnStack stack.Stack) (*co
 			resolver.SetPermanentDNS(record.HostName, ip)
 		}
 	}
-	p := &connectionPolicy{stack: vpnStack, resolver: resolver, ips: ips, domains: domains, dnsRecords: records, dnsName: remote, useRemoteDNS: useRemote}
+	p := &connectionPolicy{stack: vpnStack, resolver: resolver, ips: ips, domains: domains, dnsRecords: records, dnsDomains: dnsDomains, dnsName: remote, useRemoteDNS: useRemote}
 	p.dialer = dial.NewDialer(vpnStack, resolver, ips, conf.ProxyAll, conf.DialDirectProxy)
 	// A miss on a TUN route must fail rather than dial DIRECT back into the
 	// same system route. SOCKS5 keeps its existing selective routing behavior.

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/configs"
 )
 
 type fakeRoutes struct {
@@ -123,5 +124,31 @@ func TestDNSNamespacesStayScoped(t *testing.T) {
 	want := []string{".apps.example", ".corp.example", "corp.example", "host.internal"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("namespaces = %v", got)
+	}
+}
+
+func TestSupplementalTUNDNSDomainCoversMissingConsoleWithoutBroadeningZone(t *testing.T) {
+	policy := &connectionPolicy{
+		domains:    client.DomainResources{"asc.res.zb-chinatower.com": nil},
+		dnsDomains: []string{"one.console.res.zb-chinatower.com", "one.console.res.zb-chinatower.com"},
+	}
+	want := []string{
+		".asc.res.zb-chinatower.com", ".one.console.res.zb-chinatower.com",
+		"asc.res.zb-chinatower.com", "one.console.res.zb-chinatower.com",
+	}
+	if got := dnsNamespaces(policy); !reflect.DeepEqual(got, want) {
+		t.Fatalf("namespaces = %v, want %v", got, want)
+	}
+	if len(policy.domains) != 1 {
+		t.Fatal("supplemental DNS domain changed the server ACL")
+	}
+}
+
+func TestTUNDNSRejectsInvalidDomainsBeforeLoadingResources(t *testing.T) {
+	for _, domain := range []string{".", "*", "*.internal.example", "", "198.18.255.2", "https://app.internal.example/path", "bad;command"} {
+		_, err := loadPolicy(configs.Config{TUNMode: true, TUNDNSDomains: []string{domain}}, nil, nil)
+		if err == nil {
+			t.Fatalf("accepted invalid supplemental DNS domain %q", domain)
+		}
 	}
 }

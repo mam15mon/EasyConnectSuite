@@ -27,6 +27,7 @@ type Config struct {
 	KeepAliveURL        string                 `koanf:"keep_alive_url"`
 	TCPTunnelMode       bool                   `koanf:"tcp_tunnel_mode"`
 	TUNMode             bool                   `koanf:"tun_mode"`
+	TUNDNSDomains       []string               `koanf:"tun_dns_domains"`
 	AddRoute            bool                   `koanf:"add_route"`
 	DNSHijack           bool                   `koanf:"dns_hijack"`
 	ProxyAll            bool                   `koanf:"proxy_all"`

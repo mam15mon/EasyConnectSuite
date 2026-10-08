@@ -19,19 +19,20 @@ import (
 
 // Profile represents a single VPN configuration
 type Profile struct {
-	ID               string `json:"id"`
-	Name             string `json:"name"`
-	Server           string `json:"server"`
-	Port             int    `json:"port"`
-	Username         string `json:"username"`
-	Password         string `json:"password"`
-	Enable2FA        bool   `json:"enable2FA"`
-	TotpSecret       string `json:"totpSecret"`
-	BindInterface    string `json:"bindInterface"`
-	TUNMode          bool   `json:"tunMode"`
-	DisableZjuConfig bool   `json:"disableZjuConfig"`
-	DisableKeepAlive bool   `json:"disableKeepAlive"`
-	KeepAliveURL     string `json:"keepAliveUrl"`
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	Server           string   `json:"server"`
+	Port             int      `json:"port"`
+	Username         string   `json:"username"`
+	Password         string   `json:"password"`
+	Enable2FA        bool     `json:"enable2FA"`
+	TotpSecret       string   `json:"totpSecret"`
+	BindInterface    string   `json:"bindInterface"`
+	TUNMode          bool     `json:"tunMode"`
+	TUNDNSDomains    []string `json:"tunDnsDomains"`
+	DisableZjuConfig bool     `json:"disableZjuConfig"`
+	DisableKeepAlive bool     `json:"disableKeepAlive"`
+	KeepAliveURL     string   `json:"keepAliveUrl"`
 }
 
 // AppConfig stores all profiles and active selection
@@ -387,6 +388,7 @@ func (a *App) buildEngineConfig(profile Profile) configs.Config {
 	conf.BindInterface = profile.BindInterface
 	conf.AutoDetectInterface = profile.BindInterface == ""
 	conf.TUNMode = profile.TUNMode
+	conf.TUNDNSDomains = append([]string(nil), profile.TUNDNSDomains...)
 	conf.AddRoute = profile.TUNMode
 	conf.SocksBind = "127.0.0.1:1080"
 	conf.HTTPBind = "127.0.0.1:1081"
