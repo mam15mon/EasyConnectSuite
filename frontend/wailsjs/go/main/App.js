@@ -34,6 +34,10 @@ export function SetActiveProfile(arg1) {
   return window['go']['main']['App']['SetActiveProfile'](arg1);
 }
 
+export function SetProxyEnabled(arg1) {
+  return window['go']['main']['App']['SetProxyEnabled'](arg1);
+}
+
 export function SetTUNMode(arg1) {
   return window['go']['main']['App']['SetTUNMode'](arg1);
 }

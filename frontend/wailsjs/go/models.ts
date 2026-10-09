@@ -34,6 +34,7 @@ export namespace main {
 	    totpSecret: string;
 	    bindInterface: string;
 	    tunMode: boolean;
+	    disableProxy: boolean;
 	    disableZjuConfig: boolean;
 	    disableKeepAlive: boolean;
 	    keepAliveUrl: string;
@@ -54,6 +55,7 @@ export namespace main {
 	        this.totpSecret = source["totpSecret"];
 	        this.bindInterface = source["bindInterface"];
 	        this.tunMode = source["tunMode"];
+	        this.disableProxy = source["disableProxy"];
 	        this.disableZjuConfig = source["disableZjuConfig"];
 	        this.disableKeepAlive = source["disableKeepAlive"];
 	        this.keepAliveUrl = source["keepAliveUrl"];
@@ -103,6 +105,7 @@ export namespace main {
 	    socksPort: string;
 	    httpPort: string;
 	    tunMode: boolean;
+	    disableProxy: boolean;
 	    duration: number;
 	    lastError: string;
 	
@@ -122,6 +125,7 @@ export namespace main {
 	        this.socksPort = source["socksPort"];
 	        this.httpPort = source["httpPort"];
 	        this.tunMode = source["tunMode"];
+	        this.disableProxy = source["disableProxy"];
 	        this.duration = source["duration"];
 	        this.lastError = source["lastError"];
 	    }
