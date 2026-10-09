@@ -476,7 +476,7 @@ func (e *Engine) startLogCapture() {
 
 // engineLogLimit caps engine.log; one .old generation is kept, so the log
 // directory holds at most ~2x this size forever.
-const engineLogLimit = 8 * 1024 * 1024
+const engineLogLimit = 1 * 1024 * 1024
 
 // rotatingWriter is a size-capped file writer: when the current file
 // reaches limit bytes it is renamed to path+".old" (single generation,
