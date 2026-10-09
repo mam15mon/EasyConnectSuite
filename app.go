@@ -29,6 +29,7 @@ type Profile struct {
 	TotpSecret       string `json:"totpSecret"`
 	BindInterface    string `json:"bindInterface"`
 	TUNMode          bool   `json:"tunMode"`
+	DisableProxy     bool   `json:"disableProxy"`
 	DisableZjuConfig bool   `json:"disableZjuConfig"`
 	DisableKeepAlive bool   `json:"disableKeepAlive"`
 	KeepAliveURL     string `json:"keepAliveUrl"`
@@ -52,6 +53,7 @@ type VPNStatus struct {
 	SocksPort     string `json:"socksPort"`
 	HTTPPort      string `json:"httpPort"`
 	TUNMode       bool   `json:"tunMode"`
+	DisableProxy  bool   `json:"disableProxy"`
 	Duration      int64  `json:"duration"` // uptime seconds
 	LastError     string `json:"lastError"`
 }
@@ -269,6 +271,28 @@ func (a *App) GetStatus() VPNStatus {
 	return a.status
 }
 
+// SetProxyEnabled saves the local proxy setting for the selected profile.
+func (a *App) SetProxyEnabled(enabled bool) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.starting || a.status.Running || a.restarting {
+		return fmt.Errorf("请先断开连接，再切换本地代理")
+	}
+	for i := range a.appConfig.Profiles {
+		if a.appConfig.Profiles[i].ID != a.appConfig.ActiveProfileID {
+			continue
+		}
+		previous := a.appConfig.Profiles[i].DisableProxy
+		a.appConfig.Profiles[i].DisableProxy = !enabled
+		if err := a.saveConfigFile(); err != nil {
+			a.appConfig.Profiles[i].DisableProxy = previous
+			return fmt.Errorf("保存代理配置失败：%w", err)
+		}
+		return nil
+	}
+	return fmt.Errorf("请先选择服务器配置")
+}
+
 // GetInterfaces returns available network adapter names
 func (a *App) GetInterfaces() []string {
 	var result []string
@@ -320,6 +344,7 @@ func (a *App) StartVPN() string {
 		Message:       "正在准备连接…",
 		ActiveProfile: profile.Name,
 		TUNMode:       profile.TUNMode,
+		DisableProxy:  profile.DisableProxy,
 		SocksPort:     "1080",
 		HTTPPort:      "1081",
 	}
@@ -396,6 +421,10 @@ func (a *App) buildEngineConfig(profile Profile) configs.Config {
 	conf.AddRoute = profile.TUNMode
 	conf.SocksBind = "127.0.0.1:1080"
 	conf.HTTPBind = "127.0.0.1:1081"
+	if profile.DisableProxy {
+		conf.SocksBind = ""
+		conf.HTTPBind = ""
+	}
 	conf.DisableZJUConfig = profile.DisableZjuConfig || profile.TUNMode
 
 	if profile.DisableKeepAlive {

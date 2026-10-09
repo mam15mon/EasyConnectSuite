@@ -240,7 +240,9 @@ func Start(opts Options) (*Engine, error) {
 		e.tun.Store(ingress)
 		e.registerTerminal("CloseTUNIngress", func(ctx context.Context) error { return ingress.Close() })
 	}
-	e.emitProgress("启动代理", "正在启动本地 SOCKS5 / HTTP 代理…")
+	if conf.SocksBind != "" || conf.HTTPBind != "" {
+		e.emitProgress("启动代理", "正在启动本地 SOCKS5 / HTTP 代理…")
+	}
 	vpnDialer := &e.router
 	vpnResolver := &e.router
 	useRemoteDNS := policy.useRemoteDNS

@@ -53,9 +53,17 @@ app.innerHTML = `
         <label class="tun-mode-control">
           <span class="tun-mode-copy">
             <span class="tun-mode-title">TUN 模式</span>
-            <span class="tun-mode-note" id="tun-mode-note">自动分流内网流量，保留本地代理</span>
+            <span class="tun-mode-note" id="tun-mode-note">自动分流 VPN 内网流量</span>
           </span>
           <input type="checkbox" id="tun-mode-toggle" role="switch" aria-label="TUN 模式" disabled />
+        </label>
+
+        <label class="tun-mode-control">
+          <span class="tun-mode-copy">
+            <span class="tun-mode-title">本地代理</span>
+            <span class="tun-mode-note" id="proxy-mode-note">SOCKS5 / HTTP，可与 TUN 同时开启</span>
+          </span>
+          <input type="checkbox" id="proxy-mode-toggle" role="switch" aria-label="本地代理" disabled />
         </label>
 
         <div class="master-btn-wrap">
@@ -329,6 +337,8 @@ const profileSelect = document.getElementById('profile-select');
 const btnToggle = document.getElementById('btn-toggle');
 const tunModeToggle = document.getElementById('tun-mode-toggle');
 const tunModeNote = document.getElementById('tun-mode-note');
+const proxyModeToggle = document.getElementById('proxy-mode-toggle');
+const proxyModeNote = document.getElementById('proxy-mode-note');
 const btnLabel = document.getElementById('btn-label');
 const uptimeDisplay = document.getElementById('uptime-display');
 const stateWord = document.getElementById('state-word');
@@ -350,10 +360,10 @@ document.getElementById('item-dns').addEventListener('click', () => {
   copyToClipboard(dnsVal.innerText, '内网 DNS');
 });
 document.getElementById('item-socks').addEventListener('click', () => {
-  copyToClipboard(socksPortVal.innerText, 'SOCKS5 代理');
+  if (socksPortVal.innerText !== '已关闭') copyToClipboard(socksPortVal.innerText, 'SOCKS5 代理');
 });
 document.getElementById('item-http').addEventListener('click', () => {
-  copyToClipboard(httpPortVal.innerText, 'HTTP 代理');
+  if (httpPortVal.innerText !== '已关闭') copyToClipboard(httpPortVal.innerText, 'HTTP 代理');
 });
 document.getElementById('log-path-hint').addEventListener('click', () => {
   copyToClipboard('%APPDATA%\\EasyConnectVPN\\logs', '日志目录');
@@ -412,8 +422,11 @@ const STATE_WORDS = {
 function updateInfoFields(status) {
   if (!status) return;
 
-  if (status.socksPort) socksPortVal.innerText = '127.0.0.1:' + status.socksPort;
-  if (status.httpPort) httpPortVal.innerText = '127.0.0.1:' + status.httpPort;
+  const proxyDisabled = status.running ? status.disableProxy : activeProfile?.disableProxy;
+  socksPortVal.innerText = proxyDisabled ? '已关闭' : '127.0.0.1:' + (status.socksPort || '1080');
+  httpPortVal.innerText = proxyDisabled ? '已关闭' : '127.0.0.1:' + (status.httpPort || '1081');
+  socksPortVal.classList.toggle('pending', !!proxyDisabled);
+  httpPortVal.classList.toggle('pending', !!proxyDisabled);
 
   if (!status.running || status.state === 'disconnected') {
     clientIpVal.innerText = '—';
@@ -443,8 +456,12 @@ function updateStatusUI(status) {
     btnLabel.innerText = '断开隧道';
     btnToggle.disabled = false;
     stateNote.innerText = status.tunMode
-      ? 'TUN 已连接，按 VPN 资源分流；本地 SOCKS5 / HTTP 代理仍可使用'
-      : 'VPN 通道工作正常，流量经本地代理端口直接转发';
+      ? status.disableProxy
+        ? 'TUN 已连接，按 VPN 资源分流；本地代理已关闭'
+        : 'TUN 已连接，按 VPN 资源分流；本地 SOCKS5 / HTTP 代理可使用'
+      : status.disableProxy
+        ? 'VPN 已连接；TUN 和本地代理均已关闭'
+        : 'VPN 通道工作正常，流量经本地代理端口直接转发';
   } else if (status.state === 'connecting') {
     btnLabel.innerText = status.stage + '…';
     btnToggle.disabled = true;
@@ -464,13 +481,18 @@ function updateStatusUI(status) {
 
   tunModeToggle.checked = !!(status.running ? status.tunMode : activeProfile?.tunMode);
   tunModeToggle.disabled = modeSaving || status.running || !activeProfile;
+  proxyModeToggle.checked = !(status.running ? status.disableProxy : activeProfile?.disableProxy);
+  proxyModeToggle.disabled = modeSaving || status.running || !activeProfile;
+  proxyModeNote.innerText = status.running
+    ? '断开连接后可切换本地代理'
+    : 'SOCKS5 / HTTP，可与 TUN 同时开启';
   profileSelect.disabled = modeSaving;
   if (modeSaving) btnToggle.disabled = true;
   tunModeNote.innerText = modeSaving
     ? '正在保存设置或等待管理员授权…'
     : status.running
       ? '断开连接后可切换模式'
-      : '开启时需要管理员授权；本地代理仍可用';
+      : '开启时需要管理员授权';
   updateInfoFields(status);
 }
 
@@ -578,6 +600,7 @@ document.getElementById('btn-modal-save').addEventListener('click', async () => 
     totpSecret: formTotp.value.trim(),
     bindInterface: formNic.value,
     tunMode: !!cachedProfiles.find(profile => profile.id === formId.value.trim())?.tunMode,
+    disableProxy: !!cachedProfiles.find(profile => profile.id === formId.value.trim())?.disableProxy,
     disableZjuConfig: true,
     disableKeepAlive: formDisableKeepAlive.checked,
     keepAliveUrl: formEnableKeepAlive.checked ? formKeepAliveUrl.value.trim() : '',
@@ -626,6 +649,21 @@ tunModeToggle.addEventListener('change', async () => {
   }
 });
 
+proxyModeToggle.addEventListener('change', async () => {
+  const enabled = proxyModeToggle.checked;
+  modeSaving = true;
+  updateStatusUI(currentStatus);
+  try {
+    await window.go.main.App.SetProxyEnabled(enabled);
+    await refreshProfiles();
+  } catch (err) {
+    showToast(String(err));
+  } finally {
+    modeSaving = false;
+    updateStatusUI(currentStatus);
+  }
+});
+
 btnToggle.addEventListener('click', async () => {
   if (currentStatus.running) {
     await window.go.main.App.StopVPN();
@@ -638,7 +676,7 @@ btnToggle.addEventListener('click', async () => {
         return;
       }
     }
-    updateStatusUI({ running: true, state: 'connecting', stage: '准备中', message: '正在准备连接…', tunMode: !!activeProfile?.tunMode });
+    updateStatusUI({ running: true, state: 'connecting', stage: '准备中', message: '正在准备连接…', tunMode: !!activeProfile?.tunMode, disableProxy: !!activeProfile?.disableProxy });
     const res = await window.go.main.App.StartVPN();
     if (res !== 'OK') {
       showToast('[连接失败] ' + res);
