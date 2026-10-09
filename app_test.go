@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"EasyConnectSuite/engine"
@@ -32,6 +34,63 @@ func TestExistingProfilesStayInProxyMode(t *testing.T) {
 	}
 	if conf.AutoDetectInterface || conf.BindInterface != "WLAN" {
 		t.Fatal("lost explicit interface binding")
+	}
+	if profile.DisableProxy || conf.SocksBind == "" || conf.HTTPBind == "" {
+		t.Fatal("disabled proxies for an existing profile")
+	}
+}
+
+func TestProxyAndTUNCanBeConfiguredIndependently(t *testing.T) {
+	for _, tun := range []bool{false, true} {
+		for _, disabled := range []bool{false, true} {
+			conf := (&App{}).buildEngineConfig(Profile{TUNMode: tun, DisableProxy: disabled})
+			if conf.TUNMode != tun || conf.AddRoute != tun {
+				t.Fatal("proxy setting changed TUN mode")
+			}
+			if disabled && (conf.SocksBind != "" || conf.HTTPBind != "") ||
+				!disabled && (conf.SocksBind != "127.0.0.1:1080" || conf.HTTPBind != "127.0.0.1:1081") {
+				t.Fatalf("incorrect proxy listeners: disabled=%v socks=%q http=%q", disabled, conf.SocksBind, conf.HTTPBind)
+			}
+		}
+	}
+}
+
+func TestProxySwitchPersistsOnlySelectedProfile(t *testing.T) {
+	app := &App{configPath: filepath.Join(t.TempDir(), "profiles.json"), appConfig: AppConfig{
+		ActiveProfileID: "second", Profiles: []Profile{{ID: "first"}, {ID: "second", TUNMode: true}},
+	}}
+	for _, enabled := range []bool{false, true} {
+		if err := app.SetProxyEnabled(enabled); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(app.configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var saved AppConfig
+		if err := json.Unmarshal(data, &saved); err != nil {
+			t.Fatal(err)
+		}
+		if saved.Profiles[0].DisableProxy || saved.Profiles[1].DisableProxy == enabled || !saved.Profiles[1].TUNMode {
+			t.Fatalf("incorrect saved settings: %+v", saved.Profiles)
+		}
+	}
+}
+
+func TestProxySwitchRejectsActiveConnectionAndRestoresFailedSave(t *testing.T) {
+	app := &App{configPath: filepath.Join(t.TempDir(), "missing", "profiles.json"), appConfig: AppConfig{
+		ActiveProfileID: "selected", Profiles: []Profile{{ID: "selected"}},
+	}}
+	for _, state := range []string{"starting", "running", "restarting", "save failure"} {
+		app.starting = state == "starting"
+		app.status.Running = state == "running"
+		app.restarting = state == "restarting"
+		if err := app.SetProxyEnabled(false); err == nil {
+			t.Fatalf("accepted switch during %s", state)
+		}
+		if app.appConfig.Profiles[0].DisableProxy {
+			t.Fatalf("changed setting after %s", state)
+		}
 	}
 }
 

@@ -423,8 +423,8 @@ function updateInfoFields(status) {
   if (!status) return;
 
   const proxyDisabled = status.running ? status.disableProxy : activeProfile?.disableProxy;
-  socksPortVal.innerText = proxyDisabled ? '已关闭' : '127.0.0.1:' + (status.socksPort || '1080');
-  httpPortVal.innerText = proxyDisabled ? '已关闭' : '127.0.0.1:' + (status.httpPort || '1081');
+  socksPortVal.innerText = proxyDisabled ? '已关闭' : '127.0.0.1:1080';
+  httpPortVal.innerText = proxyDisabled ? '已关闭' : '127.0.0.1:1081';
   socksPortVal.classList.toggle('pending', !!proxyDisabled);
   httpPortVal.classList.toggle('pending', !!proxyDisabled);
 
