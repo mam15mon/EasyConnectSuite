@@ -451,12 +451,6 @@ func (w *windowsRoutes) run(payload any) (routeResult, error) {
 	return result, nil
 }
 
-func (w *windowsRoutes) Apply(add, remove []string) (routeResult, error) {
-	if len(add) == 0 && len(remove) == 0 {
-		return routeResult{}, nil
-	}
-	return w.run(map[string]any{"action": "routes", "index": w.index, "add": add, "remove": remove})
-}
 func (w *windowsRoutes) configure() error {
 	_, err := w.run(map[string]any{"action": "configure", "index": w.index, "tag": nrptTag})
 	return err
@@ -478,21 +472,6 @@ try {
       Set-NetIPInterface -InterfaceIndex $p.index -AddressFamily IPv4 -AutomaticMetric Disabled -InterfaceMetric 0
       Set-DnsClientServerAddress -InterfaceIndex $p.index -ResetServerAddresses
       Get-DnsClientNrptRule | Where-Object { $_.Comment -eq $p.tag } | ForEach-Object { Remove-DnsClientNrptRule -Name $_.Name -Force }
-    }
-    'routes' {
-      $existingRoutes = @(Get-NetRoute -InterfaceIndex $p.index -PolicyStore ActiveStore -ErrorAction SilentlyContinue)
-      $existing = @{}
-      foreach ($route in $existingRoutes) { $existing[$route.DestinationPrefix] = $true }
-      foreach ($prefix in $p.add) {
-        if (-not $existing.ContainsKey($prefix)) {
-          New-NetRoute -InterfaceIndex $p.index -DestinationPrefix $prefix -NextHop '0.0.0.0' -RouteMetric 0 -PolicyStore ActiveStore | Out-Null
-          $added += $prefix
-        }
-      }
-      foreach ($prefix in $p.remove) {
-        $existingRoutes | Where-Object { $_.DestinationPrefix -eq $prefix -and $_.NextHop -eq '0.0.0.0' } | Remove-NetRoute -Confirm:$false
-        $removed += $prefix
-      }
     }
     'dns' {
       Get-DnsClientNrptRule | Where-Object { $_.Comment -eq $p.tag } | ForEach-Object { Remove-DnsClientNrptRule -Name $_.Name -Force }
