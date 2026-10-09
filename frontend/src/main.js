@@ -50,21 +50,17 @@ app.innerHTML = `
         </div>
         <div class="state-note" id="state-note">通道未建立</div>
 
-        <label class="tun-mode-control">
-          <span class="tun-mode-copy">
+        <div class="mode-controls">
+        <label class="tun-mode-control" id="tun-mode-note" title="开启时需要管理员授权">
             <span class="tun-mode-title">TUN 模式</span>
-            <span class="tun-mode-note" id="tun-mode-note">自动分流 VPN 内网流量</span>
-          </span>
           <input type="checkbox" id="tun-mode-toggle" role="switch" aria-label="TUN 模式" disabled />
         </label>
 
-        <label class="tun-mode-control">
-          <span class="tun-mode-copy">
+        <label class="tun-mode-control" id="proxy-mode-note" title="SOCKS5 / HTTP，可与 TUN 同时开启">
             <span class="tun-mode-title">本地代理</span>
-            <span class="tun-mode-note" id="proxy-mode-note">SOCKS5 / HTTP，可与 TUN 同时开启</span>
-          </span>
           <input type="checkbox" id="proxy-mode-toggle" role="switch" aria-label="本地代理" disabled />
         </label>
+        </div>
 
         <div class="master-btn-wrap">
           <button class="master-switch" id="btn-toggle">
@@ -483,12 +479,12 @@ function updateStatusUI(status) {
   tunModeToggle.disabled = modeSaving || status.running || !activeProfile;
   proxyModeToggle.checked = !(status.running ? status.disableProxy : activeProfile?.disableProxy);
   proxyModeToggle.disabled = modeSaving || status.running || !activeProfile;
-  proxyModeNote.innerText = status.running
+  proxyModeNote.title = status.running
     ? '断开连接后可切换本地代理'
     : 'SOCKS5 / HTTP，可与 TUN 同时开启';
   profileSelect.disabled = modeSaving;
   if (modeSaving) btnToggle.disabled = true;
-  tunModeNote.innerText = modeSaving
+  tunModeNote.title = modeSaving
     ? '正在保存设置或等待管理员授权…'
     : status.running
       ? '断开连接后可切换模式'
@@ -627,7 +623,7 @@ async function saveTUNMode(enabled) {
     restarting = await window.go.main.App.SetTUNMode(enabled);
     if (restarting) {
       tunModeToggle.checked = enabled;
-      tunModeNote.innerText = '授权成功，正在以管理员身份重新启动…';
+      tunModeNote.title = '授权成功，正在以管理员身份重新启动…';
       return true;
     }
     await refreshProfiles();
