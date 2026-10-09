@@ -257,6 +257,10 @@ body[data-state="error"] .top-state-word {
     gap: 16px;
 }
 
+.deck-col-left > .card {
+    flex-shrink: 0;
+}
+
 .deck-col-left::-webkit-scrollbar,
 .deck-col-right::-webkit-scrollbar,
 .route-table::-webkit-scrollbar,
