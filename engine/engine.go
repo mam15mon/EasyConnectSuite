@@ -396,12 +396,16 @@ func (e *Engine) Stop() {
 // kill the process — just clean up and surface the error.
 func (e *Engine) handleTunnelFatal(cause error) {
 	e.fatal.Store(true)
-	e.stopOnce.Do(func() {
-		e.running.Store(false)
-		log.Printf("Tunnel unrecoverable: %v; shutting down", cause)
-		e.execTerminal()
-		e.emitStatus(PhaseError, fmt.Sprintf("连接已断开且自动重连失败: %v", cause))
-		e.stopLogCapture()
+	// WritePackets can invoke this callback while holding a gVisor endpoint
+	// lock. Return before closing the stack, which needs those same locks.
+	e.goWithRecovery("fatal shutdown", func() {
+		e.stopOnce.Do(func() {
+			e.running.Store(false)
+			log.Printf("Tunnel unrecoverable: %v; shutting down", cause)
+			e.execTerminal()
+			e.emitStatus(PhaseError, fmt.Sprintf("连接已断开且自动重连失败: %v", cause))
+			e.stopLogCapture()
+		})
 	})
 }
 
