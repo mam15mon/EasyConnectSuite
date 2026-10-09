@@ -51,15 +51,15 @@ app.innerHTML = `
         <div class="state-note" id="state-note">通道未建立</div>
 
         <div class="mode-controls">
-        <label class="tun-mode-control" id="tun-mode-note" title="开启时需要管理员授权">
+          <label class="tun-mode-control" id="tun-mode-note" title="开启时需要管理员授权">
             <span class="tun-mode-title">TUN 模式</span>
-          <input type="checkbox" id="tun-mode-toggle" role="switch" aria-label="TUN 模式" disabled />
-        </label>
+            <input type="checkbox" id="tun-mode-toggle" role="switch" aria-label="TUN 模式" disabled />
+          </label>
 
-        <label class="tun-mode-control" id="proxy-mode-note" title="SOCKS5 / HTTP，可与 TUN 同时开启">
+          <label class="tun-mode-control" id="proxy-mode-note" title="SOCKS5 / HTTP，可与 TUN 同时开启">
             <span class="tun-mode-title">本地代理</span>
-          <input type="checkbox" id="proxy-mode-toggle" role="switch" aria-label="本地代理" disabled />
-        </label>
+            <input type="checkbox" id="proxy-mode-toggle" role="switch" aria-label="本地代理" disabled />
+          </label>
         </div>
 
         <div class="master-btn-wrap">
@@ -475,6 +475,7 @@ function updateStatusUI(status) {
     uptimeDisplay.innerText = '00:00:00';
   }
 
+  stateNote.title = stateNote.innerText;
   tunModeToggle.checked = !!(status.running ? status.tunMode : activeProfile?.tunMode);
   tunModeToggle.disabled = modeSaving || status.running || !activeProfile;
   proxyModeToggle.checked = !(status.running ? status.disableProxy : activeProfile?.disableProxy);
