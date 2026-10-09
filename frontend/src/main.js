@@ -1,4 +1,5 @@
 import './style.css';
+import { matchesResource } from './resource-filter.mjs';
 
 const PREVIEW = new URLSearchParams(location.search).has('preview');
 
@@ -688,7 +689,7 @@ function renderResources(rows) {
   lastResourceRows = rows || [];
   const keyword = routesFilter.value.trim().toLowerCase();
   const rows2 = keyword
-    ? lastResourceRows.filter(r => String(r.target || r.Target || '').toLowerCase().includes(keyword))
+    ? lastResourceRows.filter(r => matchesResource(r, keyword))
     : lastResourceRows;
 
   if (!lastResourceRows.length) {
