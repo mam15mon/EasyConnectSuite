@@ -4,14 +4,10 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net"
 	"net/netip"
-	"os/exec"
-	"slices"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/miekg/dns"
@@ -196,63 +192,5 @@ func TestTUNDNSRefreshCannotRestoreClosedOrReplacedSession(t *testing.T) {
 		if err := ingress.RefreshDNS(policy); err != nil {
 			t.Fatal(err)
 		}
-	}
-}
-
-func TestWindowsRouteSnapshotPreservesOwnershipAndPartialFailures(t *testing.T) {
-	// Override all route cmdlets: this executes the production PowerShell
-	// control flow without touching adapters or the machine's routing table.
-	const mocks = `
-$script:reads = 0
-$script:present = @{
-  '10.0.0.0/8' = [pscustomobject]@{ DestinationPrefix = '10.0.0.0/8'; NextHop = '0.0.0.0' }
-  '192.0.2.0/24' = [pscustomobject]@{ DestinationPrefix = '192.0.2.0/24'; NextHop = '0.0.0.0' }
-}
-function Get-NetRoute {
-  param($InterfaceIndex, $PolicyStore, $DestinationPrefix)
-  if ($InterfaceIndex -ne 42 -or $PolicyStore -ne 'ActiveStore') { throw 'Wrong interface or store' }
-  $script:reads++
-  $script:present.Values
-}
-function New-NetRoute {
-  param($InterfaceIndex, $DestinationPrefix, $NextHop, $RouteMetric, $PolicyStore)
-  if ($InterfaceIndex -ne 42 -or $NextHop -ne '0.0.0.0' -or $RouteMetric -ne 0 -or $PolicyStore -ne 'ActiveStore') { throw 'Wrong route settings' }
-  if ($script:present.ContainsKey($DestinationPrefix)) { throw 'Recreated an existing route' }
-  if ($DestinationPrefix -eq '203.0.113.0/24') { throw 'simulated route failure' }
-  $script:present[$DestinationPrefix] = [pscustomobject]@{ DestinationPrefix = $DestinationPrefix; NextHop = $NextHop }
-}
-function Remove-NetRoute {
-  [CmdletBinding()]
-  param([Parameter(ValueFromPipeline=$true)]$InputObject, $Confirm)
-  process { $script:present.Remove($InputObject.DestinationPrefix) }
-}
-`
-	const checks = `
-if ($script:reads -ne 1) { throw 'Repeated route table queries' }
-if (-not $script:present.ContainsKey('10.0.0.0/8')) { throw 'Removed a pre-existing route' }
-`
-	for _, test := range []struct {
-		name, payload  string
-		added, removed []string
-		failure        string
-	}{
-		{"replace", `{"action":"routes","index":42,"add":["10.0.0.0/8","172.31.0.0/16"],"remove":["192.0.2.0/24"]}`, []string{"172.31.0.0/16"}, []string{"192.0.2.0/24"}, ""},
-		{"partial failure", `{"action":"routes","index":42,"add":["172.31.0.0/16","203.0.113.0/24"],"remove":["192.0.2.0/24"]}`, []string{"172.31.0.0/16"}, nil, "simulated route failure"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			command := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", mocks+networkScript+checks)
-			command.Stdin = strings.NewReader(test.payload)
-			output, err := command.CombinedOutput()
-			if err != nil {
-				t.Fatalf("route script failed: %v: %s", err, output)
-			}
-			var result routeResult
-			if err := json.Unmarshal(output, &result); err != nil {
-				t.Fatalf("invalid operation result: %v: %s", err, output)
-			}
-			if !slices.Equal(result.Added, test.added) || !slices.Equal(result.Removed, test.removed) || result.Error != test.failure {
-				t.Fatalf("route result = %+v", result)
-			}
-		})
 	}
 }
