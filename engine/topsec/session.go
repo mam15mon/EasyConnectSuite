@@ -115,9 +115,6 @@ func dial(ctx context.Context, opts Options, code string) (*Session, error) {
 	if login.User.NetAccess != "on" || login.User.Algorithm != "standard" || login.User.Protocol != "standard" || login.User.Compress != "off" {
 		return nil, errors.New("TopSAP 数据隧道模式暂不支持")
 	}
-	if login.User.ChangePassword == "on" {
-		return nil, errors.New("TopSAP 网关要求先修改密码")
-	}
 	token := login.User.Token
 	if len(token) == 0 || len(token) >= 256 || strings.ContainsRune(token, 0) {
 		return nil, errProtocol

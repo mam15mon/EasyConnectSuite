@@ -112,12 +112,11 @@ type authParameters struct {
 	TwoWay       string `json:"twoway_auth_switch"`
 }
 type userParameters struct {
-	Token          string `json:"topafasfasfassession_id"`
-	NetAccess      string `json:"netacc"`
-	Algorithm      string `json:"alg"`
-	Protocol       string `json:"protocal"`
-	Compress       string `json:"compress"`
-	ChangePassword string `json:"change_pswd"`
+	Token     string `json:"topafasfasfassession_id"`
+	NetAccess string `json:"netacc"`
+	Algorithm string `json:"alg"`
+	Protocol  string `json:"protocal"`
+	Compress  string `json:"compress"`
 }
 type netParameters struct {
 	IP   string `json:"vip_v4"`
