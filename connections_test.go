@@ -32,6 +32,7 @@ func multiTestApp(t *testing.T) *App {
 }
 func TestConcurrentProfilesRemainIndependent(t *testing.T) {
 	a := multiTestApp(t)
+	a.appConfig.Profiles[1].InsecureSkipVerify = true
 	engines := map[string]*fakeVPNEngine{}
 	start := func(o engine.Options) (vpnEngine, error) {
 		e := &fakeVPNEngine{opts: o}
@@ -54,6 +55,9 @@ func TestConcurrentProfilesRemainIndependent(t *testing.T) {
 	}
 	if engines["a.invalid"].opts.Config.SocksBind == engines["b.invalid"].opts.Config.SocksBind {
 		t.Fatal("shared proxy port")
+	}
+	if engines["a.invalid"].opts.InsecureSkipVerify || !engines["b.invalid"].opts.InsecureSkipVerify {
+		t.Fatal("certificate option crossed profiles or was not propagated")
 	}
 	if !a.GetStatus().Running || len(a.GetConnections()) != 2 {
 		t.Fatal("second connection missing")
@@ -123,10 +127,10 @@ func TestCancelStartingConnectionAndWaitForCleanup(t *testing.T) {
 }
 func TestProtocolAndPortsPersistAndOldProfilesMigrate(t *testing.T) {
 	a := multiTestApp(t)
-	if a.appConfig.Profiles[0].SocksPort != 1080 || a.appConfig.Profiles[1].SocksPort != 1082 {
+	if a.appConfig.Profiles[0].SocksPort != 1080 || a.appConfig.Profiles[1].SocksPort != 1082 || a.appConfig.Profiles[1].InsecureSkipVerify {
 		t.Fatal("incorrect migration")
 	}
-	p, err := a.SaveProfile(Profile{Name: "Uni", Server: "test.invalid", Port: 443, Username: "test", Protocol: "univpn", Domain: "test-domain"})
+	p, err := a.SaveProfile(Profile{Name: "Uni", Server: "test.invalid", Port: 443, Username: "test", Protocol: "univpn", Domain: "test-domain", InsecureSkipVerify: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +141,7 @@ func TestProtocolAndPortsPersistAndOldProfilesMigrate(t *testing.T) {
 	loaded.configPath = a.configPath
 	loaded.loadConfigFile()
 	got := loaded.GetActiveProfile()
-	if got.Protocol != "univpn" || got.Domain != "test-domain" || got.HTTPPort != 1085 {
+	if got.Protocol != "univpn" || got.Domain != "test-domain" || got.HTTPPort != 1085 || !got.InsecureSkipVerify {
 		t.Fatal("lost protocol fields")
 	}
 	conf := a.buildEngineConfig(got)

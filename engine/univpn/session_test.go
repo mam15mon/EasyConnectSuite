@@ -322,6 +322,30 @@ func TestUntrustedCertificateRejected(t *testing.T) {
 	}
 }
 
+func TestExplicitCertificateSkipStillBindsChannelIdentity(t *testing.T) {
+	for _, mismatch := range []bool{false, true} {
+		t.Run(map[bool]string{false: "untrusted same key", true: "different keys"}[mismatch], func(t *testing.T) {
+			g := newGateway(t, false, mismatch)
+			opts := g.options()
+			opts.TLSConfig = &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}
+			s, err := Dial(context.Background(), opts)
+			if mismatch {
+				if s != nil || err == nil || err.Error() != "UniVPN 数据通道证书与控制通道不一致" {
+					t.Fatalf("channel identity check lost: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			if !s.IP().Is4() || len(s.Routes()) == 0 {
+				t.Fatal("untrusted gateway did not finish authentication")
+			}
+		})
+	}
+}
+
 func TestControlLossAndCancellationUnblockPacketRead(t *testing.T) {
 	for _, drop := range []bool{false, true} {
 		t.Run(map[bool]string{false: "cancel", true: "control EOF"}[drop], func(t *testing.T) {

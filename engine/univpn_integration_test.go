@@ -13,6 +13,7 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -316,6 +317,45 @@ func TestUniVPNAdapterAuthenticationRefusalIsTerminal(t *testing.T) {
 	c := integrationClient(t, true)
 	if err := c.Setup(); !errors.Is(err, easyconnect.ErrLoginRejected) {
 		t.Fatalf("lost terminal authentication error: %v", err)
+	}
+}
+
+type certificateTestUnderlay struct{ net.Dialer }
+
+func (*certificateTestUnderlay) ExcludeIP(net.IP) {}
+
+func TestUniVPNAdapterExplicitCertificateSkip(t *testing.T) {
+	for _, skip := range []bool{false, true} {
+		t.Run(map[bool]string{false: "verify by default", true: "explicit skip"}[skip], func(t *testing.T) {
+			server, _ := integrationGateway(t, false)
+			host, portText, err := net.SplitHostPort(server)
+			if err != nil {
+				t.Fatal(err)
+			}
+			port, err := strconv.Atoi(portText)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conf := configs.Default()
+			conf.ServerAddress, conf.ServerPort = host, port
+			conf.Username, conf.Password = "test", "test"
+			c := newUniVPNClient(context.Background(), conf, "", skip, &certificateTestUnderlay{})
+			defer c.Close()
+			err = c.Setup()
+			if skip {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ip, err := c.IP(); err != nil || !ip.Equal(net.ParseIP("10.90.0.2")) {
+					t.Fatal("authentication did not complete", ip, err)
+				}
+			} else {
+				var authorityErr x509.UnknownAuthorityError
+				if !errors.As(err, &authorityErr) {
+					t.Fatal("untrusted certificate was not rejected", err)
+				}
+			}
+		})
 	}
 }
 
