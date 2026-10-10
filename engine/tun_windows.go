@@ -56,10 +56,6 @@ type tunIngress struct {
 // sing-tun already embeds Wintun. The ingress converts TCP/UDP flows into
 // calls to our existing VPN dialer, so gVisor reconnect and IP updates remain
 // shared with SOCKS5. It never changes the system's default route.
-func startTUN(router *policyRouter, policy *connectionPolicy, progress func(string, string)) (*tunIngress, error) {
-	return startTUNSlot(router, policy, progress, 0)
-}
-
 func startTUNSlot(router *policyRouter, policy *connectionPolicy, progress func(string, string), slot int) (_ *tunIngress, err error) {
 	name, prefixText, dnsIP, tag, err := tunIdentity(slot)
 	if err != nil {

@@ -12,7 +12,6 @@ import (
 )
 
 type vpnEngine interface {
-	Running() bool
 	Stop()
 	Resources() []engine.ResourceEntry
 }

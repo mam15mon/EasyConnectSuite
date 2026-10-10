@@ -248,7 +248,7 @@ func (a *App) SetActiveProfile(id string) bool {
 func (a *App) SaveProfile(p Profile) (Profile, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if c := a.connections[p.ID]; c != nil && c.status.Running {
+	if c := a.connections[p.ID]; c != nil && (c.status.Running || c.stopping) {
 		return Profile{}, fmt.Errorf("请先断开该配置再编辑")
 	}
 	if p.Protocol == "" {
@@ -287,6 +287,7 @@ func (a *App) SaveProfile(p Profile) (Profile, error) {
 		a.appConfig = previous
 		return Profile{}, err
 	}
+	delete(a.connections, p.ID)
 	a.selectConnectionLocked()
 	return p, nil
 }
@@ -296,7 +297,7 @@ func (a *App) DeleteProfile(id string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if c := a.connections[id]; c != nil && c.status.Running {
+	if c := a.connections[id]; c != nil && (c.status.Running || c.stopping) {
 		return false
 	}
 	if len(a.appConfig.Profiles) <= 1 {
@@ -315,6 +316,7 @@ func (a *App) DeleteProfile(id string) bool {
 		a.appConfig.ActiveProfileID = newProfiles[0].ID
 	}
 
+	delete(a.connections, id)
 	a.selectConnectionLocked()
 	_ = a.saveConfigFile()
 	return true
@@ -415,15 +417,6 @@ func (a *App) buildEngineConfig(profile Profile) configs.Config {
 		conf.DisableKeepAlive = true
 	}
 	return conf
-}
-
-func (a *App) handleResources(entries []engine.ResourceEntry) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.resources = append([]engine.ResourceEntry(nil), entries...)
-	if a.ctx != nil {
-		runtime.EventsEmit(a.ctx, "vpn-resources", a.resources)
-	}
 }
 
 // GetVPNResources returns the server-authorized resource list of the

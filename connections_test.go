@@ -166,3 +166,23 @@ func TestElevationDoesNotInterruptOtherConnections(t *testing.T) {
 	}
 	a.StopAllVPN()
 }
+
+func TestEditingStoppedProfileUpdatesStatusMetadata(t *testing.T) {
+	a := multiTestApp(t)
+	a.startConnection(func(o engine.Options) (vpnEngine, error) {
+		o.OnStatus(engine.Status{Phase: engine.PhaseConnected})
+		return &fakeVPNEngine{opts: o}, nil
+	})
+	a.StopVPN()
+	p := a.GetActiveProfile()
+	p.Name = "Renamed"
+	p.SocksPort = 2080
+	p.HTTPPort = 2081
+	if _, err := a.SaveProfile(p); err != nil {
+		t.Fatal(err)
+	}
+	status := a.GetStatus()
+	if status.ActiveProfile != "Renamed" || status.SocksPort != "2080" || status.Running {
+		t.Fatal("stopped status retained stale settings")
+	}
+}
