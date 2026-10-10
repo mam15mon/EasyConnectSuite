@@ -44,13 +44,15 @@ type Stack struct {
 	recoveredHandler func()
 	reloginFailures  int
 	lastReloginTime  time.Time
+	done             chan struct{}
+	closeOnce        sync.Once
 }
 
 const NICID tcpip.NICID = 1
 const MTU uint32 = 1400
 const maxInboundPacketSize = 1500
 
-// maxReloginAttempts: give up after this many consecutive failed re-logins
+// Network outages do not count toward the consecutive login failure limit.
 const maxReloginAttempts = 5
 
 // reloginCooldown: minimum interval between two re-login attempts
@@ -179,7 +181,7 @@ func joinPacketSlices(slices [][]byte) []byte {
 }
 
 func NewStack(client clientpkg.Client) (*Stack, error) {
-	s := &Stack{}
+	s := &Stack{done: make(chan struct{})}
 
 	s.gvisorStack = stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
@@ -289,6 +291,11 @@ func (s *Stack) SetupRecovered(f func()) {
 // Close tears the stack down: closes the L3 tunnel (which unblocks the
 // Run read loop) and the gVisor netstack. Safe to call multiple times.
 func (s *Stack) Close() error {
+	s.closeOnce.Do(func() {
+		if s.done != nil {
+			close(s.done)
+		}
+	})
 	if s.endpoint != nil {
 		s.endpoint.connMu.Lock()
 		conn := s.endpoint.l3Conn
@@ -337,8 +344,8 @@ func (s *Stack) dropBrokenConn() {
 }
 
 // rebuildL3Conn tries to recover a dead L3 tunnel with a serialized
-// re-login campaign: up to maxReloginAttempts login attempts with a
-// cooldown between them. Callers (read loop and packet writers) block on
+// re-login campaign: network outages wait until connectivity returns;
+// other failures stop after maxReloginAttempts. Callers block on
 // the mutex while one campaign runs — the tunnel is dead for them anyway.
 // broken is the connection the error came from; when nil or already
 // replaced, another path has rebuilt the tunnel and we are done.
@@ -368,7 +375,7 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 		}
 	}()
 
-	if hook_func.IsTerminal() {
+	if s.reconnectStopped() {
 		return false
 	}
 
@@ -386,7 +393,7 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 	}
 
 	for {
-		if hook_func.IsTerminal() {
+		if s.reconnectStopped() {
 			return false
 		}
 
@@ -396,13 +403,26 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 		}
 
 		if wait := reloginCooldown - time.Since(s.lastReloginTime); wait > 0 {
-			time.Sleep(wait)
+			timer := time.NewTimer(wait)
+			select {
+			case <-s.done:
+				timer.Stop()
+				return false
+			case <-timer.C:
+			}
+		}
+		if s.reconnectStopped() {
+			return false
 		}
 
 		s.lastReloginTime = time.Now()
 		log.Printf("L3 tunnel error: %v; re-login attempt %d/%d", cause, s.reloginFailures+1, maxReloginAttempts)
 
 		if err := s.callRelogin(); err != nil {
+			if isReconnectNetworkError(err) {
+				log.Printf("Network unavailable, waiting to reconnect: %v", err)
+				continue
+			}
 			s.reloginFailures++
 			log.Printf("Re-login failed (%d/%d): %v", s.reloginFailures, maxReloginAttempts, err)
 			continue
@@ -410,9 +430,17 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 
 		newConn, err := s.newL3ConnSafe()
 		if err != nil {
+			if isReconnectNetworkError(err) {
+				log.Printf("L3 network unavailable, waiting to reconnect: %v", err)
+				continue
+			}
 			s.reloginFailures++
 			log.Printf("Re-login succeeded but L3 handshake failed (%d/%d): %v", s.reloginFailures, maxReloginAttempts, err)
 			continue
+		}
+		if s.reconnectStopped() {
+			safeCloseL3(newConn)
+			return false
 		}
 
 		s.endpoint.connMu.Lock()
@@ -427,6 +455,27 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 		log.Printf("Re-login success, L3 tunnel rebuilt")
 		return true
 	}
+}
+
+func (s *Stack) reconnectStopped() bool {
+	if hook_func.IsTerminal() {
+		return true
+	}
+	select {
+	case <-s.done:
+		return true
+	default:
+		return false
+	}
+}
+
+func isReconnectNetworkError(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Op == "dial" {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 // callRelogin invokes the registered re-login callback, converting a

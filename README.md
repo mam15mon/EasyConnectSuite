@@ -30,7 +30,8 @@ EasyConnectSuite/
 
 - `stack/gvisor/stack.go`:读/写错误不再 `panic`/`os.Exit`,而是走 `rebuildL3Conn`:
   自动重新登录(`Client.Setup()` 重建 token,上游本身支持重复调用)→ 重建 L3 连接 → 继续服务;
-  最多连续重试 5 次(间隔 3 秒),全部失败才通过回调通知上层优雅收尾。
+  每隔 3 秒重试；网络不可达、连接失败或网络超时会持续等待，网络恢复后自动重新登录并重建隧道；
+  其他登录或握手错误最多连续重试 5 次，全部失败才通过回调通知上层优雅收尾。手动断开会终止重连等待。
 - GUI 层:引擎事件直接映射到状态胶囊(`connecting / connected / reconnecting / disconnected / error`),
   日志面板内容由进程内日志管道转发,不再抓取子进程 stdout。
 - 进程内常驻服务的 bind 失败(SOCKS5/HTTP/端口转发/Shadowsocks)不再炸进程。
