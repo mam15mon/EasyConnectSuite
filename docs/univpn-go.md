@@ -34,6 +34,8 @@ UniVPN Go 核心已接入 GUI、gVisor TCP/UDP、本地 SOCKS5/HTTP 代理及 Wi
 | 修改涉及的 zju-connect 包测试及 vet | 通过；EasyConnect、service、gVisor 的 race 测试通过 |
 | zju-connect 全模块测试 | 两项既有 Unix 权限断言在 Windows 失败：keylog/PCAP 要求 `0600`；其余通过 |
 | 前端构建和资源过滤测试 | 通过 |
+| Wails 生产 EXE 构建 | 通过，原版 20,516,352 字节 |
+| UPX ultra-brute/LZMA 与 `upx -t` | 通过，压缩版 5,882,368 字节，为原版 28.67% |
 
 测试覆盖分段帧读取、认证转义、错误密码只连接一次、地址和路由、两条 TLS 通道身份绑定、不受信证书拒绝、IPv4 报文往返、两种心跳、控制连接丢失、连接期间与会话期间取消，以及损坏的帧、TLV、路由和数据报文。
 

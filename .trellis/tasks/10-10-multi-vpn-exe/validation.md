@@ -9,4 +9,5 @@
 - Vite production build and all four resource-filter tests passed. Browser preview verified two example connections, connection switching display and the UniVPN configuration fields. Screenshot: ignored `build/bin/multi-vpn-preview.png`, containing example states only.
 - Final production Wails build passed: `wails build -m -nosyncgomod -trimpath -o EasyConnectGUI-multi-vpn.exe`. File size: 20,516,352 bytes. Bindings/bundle are current and Git clean after build.
 - Existing desktop client remains running, untouched. Actual EXE launch is deferred to the user exiting the old single-instance client. Real gateway/firmware, elevated TUN and coexistence remain unverified.
-- UPX ultra-brute/LZMA compression and integrity result will be recorded after completion.
+- `upx --ultra-brute --lzma` produced `build/bin/EasyConnectGUI-multi-vpn-upx.exe`, 5,882,368 bytes (28.67% of original). `upx -t` passed. Uncompressed SHA256: `AFB8B5BE145714A7275AF8C528A166DC92CD5C5BEFAEBC75C8F0BB475A798535`; compressed SHA256: `0E607CFA9A4EBEECEBE337E432AF7198326CD9E802D58A9F2389893B66FC759B`.
+- Protocol license and source notice are retained in source and copied beside artifacts in ignored `build/bin/univpn-notices/`.
