@@ -192,7 +192,7 @@ func TestTopSAPAdapterGVisorTCPAndUDP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, marker := range []string{"certificate_verify=true", "endpoint=auth_param status=200", "authentication accepted Ret=0", "TYPE=all", "resources_present=true resources=1", "resources ready routes=1 dns_servers=0", "等待隧道确认 ACK", "tunnel ready", "first IPv4 packet sent", "first IPv4 packet received", "rx_bytes=", "logout completed", "closed"} {
+	for _, marker := range []string{"certificate_verify=true", "endpoint=auth_param status=200", "authentication accepted Ret=0", "TYPE=all", "resources_present=true resources=1", "resources ready routes=1 dns_servers=0", "等待隧道确认 ACK", "tunnel ready", "first IPv4 packet sent", "source_matches_vip=true ip_checksum_ok=true", "first IPv4 packet received", "rx_bytes=", "logout completed", "closed"} {
 		if !strings.Contains(string(logged), marker) {
 			t.Fatalf("missing persistent log marker %q", marker)
 		}

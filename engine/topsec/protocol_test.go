@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+func TestIPv4HeaderChecksumDiagnostic(t *testing.T) {
+	packet := make([]byte, 60)
+	header, _ := hex.DecodeString("4500003c1c4640004006b1e6ac100a63ac100a0c")
+	copy(packet, header)
+	if !ipv4HeaderChecksumOK(packet) {
+		t.Fatal("independent IPv4 checksum vector rejected")
+	}
+	packet[8]--
+	if ipv4HeaderChecksumOK(packet) || ipv4HeaderChecksumOK(packet[:10]) {
+		t.Fatal("damaged or truncated header accepted")
+	}
+}
+
 func TestLiteralProtocolVectors(t *testing.T) {
 	if len(connectPrelude) != 130 {
 		t.Fatal("CONNECT prelude differs from captured constant")
