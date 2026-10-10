@@ -137,10 +137,6 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 	if len(token) == 0 || len(token) >= 256 || strings.ContainsRune(token, 0) {
 		return nil, errProtocol
 	}
-	s.ip, err = netip.ParseAddr(login.Net.IP)
-	if err != nil || !s.ip.Is4() || s.ip.IsUnspecified() {
-		return nil, errProtocol
-	}
 	var resources reply
 	setStage("获取完整资源 TYPE=all")
 	if _, err = s.post(setupCtx, "get_config_info", url.Values{"HASH": {""}, "TYPE": {"all"}}, &resources); err != nil {
@@ -155,7 +151,14 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 	if err != nil {
 		return nil, err
 	}
-	for _, text := range []string{login.Net.DNS1, login.Net.DNS2} {
+	// TYPE=all may assign a new virtual address after password authentication.
+	// The native client configures its data stack from this complete response.
+	s.ip, err = netip.ParseAddr(resources.Net.IP)
+	if err != nil || !s.ip.Is4() || s.ip.IsUnspecified() {
+		return nil, fmt.Errorf("TopSAP 完整配置中的虚拟 IPv4 地址无效: %w", errProtocol)
+	}
+	log.Printf("TopSAP [%d] data configuration source=full_config vip_changed=%t", s.id, resources.Net.IP != login.Net.IP)
+	for _, text := range []string{resources.Net.DNS1, resources.Net.DNS2} {
 		if text == "" || text == "0.0.0.0" {
 			continue
 		}
