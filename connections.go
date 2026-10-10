@@ -24,6 +24,7 @@ type vpnConnection struct {
 	resources []engine.ResourceEntry
 	started   time.Time
 	slot      int
+	stopDone  chan struct{}
 	stopping  bool
 }
 
@@ -233,11 +234,18 @@ func (a *App) startConnection(start func(engine.Options) (vpnEngine, error)) str
 func (a *App) stopConnection(id string) string {
 	a.mu.Lock()
 	c := a.connections[id]
-	if c == nil || c.stopping {
+	if c == nil {
 		a.mu.Unlock()
 		return "Not running"
 	}
+	if c.stopping {
+		done := c.stopDone
+		a.mu.Unlock()
+		<-done
+		return "OK"
+	}
 	c.stopping = true
+	c.stopDone = make(chan struct{})
 	c.cancel()
 	a.mu.Unlock()
 	<-c.ready
@@ -247,6 +255,7 @@ func (a *App) stopConnection(id string) string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	c.stopping = false
+	close(c.stopDone)
 	applyEngineStatus(&c.status, &c.started, &c.resources, engine.Status{Phase: engine.PhaseDisconnected, Message: "VPN 已断开"})
 	if id == a.appConfig.ActiveProfileID {
 		a.status = c.status
