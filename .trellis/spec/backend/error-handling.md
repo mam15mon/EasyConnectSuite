@@ -1,51 +1,11 @@
-# Error Handling
+# Error handling
 
-> How errors are handled in this project.
+Return Go errors from engine setup. Preserve causes with %w when adding context, as engine.Start does for underlay, authentication and TUN failures. Wails-facing messages follow the Chinese UI style.
 
----
+engine.Start uses deferred cleanup on failed startup. Newly opened connections, routes and DNS rules need a clear owner and cleanup path. Stop must cancel reconnect work as well as close the tunnel.
 
-## Overview
+An explicit bad-password response is terminal on its first occurrence: zju-connect/client/easyconnect/password.go exposes ErrLoginRejected, and stack/gvisor/reconnect.go stops that reconnect sequence. Temporary network dial failures are a different class. Do not turn authentication refusal into unlimited network retries.
 
-<!--
-Document your project's error handling conventions here.
+Windows cleanup removes only this program's routes and NRPT markers. Preserve more-specific routes owned by other VPN clients.
 
-Questions to answer:
-- What error types do you define?
-- How are errors propagated?
-- How are errors logged?
-- How are errors returned to clients?
--->
-
-(To be filled by the team)
-
----
-
-## Error Types
-
-<!-- Custom error classes/types -->
-
-(To be filled by the team)
-
----
-
-## Error Handling Patterns
-
-<!-- Try-catch patterns, error propagation -->
-
-(To be filled by the team)
-
----
-
-## API Error Responses
-
-<!-- Standard error response format -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Error handling mistakes your team has made -->
-
-(To be filled by the team)
+Do not add fallback methods, alternate protocols, insecure TLS behavior or speculative exception handling without a request. Unsupported authentication methods should return an explicit error.

@@ -1,51 +1,15 @@
-# Quality Guidelines
+# Quality and verification
 
-> Code quality standards for backend development.
+Make surgical changes directly implementing the request. Match existing style. Do not add fallback mechanisms, speculative abstractions or unrelated cleanup. State assumptions and distinguish source claims from verified behavior.
 
----
+After a command changes project files, stage only those files and commit with a summary. Read-only commands do not need empty commits. User-requested commits take precedence over Trellis defaults that defer commits.
 
-## Overview
+For Go behavior changes:
+- Format touched files with gofmt.
+- Run go test ./... and go vet ./... from the root.
+- Run relevant nested zju-connect package tests when changing that module; root ./... does not traverse it.
+- Use meaningful regression tests for lifecycle, routing, DNS and authentication. engine/tun_cleanup_windows_test.go and reconnect_test.go are examples.
+- Build the Windows desktop after exported Wails model or UI changes.
+- Distinguish compilation, mock integration, real TUN/routing tests and live gateway compatibility.
 
-<!--
-Document your project's quality standards here.
-
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
-
-(To be filled by the team)
-
----
-
-## Forbidden Patterns
-
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
-
----
-
-## Required Patterns
-
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
-
----
-
-## Testing Requirements
-
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
-
----
-
-## Code Review Checklist
-
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+Frontend checks are in ../frontend/index.md. build/bin outputs are ignored. Record source revisions, licenses and reproducible native build steps. Do not claim a live connection without testing an authorized gateway.

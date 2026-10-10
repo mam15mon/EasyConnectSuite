@@ -1,51 +1,9 @@
-# Logging Guidelines
+# Logging
 
-> How logging is done in this project.
+The zju-connect engine uses its log package and the standard Go logger. engine.startLogCapture sends lines to an OnLog callback and optional persistent LogFile. app.StartVPN selects APPDATA/EasyConnectVPN/logs/engine.log.
 
----
+engine.rotatingWriter caps engine.log at 1 MiB and retains one .old generation. Reuse this pattern for engine integration rather than adding a logging service.
 
-## Overview
+Log connection phases, protocol selection, reconnect decisions and cleanup failures. UI status travels through vpn-status; resource updates through vpn-resources.
 
-<!--
-Document your project's logging conventions here.
-
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
-
-(To be filled by the team)
-
----
-
-## Log Levels
-
-<!-- When to use each level: debug, info, warn, error -->
-
-(To be filled by the team)
-
----
-
-## Structured Logging
-
-<!-- Log format, required fields -->
-
-(To be filled by the team)
-
----
-
-## What to Log
-
-<!-- Important events to log -->
-
-(To be filled by the team)
-
----
-
-## What NOT to Log
-
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+Never print passwords, TOTP secrets, tokens, full authentication payloads or decrypted packets. Native command lines must not contain VPN passwords. Research and tests use local mock gateways or redacted metadata.

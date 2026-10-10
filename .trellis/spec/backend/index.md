@@ -1,38 +1,13 @@
-# Backend Development Guidelines
+# Backend guidelines
 
-> Best practices for backend development in this project.
+The desktop backend is Go 1.25.6 with Wails v2. It embeds the local zju-connect fork.
 
----
+| Guide | Scope |
+| --- | --- |
+| [Directory structure](directory-structure.md) | Application, engine and upstream fork |
+| [Configuration](configuration-guidelines.md) | JSON profiles and Wails serialization |
+| [Errors](error-handling.md) | Rollback, authentication refusal and cancellation |
+| [Logging](logging-guidelines.md) | Engine logs and credentials |
+| [Quality](quality-guidelines.md) | Minimal changes and Windows verification |
 
-## Overview
-
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
-
----
-
-## Guidelines Index
-
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
----
-
-**Language**: All documentation should be written in **English**.
+For UI changes read ../frontend/index.md. User rules in root AGENTS.md take precedence over generated workflow defaults.
