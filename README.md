@@ -44,6 +44,16 @@ wails build        # 产物: build/bin/EasyConnectGUI.exe(单文件)
 go build ./...     # 仅编译验证
 ```
 
+生成 UPX 高压缩版本（需安装 UPX）：
+
+```powershell
+wails build -o EasyConnectGUI-resume.exe
+upx --ultra-brute --lzma -o build/bin/EasyConnectGUI-upx.exe build/bin/EasyConnectGUI-resume.exe
+upx -t build/bin/EasyConnectGUI-upx.exe
+```
+
+压缩版可直接运行，功能与未压缩版本相同；`--ultra-brute` 会尝试更多压缩组合，构建耗时更长。
+
 `vpn_profiles.json` 配置与原 EasyConnectGUI 完全兼容,可直接复用。
 
 ## Windows TUN 模式
