@@ -419,6 +419,11 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 		log.Printf("L3 tunnel error: %v; re-login attempt %d/%d", cause, s.reloginFailures+1, maxReloginAttempts)
 
 		if err := s.callRelogin(); err != nil {
+			if errors.Is(err, easyconnect.ErrLoginRejected) {
+				fatalCause = fmt.Errorf("VPN 登录被拒绝，已停止自动重连: %w", err)
+				log.Printf("Re-login rejected, stopping: %v", err)
+				return false
+			}
 			if isReconnectNetworkError(err) {
 				log.Printf("Network unavailable, waiting to reconnect: %v", err)
 				continue
