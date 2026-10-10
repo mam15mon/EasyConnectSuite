@@ -234,9 +234,11 @@ let detectedInterfaces = ['以太网', 'WLAN'];
 let lastResourceRows = [];
 let connectionFilter = 'all';
 let selectionVersion = 0;
+let selectionPending = false;
 let selectionQueue = Promise.resolve();
 let resourceRequest = 0;
 const pendingActions = new Set();
+const actionVersions = new Map();
 const profileResources = new Map();
 const protocolNames = { easyconnect: 'EasyConnect', univpn: 'UniVPN', topsec: 'TopSAP' };
 
@@ -244,6 +246,10 @@ function receiveStatus(status) {
   const index = connectionStatuses.findIndex(s => s.profileId === status.profileId);
   if (index >= 0) connectionStatuses[index] = status;
   else if (cachedProfiles.some(p => p.id === status.profileId)) connectionStatuses.push(status);
+  if (!status.running) {
+    profileResources.delete(status.profileId);
+    if (status.profileId === activeProfile?.id) { resourceRequest++; renderResources([]); }
+  }
   updateStatusUI(status);
   renderConnections();
 }
@@ -336,14 +342,14 @@ function updateStatusUI(status) {
 
   stateNote.title = stateNote.innerText;
   tunModeToggle.checked = !!(status.running ? status.tunMode : activeProfile?.tunMode);
-  tunModeToggle.disabled = modeSaving || status.running || !activeProfile;
+  tunModeToggle.disabled = modeSaving || selectionPending || status.running || !activeProfile;
   proxyModeToggle.checked = !(status.running ? status.disableProxy : activeProfile?.disableProxy);
-  proxyModeToggle.disabled = modeSaving || status.running || !activeProfile;
+  proxyModeToggle.disabled = modeSaving || selectionPending || status.running || !activeProfile;
   proxyModeNote.title = status.running
     ? '断开连接后可切换本地代理'
     : 'SOCKS5 / HTTP，可与 TUN 同时开启';
   profileSelect.disabled = modeSaving;
-  btnToggle.disabled = modeSaving || !activeProfile || pendingActions.has(activeProfile?.id);
+  btnToggle.disabled = modeSaving || !activeProfile || (pendingActions.has(activeProfile?.id) && status.state !== 'connecting');
   tunModeNote.title = modeSaving
     ? '正在保存设置或等待管理员授权…'
     : status.running
@@ -381,6 +387,7 @@ async function selectProfile(id) {
   const profile = cachedProfiles.find(p => p.id === id);
   if (!profile) return;
   const version = ++selectionVersion;
+  selectionPending = true;
   activeProfile = profile;
   profileSelect.value = id;
   routesFilter.value = '';
@@ -395,6 +402,7 @@ async function selectProfile(id) {
     updateStatusUI(status);
     await refreshResources(false);
   } catch (err) { showToast(String(err)); }
+  finally { if (version === selectionVersion) { selectionPending = false; updateStatusUI(currentStatus); } }
 }
 
 profileSelect.addEventListener('change', e => selectProfile(e.target.value));
@@ -549,11 +557,14 @@ proxyModeToggle.addEventListener('change', async () => {
 });
 
 async function toggleConnection(id) {
-  if (!id || modeSaving || pendingActions.has(id)) return;
+  if (!id || modeSaving) return;
   const profile = cachedProfiles.find(p => p.id === id);
   if (!profile) return;
   const status = connectionStatuses.find(s => s.profileId === id);
   const stopping = !!status?.running;
+  if (pendingActions.has(id) && (!stopping || status.state !== 'connecting')) return;
+  const actionVersion = (actionVersions.get(id) || 0) + 1;
+  actionVersions.set(id, actionVersion);
   pendingActions.add(id);
   renderConnections();
   if (id === activeProfile?.id) updateStatusUI(currentStatus);
@@ -571,6 +582,7 @@ async function toggleConnection(id) {
       }
       receiveStatus({profileId:id, activeProfile:profile.name, protocol:profile.protocol || 'easyconnect', running:true, state:'connecting', stage:'准备中', message:'正在准备连接…', tunMode:!!profile.tunMode, disableProxy:!!profile.disableProxy});
       const res = await window.go.main.App.StartProfileVPN(id);
+      if (actionVersions.get(id) !== actionVersion) return;
       if (res !== 'OK') {
         receiveStatus({profileId:id, running:false, state:'error', lastError:res});
         throw new Error(res);
@@ -586,7 +598,7 @@ async function toggleConnection(id) {
   } catch (err) {
     showToast(`${profile.name}：${err}`);
   } finally {
-    pendingActions.delete(id);
+    if (actionVersions.get(id) === actionVersion) pendingActions.delete(id);
     renderConnections();
     updateStatusUI(currentStatus);
   }
@@ -707,7 +719,7 @@ async function initApp() {
 
     window.runtime.EventsOn('vpn-resources', (payload) => {
       profileResources.set(payload.profileId, payload.entries || []);
-      if (payload.profileId === activeProfile?.id) renderResources(payload.entries);
+      if (payload.profileId === activeProfile?.id) { resourceRequest++; renderResources(payload.entries); }
     });
 
     window.runtime.EventsOn('status-tick', status => receiveStatus(status));
@@ -777,10 +789,10 @@ function renderConnections() {
     row.dataset.profileId = profile.id;
     row.classList.toggle('selected', profile.id === activeProfile?.id);
     const state = status.state === 'connecting' ? (status.stage || '连接中') : STATE_WORDS[status.state] || '未连接';
-    row.innerHTML = `<div class="connection-identity"><button class="connection-name" data-profile-action="select" aria-label="查看 ${escapeHTML(profile.name)}">${escapeHTML(profile.name)}</button><div class="connection-meta"><span class="protocol-tag">${protocolNames[profile.protocol || 'easyconnect']}</span><span class="connection-gateway" title="${escapeHTML(profile.server)}:${profile.port}">${escapeHTML(profile.server)}:${profile.port}</span></div></div><div><span class="connection-state ${status.state}" title="${escapeHTML(status.lastError || status.message || state)}">${escapeHTML(state)}</span><span class="connection-time">${status.running ? formatSeconds(status.duration || 0) : status.state === 'error' ? '查看详情排查' : '等待连接'}</span></div><div class="connection-modes">${(status.running ? status.tunMode : profile.tunMode) ? '<span class="mode-tag">TUN 分流</span>' : ''}${!(status.running ? status.disableProxy : profile.disableProxy) ? '<span class="mode-tag">本地代理</span>' : ''}</div><div class="connection-actions"><button class="connection-action ${status.running ? 'stop' : ''}" data-profile-action="toggle">${pendingActions.has(profile.id) ? '处理中' : status.running ? status.state === 'connecting' ? '取消' : '断开' : status.state === 'error' ? '重试' : '连接'}</button><button class="connection-view" data-profile-action="select" aria-label="查看 ${escapeHTML(profile.name)} 详情">查看</button></div>`;
+    row.innerHTML = `<div class="connection-identity"><button class="connection-name" data-profile-action="select" aria-label="查看 ${escapeHTML(profile.name)}">${escapeHTML(profile.name)}</button><div class="connection-meta"><span class="protocol-tag">${protocolNames[profile.protocol || 'easyconnect']}</span><span class="connection-gateway" title="${escapeHTML(profile.server)}:${profile.port}">${escapeHTML(profile.server)}:${profile.port}</span></div></div><div><span class="connection-state ${status.state}" title="${escapeHTML(status.lastError || status.message || state)}">${escapeHTML(state)}</span><span class="connection-time">${status.running ? formatSeconds(status.duration || 0) : status.state === 'error' ? '查看详情排查' : '等待连接'}</span></div><div class="connection-modes">${(status.running ? status.tunMode : profile.tunMode) ? '<span class="mode-tag">TUN 分流</span>' : ''}${!(status.running ? status.disableProxy : profile.disableProxy) ? '<span class="mode-tag">本地代理</span>' : ''}</div><div class="connection-actions"><button class="connection-action ${status.running ? 'stop' : ''}" data-profile-action="toggle">${pendingActions.has(profile.id) && status.state !== 'connecting' ? '处理中' : status.running ? status.state === 'connecting' ? '取消' : '断开' : status.state === 'error' ? '重试' : '连接'}</button><button class="connection-view" data-profile-action="select" aria-label="查看 ${escapeHTML(profile.name)} 详情">查看</button></div>`;
     for (const button of row.querySelectorAll('[data-profile-action]')) {
       button.dataset.profileId = profile.id;
-      button.disabled = modeSaving || (button.dataset.profileAction === 'toggle' && pendingActions.has(profile.id));
+      button.disabled = modeSaving || (button.dataset.profileAction === 'toggle' && pendingActions.has(profile.id) && status.state !== 'connecting');
       button.addEventListener('click', () => button.dataset.profileAction === 'toggle' ? toggleConnection(profile.id) : selectProfile(profile.id));
       if (button.dataset.profileAction === 'select') button.setAttribute('aria-pressed', String(profile.id === activeProfile?.id));
     }
