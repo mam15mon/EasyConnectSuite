@@ -249,10 +249,15 @@ let resourceRequest = 0;
 const pendingActions = new Set();
 const actionVersions = new Map();
 const profileResources = new Map();
+let workspacePage = 'resources';
+let logRequest = 0;
+let modalReturnFocus = null;
 const protocolNames = { easyconnect: 'EasyConnect', univpn: 'UniVPN', topsec: 'TopSAP' };
 
 function receiveStatus(status) {
   const index = connectionStatuses.findIndex(s => s.profileId === status.profileId);
+  const previous = connectionStatuses[index];
+  const changed = !previous || previous.state !== status.state || previous.stage !== status.stage || previous.message !== status.message;
   if (index >= 0) connectionStatuses[index] = status;
   else if (cachedProfiles.some(p => p.id === status.profileId)) connectionStatuses.push(status);
   if (!status.running) {
@@ -261,6 +266,7 @@ function receiveStatus(status) {
   }
   updateStatusUI(status);
   renderConnections();
+  if (changed && workspacePage === 'logs' && status.profileId === activeProfile?.id) refreshProfileLogs();
 }
 
 function escapeHTML(value) {
@@ -326,8 +332,8 @@ function updateStatusUI(status) {
     btnToggle.disabled = false;
     stateNote.innerText = status.tunMode
       ? status.disableProxy
-        ? 'TUN 已连接，按 VPN 资源分流；本地代理已关闭'
-        : 'TUN 已连接，按 VPN 资源分流；本地 SOCKS5 / HTTP 代理可使用'
+        ? '按授权资源分流，本地代理已关闭。'
+        : '按授权资源分流，本地代理可用。'
       : status.disableProxy
         ? 'VPN 已连接；TUN 和本地代理均已关闭'
         : '会话已建立，可通过本地代理访问授权资源';
@@ -398,6 +404,7 @@ async function selectProfile(id) {
   const version = ++selectionVersion;
   selectionPending = true;
   activeProfile = profile;
+  if (workspacePage === 'logs') { document.getElementById('profile-log-output').textContent = '正在读取运行记录…'; refreshProfileLogs(); }
   profileSelect.value = id;
   routesFilter.value = '';
   updateStatusUI(connectionStatuses.find(s => s.profileId === id) || {profileId:id, running:false, state:'disconnected'});
@@ -419,6 +426,7 @@ profileSelect.addEventListener('change', e => selectProfile(e.target.value));
 
 function openEditModal(profile) {
   if (profile && connectionStatuses.some(s => s.profileId === profile.id && s.running)) { showToast('请先断开该配置再编辑'); return; }
+  modalReturnFocus = document.activeElement;
   modalTitle.innerText = profile ? '编辑服务器配置' : '新建服务器配置';
   formId.value = profile ? profile.id : '';
   formProtocol.value = profile?.protocol || 'easyconnect';
@@ -455,10 +463,12 @@ function openEditModal(profile) {
 
   updateProtocolFields();
   modalOverlay.classList.add('show');
+  formName.focus();
 }
 
 function closeModal() {
   modalOverlay.classList.remove('show');
+  if (modalReturnFocus?.isConnected) modalReturnFocus.focus();
 }
 
 document.getElementById('btn-edit-profile').addEventListener('click', () => {
@@ -799,7 +809,7 @@ function renderConnections() {
     row.dataset.profileId = profile.id;
     row.classList.toggle('selected', profile.id === activeProfile?.id);
     const state = status.state === 'connecting' ? (status.stage || '连接中') : STATE_WORDS[status.state] || '未连接';
-    row.innerHTML = `<div class="connection-identity"><button class="connection-name" data-profile-action="select" aria-label="查看 ${escapeHTML(profile.name)}">${escapeHTML(profile.name)}</button><div class="connection-meta"><span class="protocol-tag">${protocolNames[profile.protocol || 'easyconnect']}</span><span class="connection-gateway" title="${escapeHTML(profile.server)}:${profile.port}">${escapeHTML(profile.server)}:${profile.port}</span></div></div><div><span class="connection-state ${status.state}" title="${escapeHTML(status.lastError || status.message || state)}">${escapeHTML(state)}</span><span class="connection-time">${status.running ? formatSeconds(status.duration || 0) : status.state === 'error' ? '查看详情排查' : '等待连接'}</span></div><div class="connection-modes">${(status.running ? status.tunMode : profile.tunMode) ? '<span class="mode-tag">TUN 分流</span>' : ''}${!(status.running ? status.disableProxy : profile.disableProxy) ? '<span class="mode-tag">本地代理</span>' : ''}</div><div class="connection-actions"><button class="connection-action ${status.running ? 'stop' : ''}" data-profile-action="toggle">${pendingActions.has(profile.id) && status.state !== 'connecting' ? '处理中' : status.running ? status.state === 'connecting' ? '取消' : '断开' : status.state === 'error' ? '重试' : '连接'}</button><button class="connection-view" data-profile-action="select" aria-label="查看 ${escapeHTML(profile.name)} 详情">查看</button></div>`;
+    row.innerHTML = `<div class="connection-identity"><button class="connection-name" data-profile-action="select" aria-label="查看 ${escapeHTML(profile.name)}">${escapeHTML(profile.name)}</button><div class="connection-meta"><span class="protocol-tag">${protocolNames[profile.protocol || 'easyconnect']}</span><span class="connection-gateway" title="${escapeHTML(profile.server)}:${profile.port}">${escapeHTML(profile.server)}:${profile.port}</span></div></div><button class="connection-action ${status.running ? 'stop' : ''}" data-profile-action="toggle" aria-label="${status.running ? status.state === 'connecting' ? '取消' : '断开' : status.state === 'error' ? '重试' : '连接'} ${escapeHTML(profile.name)}">${pendingActions.has(profile.id) && status.state !== 'connecting' ? '处理中' : status.running ? status.state === 'connecting' ? '取消' : '断开' : status.state === 'error' ? '重试' : '连接'}</button><div class="connection-status-line"><span class="connection-state ${status.state}" title="${escapeHTML(status.lastError || status.message || state)}">${escapeHTML(state)}</span><span class="connection-time">${status.running ? formatSeconds(status.duration || 0) : status.state === 'error' ? '查看详情' : ''}</span></div>`;
     for (const button of row.querySelectorAll('[data-profile-action]')) {
       button.dataset.profileId = profile.id;
       button.disabled = modeSaving || (button.dataset.profileAction === 'toggle' && pendingActions.has(profile.id) && status.state !== 'connecting');
@@ -831,4 +841,51 @@ document.getElementById('btn-stop-all').addEventListener('click', async () => {
   if (!confirm('断开所有正在运行的 VPN？')) return;
   try { await window.go.main.App.StopAllVPN(); await refreshProfiles(); }
   catch (err) { showToast(String(err)); }
+});
+
+function activateWorkspacePage(page) {
+ workspacePage = page;
+ for (const button of document.querySelectorAll('[data-workspace-page]')) {
+  const selected = button.dataset.workspacePage === page;
+  button.setAttribute('aria-selected',String(selected)); button.tabIndex = selected ? 0 : -1;
+ }
+ for (const panel of document.querySelectorAll('.workspace-page')) panel.hidden = panel.id !== `page-${page}`;
+ if (page === 'logs') refreshProfileLogs();
+}
+const workspaceTabs = Array.from(document.querySelectorAll('[data-workspace-page]'));
+for (const button of workspaceTabs) {
+ button.addEventListener('click',()=>activateWorkspacePage(button.dataset.workspacePage));
+ button.addEventListener('keydown',event=>{
+  if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+  event.preventDefault();
+  const index = event.key === 'Home' ? 0 : event.key === 'End' ? workspaceTabs.length-1 : (workspaceTabs.indexOf(button)+(event.key === 'ArrowRight'?1:-1)+workspaceTabs.length)%workspaceTabs.length;
+  workspaceTabs[index].focus(); workspaceTabs[index].click();
+ });
+}
+async function refreshProfileLogs() {
+ if (!activeProfile || !window.go?.main?.App) return;
+ const id = activeProfile.id;
+ const request = ++logRequest;
+ const output = document.getElementById('profile-log-output');
+ const refresh = document.getElementById('btn-refresh-logs');
+ refresh.disabled = true;
+ try {
+  const lines = await window.go.main.App.GetProfileLogs(id);
+  if (request !== logRequest || id !== activeProfile?.id) return;
+  output.textContent = lines.length ? lines.join('\n') : '暂无当前配置的运行记录。连接新版程序后，阶段、停止原因和收发统计会记录在这里。';
+ } catch (err) {
+  if (request === logRequest && id === activeProfile?.id) output.textContent = `读取记录失败：${err}`;
+ } finally { if (request === logRequest) refresh.disabled = false; }
+}
+document.getElementById('btn-refresh-logs').addEventListener('click',refreshProfileLogs);
+setInterval(()=>{ if (workspacePage === 'logs') refreshProfileLogs(); },15000);
+
+document.addEventListener('keydown',event=>{
+ if (!modalOverlay.classList.contains('show')) return;
+ if (event.key === 'Escape') {event.preventDefault();closeModal();return;}
+ if (event.key !== 'Tab') return;
+ const controls = Array.from(modalOverlay.querySelectorAll('button,input:not([type="hidden"]),select')).filter(element=>!element.disabled && element.offsetParent !== null);
+ const first = controls[0], last = controls.at(-1);
+ if (event.shiftKey && document.activeElement === first) {event.preventDefault();last.focus();}
+ else if (!event.shiftKey && document.activeElement === last) {event.preventDefault();first.focus();}
 });

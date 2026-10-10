@@ -22,6 +22,7 @@ export function installPreview(onStatus) {
     GetConnections:async()=>clone([...statuses.values()]),
     GetStatus:async()=>clone(statuses.get(selected)),
     GetVPNResources:async()=>clone(statuses.get(selected)?.state==='connected' ? resources.get(selected)||[] : []),
+    GetProfileLogs:async id=>[`${new Date().toLocaleTimeString()} [VPN profile="${id}"] status phase=${statuses.get(id)?.state||'disconnected'}`,`${new Date().toLocaleTimeString()} 演示记录：实际阶段、停止原因和流量统计由新版引擎写入。`],
     GetInterfaces:async()=>['WLAN','以太网'],
     SetActiveProfile:async id=>{ if(!profiles.some(p=>p.id===id)) return false; selected=id; return true; },
     SetProfileTUNMode:async(id,enabled)=>{ const p=profiles.find(p=>p.id===id); if(!p)throw new Error('配置不存在'); p.tunMode=enabled; return false; },
@@ -36,7 +37,7 @@ export function installPreview(onStatus) {
       if(generation.get(id)!==version)return 'OK';
       Object.assign(status,{state:'connected',stage:'',clientIp:'192.0.2.20'});emit(id);return 'OK';
     },
-    StopProfileVPN:async id=>{generation.set(id,(generation.get(id)||0)+1);Object.assign(statuses.get(id),{running:false,state:'disconnected',duration:0,clientIp:'',dns:''});emit(id);return 'OK';},
+    StopProfileVPN:async id=>{generation.set(id,(generation.get(id)||0)+1);Object.assign(statuses.get(id),{running:false,state:'disconnected',stage:'',message:'',duration:0,clientIp:'',dns:''});emit(id);return 'OK';},
     StopAllVPN:async()=>{ for(const s of statuses.values())if(s.running)await api.StopProfileVPN(s.profileId); return 'OK'; },
     SaveProfile:async p=>{
       if(!p.id)p.id=`preview-${nextID++}`;
