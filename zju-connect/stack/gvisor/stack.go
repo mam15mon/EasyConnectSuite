@@ -596,5 +596,7 @@ func makeInboundPacketBuffer(buf []byte, n int) *stack.PacketBuffer {
 }
 
 // SetLogContext must be called before running or dialing through this stack.
-func (s *Stack) SetLogContext(prefix string)     { s.logContext = prefix }
-func (s *Stack) logf(format string, args ...any) { log.Printf(s.logContext+format, args...) }
+func (s *Stack) SetLogContext(prefix string) { s.logContext = prefix }
+func (s *Stack) logf(format string, args ...any) {
+	log.Printf("%s%s", s.logContext, fmt.Sprintf(format, args...))
+}
