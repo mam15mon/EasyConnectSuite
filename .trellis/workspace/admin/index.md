@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
+- **Total Sessions**: 5
 - **Last Active**: 2026-10-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~122 | Active |
+| `journal-1.md` | ~148 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-10-10 | UniVPN MAC 报文对齐与认证日志 | `c0b3414`, `68780e4`, `e47d38c`, `3f60862`, `63e87ae` | `codex/univpn-windows-core` |
 | 4 | 2026-10-10 | UniVPN 认证拒绝返回码诊断 | `90d360d` | `codex/univpn-windows-core` |
 | 3 | 2026-10-10 | UniVPN 忽略证书开关与未压缩 EXE | `df22f80`, `95aef5b`, `ef71fa7` | `codex/univpn-windows-core` |
 | 2 | 2026-10-10 | UniVPN 多连接 EXE 与 UPX 交付 | `eb4242e`, `02155ed`, `7f188fc`, `21ca12f`, `82d0d10`, `441275e` | `codex/univpn-windows-core` |

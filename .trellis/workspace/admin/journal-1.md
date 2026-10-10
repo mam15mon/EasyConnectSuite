@@ -120,3 +120,29 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 5: UniVPN MAC 报文对齐与认证日志
+<!-- trellis-session: v=2 fp=321a24d78cfa5931 -->
+
+**Date**: 2026-10-10
+**Task**: UniVPN MAC 报文对齐与认证日志
+**Branch**: `codex/univpn-windows-core`
+
+### Summary
+
+Actual diagnostic result is AUTH code 2; no verified semantic mapping. Observed official MAC format matches pinned working Python prototype, so align Go stable MAC and independently validate complete AUTH frames. Persist numeric rejection codes without credentials. Root race tests, vet and uncompressed Wails build pass. Artifact EasyConnectGUI-multi-vpn-authfix.exe is 20519424 bytes; SHA256 030142FD02B0EDCF5D53EC689134938FCB66D8F32B8709D96CC2E9171BCF586D. No real login attempted; user retry required to establish live compatibility.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c0b3414` | fix: align UniVPN MAC TLV with observed format and persist rejection codes |
+| `68780e4` | test: include terminating NUL in escaped password vector length |
+| `e47d38c` | 移除 UniVPN MAC 格式调整后未使用的导入 |
+| `3f60862` | 记录 UniVPN 认证报文差异、日志验证及未压缩交付结果 |
+| `63e87ae` | 保留 UniVPN Python MAC 算法来源与 MIT 许可说明 |
+
+### Status
+
+[OK] **Completed**
