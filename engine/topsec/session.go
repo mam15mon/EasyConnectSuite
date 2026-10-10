@@ -29,18 +29,19 @@ type Options struct {
 // Session reads and writes complete IPv4 packets. TCP and UDP are supplied by
 // the existing gVisor stack; this transport does not install routes or DNS.
 type Session struct {
-	id              uint64
-	conn            *tls.Conn
-	http            *http.Client
-	transport       *http.Transport
-	server          string
-	ip              netip.Addr
-	routes          []netip.Prefix
-	dns             []string
-	cancel          context.CancelFunc
-	stopWatch       func() bool
-	readMu, writeMu sync.Mutex
-	closeOnce       sync.Once
+	id               uint64
+	rxBytes, txBytes atomic.Uint64
+	conn             *tls.Conn
+	http             *http.Client
+	transport        *http.Transport
+	server           string
+	ip               netip.Addr
+	routes           []netip.Prefix
+	dns              []string
+	cancel           context.CancelFunc
+	stopWatch        func() bool
+	readMu, writeMu  sync.Mutex
+	closeOnce        sync.Once
 }
 
 var nextSessionID atomic.Uint64
@@ -163,6 +164,8 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 		}
 		s.dns = append(s.dns, addr.String())
 	}
+	log.Printf("TopSAP [%d] resources ready routes=%d dns_servers=%d", s.id, len(s.routes), len(s.dns))
+	setStage("连接数据通道")
 	raw, err := dialer(setupCtx, "tcp", opts.Server)
 	if err != nil {
 		return nil, err
@@ -174,13 +177,16 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 	if err = s.conn.SetDeadline(deadline); err != nil {
 		return nil, err
 	}
+	setStage("数据通道 TLS 握手")
 	if err = s.conn.HandshakeContext(setupCtx); err != nil {
 		return nil, err
 	}
 	state := s.conn.ConnectionState()
+	setStage("核对认证与数据通道公钥")
 	if len(state.PeerCertificates) == 0 || len(key) == 0 || !bytes.Equal(key, state.PeerCertificates[0].RawSubjectPublicKeyInfo) {
 		return nil, errors.New("TopSAP 认证与数据通道公钥不一致")
 	}
+	setStage("发送 CONNECT 和隧道初始化")
 	if err = writeAll(s.conn, []byte(connectPrelude)); err != nil {
 		return nil, err
 	}
@@ -190,6 +196,7 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 	if err = writeAll(s.conn, frame(1, setup)); err != nil {
 		return nil, err
 	}
+	setStage("等待隧道确认 ACK")
 	command, _, err := readFrame(s.conn)
 	if err != nil {
 		return nil, err
@@ -197,6 +204,7 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 	if command != 2 {
 		return nil, errProtocol
 	}
+	setStage("发送初始控制命令")
 	if err = writeAll(s.conn, frame(7, make([]byte, 8))); err != nil {
 		return nil, err
 	}
@@ -208,10 +216,13 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 		return nil, err
 	}
 	succeeded = true
+	log.Printf("TopSAP [%d] tunnel ready elapsed=%s", s.id, time.Since(startedAt).Round(time.Millisecond))
 	return s, nil
 }
 
 func (s *Session) post(ctx context.Context, path string, form url.Values, result any) ([]byte, error) {
+	startedAt := time.Now()
+	log.Printf("TopSAP [%d] HTTP POST endpoint=%s", s.id, path)
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.server+"/vone/login/"+path, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
@@ -220,8 +231,10 @@ func (s *Session) post(ctx context.Context, path string, form url.Values, result
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := s.http.Do(request)
 	if err != nil {
+		log.Printf("TopSAP [%d] HTTP failed endpoint=%s elapsed=%s: %v", s.id, path, time.Since(startedAt).Round(time.Millisecond), err)
 		return nil, err
 	}
+	log.Printf("TopSAP [%d] HTTP response endpoint=%s status=%d elapsed=%s", s.id, path, response.StatusCode, time.Since(startedAt).Round(time.Millisecond))
 	defer response.Body.Close()
 	if response.StatusCode == 401 || response.StatusCode == 403 {
 		return nil, &AuthenticationError{Code: response.StatusCode}
@@ -239,6 +252,13 @@ func (s *Session) post(ctx context.Context, path string, form url.Values, result
 	if result != nil {
 		if err = decodeObject(data, result); err != nil {
 			return nil, err
+		}
+	}
+	if r, ok := result.(*reply); ok {
+		if r.Ret == nil {
+			log.Printf("TopSAP [%d] response endpoint=%s bytes=%d Ret=missing resources_present=%t resources=%d", s.id, path, len(data), r.Resources != nil, len(r.Resources))
+		} else {
+			log.Printf("TopSAP [%d] response endpoint=%s bytes=%d Ret=%d resources_present=%t resources=%d", s.id, path, len(data), *r.Ret, r.Resources != nil, len(r.Resources))
 		}
 	}
 	if response.TLS == nil || len(response.TLS.PeerCertificates) == 0 {
@@ -267,13 +287,18 @@ func (s *Session) Read(b []byte) (int, error) {
 	defer s.readMu.Unlock()
 	command, body, err := readFrame(s.conn)
 	if err != nil {
+		log.Printf("TopSAP [%d] tunnel read ended: %v", s.id, err)
 		return 0, err
 	}
 	if command != 15 {
+		log.Printf("TopSAP [%d] unexpected data command=%d", s.id, command)
 		return 0, errProtocol
 	}
 	if len(b) < len(body) {
 		return 0, io.ErrShortBuffer
+	}
+	if s.rxBytes.Add(uint64(len(body))) == uint64(len(body)) {
+		log.Printf("TopSAP [%d] first IPv4 packet received bytes=%d", s.id, len(body))
 	}
 	return copy(b, body), nil
 }
@@ -287,12 +312,17 @@ func (s *Session) Write(b []byte) (int, error) {
 		return 0, err
 	}
 	if err := writeAll(s.conn, frame(15, b)); err != nil {
+		log.Printf("TopSAP [%d] tunnel write failed: %v", s.id, err)
 		return 0, err
+	}
+	if s.txBytes.Add(uint64(len(b))) == uint64(len(b)) {
+		log.Printf("TopSAP [%d] first IPv4 packet sent bytes=%d", s.id, len(b))
 	}
 	return len(b), nil
 }
 func (s *Session) Close() error {
 	s.closeOnce.Do(func() {
+		log.Printf("TopSAP [%d] closing rx_bytes=%d tx_bytes=%d", s.id, s.rxBytes.Load(), s.txBytes.Load())
 		s.cancel()
 		if s.stopWatch != nil {
 			s.stopWatch()
@@ -300,6 +330,7 @@ func (s *Session) Close() error {
 		_ = s.conn.Close()
 		s.logout()
 		s.transport.CloseIdleConnections()
+		log.Printf("TopSAP [%d] closed", s.id)
 	})
 	return nil
 }
@@ -307,5 +338,9 @@ func (s *Session) Close() error {
 func (s *Session) logout() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_, _ = s.post(ctx, "logout", nil, nil)
+	if _, err := s.post(ctx, "logout", nil, nil); err != nil {
+		log.Printf("TopSAP [%d] logout failed: %v", s.id, err)
+	} else {
+		log.Printf("TopSAP [%d] logout completed", s.id)
+	}
 }

@@ -47,6 +47,7 @@ func (c *topSAPClient) Setup() error {
 	}
 	s, err := topsec.Dial(c.ctx, c.options)
 	if err != nil {
+		log.Printf("TopSAP setup failed: %v", err)
 		if errors.Is(err, topsec.ErrLoginRejected) {
 			var rejection *topsec.AuthenticationError
 			if errors.As(err, &rejection) {
