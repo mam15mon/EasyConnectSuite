@@ -26,7 +26,7 @@ func (e *AuthenticationError) Error() string {
 func (e *AuthenticationError) Unwrap() error { return ErrLoginRejected }
 
 const authAgent = "VONE-AUTH,WINDOWS,NULL,TOPCLINET,NULL,CLIENT_TYPE=ng2.2,VERSION=3.6.6.18.64.1"
-const connectPrelude = "CONNECT 127.0.0.1:4430 HTTP/1.1\r\nHost: 127.0.0.1:4430\r\nUser-Agent: VONE-NA,WINDOWS,NULL,TOPCLINET,NULL\r\nProxy-Connection: Keep-Alive\r\n\r\n"
+const connectPrelude = "CONNECT 127.0.0.1:4430 HTTP/1.1\r\nhost:127.0.0.1\r\nUser-Agent: VONE-NA,WINDOWS,NULL,TOPCLINET,NULL\r\nProxy-Connection: Keep-Alive\r\n\r\n"
 const maxResponse = 4 << 20
 
 // The native NIC identifier uses three uppercase hex digits per byte.

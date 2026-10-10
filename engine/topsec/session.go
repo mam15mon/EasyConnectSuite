@@ -79,11 +79,18 @@ func dial(ctx context.Context, opts Options, code string) (*Session, error) {
 		return errors.New("TopSAP 浏览器重定向认证暂不支持")
 	}}
 	succeeded := false
+	authenticated := false
 	defer func() {
 		if !succeeded {
 			cancel()
 			if s.conn != nil {
 				_ = s.conn.Close()
+			}
+			if s.stopWatch != nil {
+				s.stopWatch()
+			}
+			if authenticated {
+				s.logout()
 			}
 			transport.CloseIdleConnections()
 		}
@@ -104,6 +111,7 @@ func dial(ctx context.Context, opts Options, code string) (*Session, error) {
 	if err = login.check(); err != nil {
 		return nil, err
 	}
+	authenticated = true
 	if login.User.NetAccess != "on" || login.User.Algorithm != "standard" || login.User.Protocol != "standard" || login.User.Compress != "off" {
 		return nil, errors.New("TopSAP 数据隧道模式暂不支持")
 	}
@@ -274,10 +282,14 @@ func (s *Session) Close() error {
 			s.stopWatch()
 		}
 		_ = s.conn.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_, _ = s.post(ctx, "logout", nil, nil)
+		s.logout()
 		s.transport.CloseIdleConnections()
 	})
 	return nil
+}
+
+func (s *Session) logout() {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _ = s.post(ctx, "logout", nil, nil)
 }

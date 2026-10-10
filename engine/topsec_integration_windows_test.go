@@ -1,0 +1,187 @@
+package engine
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"EasyConnectSuite/engine/topsec"
+	"github.com/mythologyli/zju-connect/client/easyconnect"
+	"github.com/mythologyli/zju-connect/configs"
+	"github.com/mythologyli/zju-connect/stack/gvisor"
+)
+
+// The mock uses independent headers and the existing IPv4 echo endpoint. It
+// exercises real gVisor TCP/UDP without installing a Windows TUN or routes.
+func topSAPGateway(t *testing.T, reject bool) (*topSAPClient, *atomic.Int32) {
+	t.Helper()
+	var mu sync.Mutex
+	var conns []net.Conn
+	logins := &atomic.Int32{}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "CONNECT" {
+			conn, rw, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			mu.Lock()
+			conns = append(conns, conn)
+			mu.Unlock()
+			defer conn.Close()
+			cmd, body, err := topSAPReadClient(rw.Reader)
+			if err != nil {
+				return
+			}
+			if cmd != 1 || len(body) != 328 || body[3] != 4 || string(bytes.TrimRight(body[72:328], "\x00")) != "mock-session" {
+				t.Error("incorrect setup")
+				return
+			}
+			if _, err = conn.Write([]byte{0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 1}); err != nil {
+				return
+			}
+			cmd, body, err = topSAPReadClient(rw.Reader)
+			if err != nil {
+				return
+			}
+			if cmd != 7 || !bytes.Equal(body, make([]byte, 8)) {
+				t.Error("incorrect initial control command")
+				return
+			}
+			for {
+				cmd, body, err = topSAPReadClient(rw.Reader)
+				if err != nil {
+					return
+				}
+				if cmd != 15 {
+					t.Error("incorrect data command")
+					return
+				}
+				packet := echoIPv4(body)
+				if packet == nil {
+					continue
+				}
+				head := []byte{0, 0, 0xaa, 0xbb, 0, 0, 0, 15, 0, 0, 0, 0, 0xee, 0xff, 8, 0}
+				binary.BigEndian.PutUint32(head[8:], uint32(len(packet)))
+				if _, err = conn.Write(append(head, packet...)); err != nil {
+					return
+				}
+			}
+		}
+		_ = r.ParseForm()
+		switch r.URL.Path {
+		case "/vone/login/auth_param":
+			fmt.Fprint(w, `{pswd:"on",check_client_before_login:"off",auth_protocol:"0",data_protocol:"0",twoway_auth_switch:"off"}`)
+		case "/vone/login/user_pswd":
+			logins.Add(1)
+			if reject {
+				fmt.Fprint(w, `{"Ret":-1001}`)
+				return
+			}
+			http.SetCookie(w, &http.Cookie{Name: "topafasfasfassession_id", Value: "mock-session", Path: "/", Secure: true})
+			fmt.Fprint(w, `{"Ret":0,"user_param":{"topafasfasfassession_id":"mock-session","netacc":"on","alg":"standard","protocal":"standard","compress":"off"},"net_param":{"vip_v4":"10.91.0.2","dns1_v4":"0.0.0.0","dns2_v4":"0.0.0.0"}}`)
+		case "/vone/login/get_config_info":
+			fmt.Fprint(w, `{"Ret":0,"res_list":[{"module":"na","protocol":"ip","ip":"198.51.100.0","mask":"255.255.255.0","port":"","domain":""}]}`)
+		case "/vone/login/logout":
+			fmt.Fprint(w, `{"Ret":0}`)
+		default:
+			t.Error("unexpected endpoint")
+			http.Error(w, "path", 404)
+		}
+	}))
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	ctx, cancel := context.WithCancel(context.Background())
+	c := &topSAPClient{ctx: ctx, cancel: cancel, options: topsec.Options{Server: strings.TrimPrefix(server.URL, "https://"), Username: "test", Password: "test", TLSConfig: &tls.Config{RootCAs: roots}}}
+	t.Cleanup(func() {
+		c.Close()
+		mu.Lock()
+		for _, conn := range conns {
+			_ = conn.Close()
+		}
+		mu.Unlock()
+		server.Close()
+	})
+	return c, logins
+}
+func topSAPReadClient(r *bufio.Reader) (uint32, []byte, error) {
+	h := make([]byte, 16)
+	if _, err := io.ReadFull(r, h); err != nil {
+		return 0, nil, err
+	}
+	if binary.BigEndian.Uint32(h) != 0 || binary.BigEndian.Uint32(h[12:]) != 1 || binary.BigEndian.Uint32(h[8:]) > 65535 {
+		return 0, nil, errors.New("invalid header")
+	}
+	body := make([]byte, binary.BigEndian.Uint32(h[8:]))
+	_, err := io.ReadFull(r, body)
+	return binary.BigEndian.Uint32(h[4:]), body, err
+}
+func TestTopSAPAdapterGVisorTCPAndUDP(t *testing.T) {
+	c, _ := topSAPGateway(t, false)
+	if err := c.Setup(); err != nil {
+		t.Fatal(err)
+	}
+	stack, err := gvisor.NewOwnedStack(c, func() bool { return c.ctx.Err() != nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stack.Close()
+	go stack.Run()
+	conf := configs.Default()
+	conf.Protocol = "topsec"
+	conf.DisableZJUConfig = true
+	policy, err := loadPolicy(conf, c, stack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer policy.resolver.Close()
+	if len(policy.ips) != 1 || policy.useRemoteDNS || policy.dnsName != "" {
+		t.Fatal("incorrect resource/DNS policy")
+	}
+	for _, network := range []string{"tcp", "udp"} {
+		t.Run(network, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			conn, err := policy.dialer.DialIPPort(ctx, network, "198.51.100.9:1234")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+			payload := []byte("TopSAP Go TCP/UDP echo")
+			if _, err = conn.Write(payload); err != nil {
+				t.Fatal(err)
+			}
+			got := make([]byte, len(payload))
+			if network == "tcp" {
+				_, err = io.ReadFull(conn, got)
+			} else {
+				_, err = conn.Read(got)
+			}
+			if err != nil || !bytes.Equal(got, payload) {
+				t.Fatal("gVisor round trip failed", err)
+			}
+		})
+	}
+}
+func TestTopSAPAdapterRefusalIsTerminal(t *testing.T) {
+	c, count := topSAPGateway(t, true)
+	err := c.Setup()
+	if !errors.Is(err, topsec.ErrLoginRejected) || !errors.Is(err, easyconnect.ErrLoginRejected) || count.Load() != 1 {
+		t.Fatal("authentication refusal lost or retried", err)
+	}
+}

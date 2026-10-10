@@ -9,6 +9,9 @@ import (
 )
 
 func TestLiteralProtocolVectors(t *testing.T) {
+	if len(connectPrelude) != 130 {
+		t.Fatal("CONNECT prelude differs from captured constant")
+	}
 	code, err := deviceCode([]byte{2, 0xab, 0, 1, 2, 3})
 	if err != nil || code != "tOn2cYFE+wqTmNHkz2AA7g==" {
 		t.Fatal("device identifier differs from independent vector", err)
@@ -25,9 +28,7 @@ func TestLiteralProtocolVectors(t *testing.T) {
 	if err != nil || command != 2 || len(body) != 0 {
 		t.Fatal("invalid setup ACK decode", err)
 	}
-	packet, _ := hex.DecodeString("0000aabb0000000f0000001c eeff0800 4500001c0000000040110000 c0000201c6336401 04d210e100080000")
-	// DecodeString requires no spaces; keep a separate literal for readability.
-	packet, _ = hex.DecodeString("0000aabb0000000f0000001ceeff08004500001c0000000040110000c0000201c633640104d210e100080000")
+	packet, _ := hex.DecodeString("0000aabb0000000f0000001ceeff08004500001c0000000040110000c0000201c633640104d210e100080000")
 	command, body, err = readFrame(bytes.NewReader(packet))
 	if err != nil || command != 15 || len(body) != 28 || body[9] != 17 {
 		t.Fatal("UDP IPv4 literal decode failed", err)

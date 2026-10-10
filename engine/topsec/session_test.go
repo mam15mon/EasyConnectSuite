@@ -251,6 +251,9 @@ func TestRefusalAndMissingResources(t *testing.T) {
 			if mode == "certificate" && g.logins.Load() != 0 {
 				t.Fatal("credentials sent before certificate verification")
 			}
+			if mode == "resources" && g.logouts.Load() != 1 {
+				t.Fatal("authenticated startup failure leaked session")
+			}
 		})
 	}
 }
