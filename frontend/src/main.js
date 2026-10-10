@@ -232,6 +232,25 @@ let modeSaving = false;
 let currentStatus = { running: false, state: 'disconnected' };
 let detectedInterfaces = ['以太网', 'WLAN'];
 let lastResourceRows = [];
+let connectionFilter = 'all';
+let selectionVersion = 0;
+let selectionQueue = Promise.resolve();
+let resourceRequest = 0;
+const pendingActions = new Set();
+const profileResources = new Map();
+const protocolNames = { easyconnect: 'EasyConnect', univpn: 'UniVPN', topsec: 'TopSAP' };
+
+function receiveStatus(status) {
+  const index = connectionStatuses.findIndex(s => s.profileId === status.profileId);
+  if (index >= 0) connectionStatuses[index] = status;
+  else if (cachedProfiles.some(p => p.id === status.profileId)) connectionStatuses.push(status);
+  updateStatusUI(status);
+  renderConnections();
+}
+
+function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 // ---------- 表单联动 ----------
 
@@ -266,21 +285,11 @@ function updateInfoFields(status) {
   socksPortVal.classList.toggle('pending', !!proxyDisabled);
   httpPortVal.classList.toggle('pending', !!proxyDisabled);
 
-  if (!status.running || status.state === 'disconnected') {
-    clientIpVal.innerText = '—';
-    clientIpVal.classList.add('pending');
-    dnsVal.innerText = '—';
-    dnsVal.classList.add('pending');
-  } else {
-    if (status.clientIp) {
-      clientIpVal.innerText = status.clientIp;
-      clientIpVal.classList.remove('pending');
-    }
-    if (status.dns) {
-      dnsVal.innerText = status.dns;
-      dnsVal.classList.remove('pending');
-    }
-  }
+  clientIpVal.innerText = status.running && status.clientIp ? status.clientIp : '—';
+  dnsVal.innerText = status.running && status.dns ? status.dns : '—';
+  clientIpVal.classList.toggle('pending', clientIpVal.innerText === '—');
+  dnsVal.classList.toggle('pending', dnsVal.innerText === '—');
+
 }
 
 function updateStatusUI(status) {
@@ -288,11 +297,17 @@ function updateStatusUI(status) {
   currentStatus = status;
   uptimeDisplay.innerText = formatSeconds(status.duration || 0);
   document.body.dataset.state = status.state;
-  const word = status.state === 'connecting' ? status.stage : STATE_WORDS[status.state];
+  const word = status.state === 'connecting' ? (status.stage || '连接中') : (STATE_WORDS[status.state] || '未连接');
   stateWord.innerText = word;
+  stateWord.className = `connection-state ${status.state}`;
+  document.getElementById('detail-name').textContent = activeProfile?.name || '选择一条 VPN';
+  document.getElementById('detail-gateway').textContent = activeProfile ? `${protocolNames[activeProfile.protocol || 'easyconnect']} / ${activeProfile.server}:${activeProfile.port}` : '';
+  document.getElementById('resource-owner').textContent = activeProfile ? `${activeProfile.name} 的授权资源` : '选择连接后查看资源';
+  document.getElementById('btn-edit-profile').disabled = !activeProfile || !!status.running || modeSaving;
+  document.getElementById('btn-del-profile').disabled = !activeProfile || !!status.running || modeSaving;
 
   if (status.state === 'connected') {
-    btnLabel.innerText = '断开隧道';
+    btnLabel.innerText = '断开连接';
     btnToggle.disabled = false;
     stateNote.innerText = status.tunMode
       ? status.disableProxy
@@ -300,18 +315,18 @@ function updateStatusUI(status) {
         : 'TUN 已连接，按 VPN 资源分流；本地 SOCKS5 / HTTP 代理可使用'
       : status.disableProxy
         ? 'VPN 已连接；TUN 和本地代理均已关闭'
-        : 'VPN 通道工作正常，流量经本地代理端口直接转发';
+        : '会话已建立，可通过本地代理访问授权资源';
   } else if (status.state === 'connecting') {
     const reconnecting = status.stage === '重连中';
     btnLabel.innerText = reconnecting ? '停止重连' : '取消连接';
     btnToggle.disabled = false;
     stateNote.innerText = status.message;
   } else if (status.state === 'error') {
-    btnLabel.innerText = '重新建立';
+    btnLabel.innerText = '重试连接';
     btnToggle.disabled = false;
     stateNote.innerText = status.lastError || '连接建立失败，可检查配置后重试';
   } else {
-    btnLabel.innerText = '建立隧道';
+    btnLabel.innerText = '连接';
     btnToggle.disabled = false;
     stateNote.innerText = activeProfile
       ? `准备连接节点「${activeProfile.name}」（${activeProfile.server}:${activeProfile.port}）`
@@ -328,48 +343,61 @@ function updateStatusUI(status) {
     ? '断开连接后可切换本地代理'
     : 'SOCKS5 / HTTP，可与 TUN 同时开启';
   profileSelect.disabled = modeSaving;
-  if (modeSaving) btnToggle.disabled = true;
+  btnToggle.disabled = modeSaving || !activeProfile || pendingActions.has(activeProfile?.id);
   tunModeNote.title = modeSaving
     ? '正在保存设置或等待管理员授权…'
     : status.running
       ? '断开连接后可切换模式'
       : '开启时需要管理员授权';
   updateInfoFields(status);
+  renderConnections();
 }
 
 // ---------- Profile ----------
 
 async function refreshProfiles() {
+  const version = selectionVersion;
   const appConfig = await window.go.main.App.GetAppConfig();
+  if (version !== selectionVersion) return;
   cachedProfiles = appConfig.profiles || [];
-  profileSelect.innerHTML = '';
-
-  cachedProfiles.forEach(p => {
+  profileSelect.replaceChildren();
+  for (const p of cachedProfiles) {
     const opt = document.createElement('option');
     opt.value = p.id;
-    opt.innerText = p.name + (p.enable2FA ? ' [2FA]' : '');
-    if (p.id === appConfig.activeProfileId) opt.selected = true;
+    opt.textContent = p.name;
     profileSelect.appendChild(opt);
-  });
-
+  }
   activeProfile = cachedProfiles.find(p => p.id === appConfig.activeProfileId) || cachedProfiles[0];
+  profileSelect.value = activeProfile?.id || '';
   await refreshConnections();
-  updateStatusUI(await window.go.main.App.GetStatus());
+  if (version !== selectionVersion) return;
+  const status = await window.go.main.App.GetStatus();
+  if (version === selectionVersion) updateStatusUI(status);
+  await refreshResources(false);
 }
 
-function updateProfileView(profile) {
+async function selectProfile(id) {
+  if (modeSaving) return;
+  const profile = cachedProfiles.find(p => p.id === id);
   if (!profile) return;
+  const version = ++selectionVersion;
   activeProfile = profile;
+  profileSelect.value = id;
+  routesFilter.value = '';
+  updateStatusUI(connectionStatuses.find(s => s.profileId === id) || {profileId:id, running:false, state:'disconnected'});
+  renderResources(profileResources.get(id) || []);
+  selectionQueue = selectionQueue.then(() => window.go.main.App.SetActiveProfile(id));
+  try {
+    if (!await selectionQueue) throw new Error('服务器配置不存在');
+    if (version !== selectionVersion) return;
+    const status = await window.go.main.App.GetStatus();
+    if (version !== selectionVersion) return;
+    updateStatusUI(status);
+    await refreshResources(false);
+  } catch (err) { showToast(String(err)); }
 }
 
-profileSelect.addEventListener('change', async (e) => {
-  const id = e.target.value;
-  await window.go.main.App.SetActiveProfile(id);
-  updateProfileView(cachedProfiles.find(item => item.id === id));
-  updateStatusUI(await window.go.main.App.GetStatus());
-  refreshResources();
-  renderConnections();
-});
+profileSelect.addEventListener('change', e => selectProfile(e.target.value));
 
 function openEditModal(profile) {
   if (profile && connectionStatuses.some(s => s.profileId === profile.id && s.running)) { showToast('请先断开该配置再编辑'); return; }
@@ -480,7 +508,7 @@ async function saveTUNMode(enabled) {
   updateStatusUI(currentStatus);
   let restarting = false;
   try {
-    restarting = await window.go.main.App.SetTUNMode(enabled);
+    restarting = await window.go.main.App.SetProfileTUNMode(activeProfile.id, enabled);
     if (restarting) {
       tunModeToggle.checked = enabled;
       tunModeNote.title = '授权成功，正在以管理员身份重新启动…';
@@ -520,27 +548,50 @@ proxyModeToggle.addEventListener('change', async () => {
   }
 });
 
-btnToggle.addEventListener('click', async () => {
-  if (currentStatus.running) {
-    await window.go.main.App.StopProfileVPN(activeProfile.id);
-  } else {
-    if (activeProfile?.tunMode) {
-      try {
-        if (await saveTUNMode(true)) return;
-      } catch (err) {
-        showToast(String(err));
-        return;
+async function toggleConnection(id) {
+  if (!id || modeSaving || pendingActions.has(id)) return;
+  const profile = cachedProfiles.find(p => p.id === id);
+  if (!profile) return;
+  const status = connectionStatuses.find(s => s.profileId === id);
+  const stopping = !!status?.running;
+  pendingActions.add(id);
+  renderConnections();
+  if (id === activeProfile?.id) updateStatusUI(currentStatus);
+  try {
+    if (stopping) {
+      const res = await window.go.main.App.StopProfileVPN(id);
+      if (res !== 'OK') throw new Error(res);
+    } else {
+      if (profile.tunMode) {
+        modeSaving = true;
+        updateStatusUI(currentStatus);
+        try {
+          if (await window.go.main.App.SetProfileTUNMode(id, true)) return;
+        } finally { modeSaving = false; }
+      }
+      receiveStatus({profileId:id, activeProfile:profile.name, protocol:profile.protocol || 'easyconnect', running:true, state:'connecting', stage:'准备中', message:'正在准备连接…', tunMode:!!profile.tunMode, disableProxy:!!profile.disableProxy});
+      const res = await window.go.main.App.StartProfileVPN(id);
+      if (res !== 'OK') {
+        receiveStatus({profileId:id, running:false, state:'error', lastError:res});
+        throw new Error(res);
       }
     }
-    updateStatusUI({ running: true, state: 'connecting', stage: '准备中', message: '正在准备连接…', tunMode: !!activeProfile?.tunMode, disableProxy: !!activeProfile?.disableProxy });
-    const connectingID = activeProfile?.id;
-    const res = await window.go.main.App.StartProfileVPN(connectingID);
-    if (res !== 'OK' && connectingID === activeProfile?.id) {
-      showToast('[连接失败] ' + res);
-      updateStatusUI({ running: false, state: 'error', lastError: res });
+    await refreshConnections();
+    if (id === activeProfile?.id) {
+      const version = selectionVersion;
+      const updated = await window.go.main.App.GetStatus();
+      if (version === selectionVersion) updateStatusUI(updated);
+      await refreshResources(false);
     }
+  } catch (err) {
+    showToast(`${profile.name}：${err}`);
+  } finally {
+    pendingActions.delete(id);
+    renderConnections();
+    updateStatusUI(currentStatus);
   }
-});
+}
+btnToggle.addEventListener('click', () => toggleConnection(activeProfile?.id));
 
 // ---------- 可达资源 ----------
 
@@ -576,7 +627,7 @@ function renderResources(rows) {
           <circle cx="11" cy="11" r="8"/>
           <line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        <span>未搜索到匹配「${keyword}」的资源</span>
+        <span>未搜索到匹配「${escapeHTML(keyword)}」的资源</span>
       </div>`;
     return;
   }
@@ -592,9 +643,9 @@ function renderResources(rows) {
             ? '<rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>'
             : '<circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'}
         </svg>
-        <span class="route-target" title="${r.target || r.Target || ''}">${r.target || r.Target || ''}</span>
+        <span class="route-target" title="${escapeHTML(r.target || r.Target || '')}">${escapeHTML(r.target || r.Target || '')}</span>
       </div>
-      <span class="route-badge">${(r.ports || r.Ports || '')} · ${r.protocol || r.Protocol || ''}</span>
+      <span class="route-badge">${escapeHTML(r.ports || r.Ports || '')} · ${escapeHTML(r.protocol || r.Protocol || '')}</span>
     </div>`;
 
   const makeGroup = (title, list, isIp) => list.length
@@ -607,21 +658,21 @@ function renderResources(rows) {
     makeGroup('域名映射解析', domainRows, false);
 }
 
-async function refreshResources() {
+async function refreshResources(notify = true) {
+  if (!activeProfile || !window.go?.main?.App) return;
+  const id = activeProfile.id;
+  const version = selectionVersion;
+  const request = ++resourceRequest;
   const refreshBtn = document.getElementById('btn-refresh-resources');
-  if (refreshBtn) refreshBtn.classList.add('spinning');
+  refreshBtn.classList.add('spinning');
   try {
-    if (window.go && window.go.main && window.go.main.App) {
-      renderResources(await window.go.main.App.GetVPNResources());
-      showToast('资源列表已刷新');
-    }
-  } catch (err) {
-    console.error('GetVPNResources error:', err);
-  } finally {
-    setTimeout(() => {
-      if (refreshBtn) refreshBtn.classList.remove('spinning');
-    }, 500);
-  }
+    const rows = await window.go.main.App.GetVPNResources();
+    if (id !== activeProfile?.id || version !== selectionVersion || request !== resourceRequest) return;
+    profileResources.set(id, rows || []);
+    renderResources(rows);
+    if (notify) showToast('资源视图已刷新');
+  } catch (err) { showToast(String(err)); }
+  finally { if (request === resourceRequest) refreshBtn.classList.remove('spinning'); }
 }
 
 routesFilter.addEventListener('input', () => renderResources(lastResourceRows));
@@ -632,32 +683,12 @@ document.getElementById('btn-refresh-resources').addEventListener('click', () =>
 
 // ---------- 预览模式（仅浏览器 ?preview，用于视觉检查） ----------
 
-function loadPreviewData() {
-  const demoProfiles = [
-    { id: 'p1', name: 'IDC 生产节点 (带2FA)', server: '111.205.145.240', port: 58443, enable2FA: true },
-    { id: 'p2', name: 'UniVPN 开发集群', protocol: 'univpn', server: '10.0.0.8', port: 443, enable2FA: false, socksPort:1082, httpPort:1083 },
-  ];
-  cachedProfiles = demoProfiles;
-  activeProfile = demoProfiles[0];
-  connectionStatuses = demoProfiles.map(p => ({ profileId:p.id, activeProfile:p.name, protocol:p.protocol || "easyconnect", running:true, state:"connected" }));
-  renderConnections();
-  profileSelect.innerHTML = demoProfiles.map(p =>
-    `<option value="${p.id}">${p.name}${p.enable2FA ? ' [2FA]' : ''}</option>`).join('');
-
-  updateStatusUI({
-    running: true, state: 'connected',
-    clientIp: '192.168.0.2', dns: '172.31.112.1',
-    socksPort: '1080', httpPort: '1081',
-  });
-  uptimeDisplay.innerText = '08:20:31';
-
-  const demo = [];
-  for (let i = 0; i < 14; i++) {
-    demo.push({ kind: 'ip', target: `172.31.10${i}.0 ~ 172.31.10${i}.255`, ports: '全部端口', protocol: '全部协议' });
-  }
-  demo.push({ kind: 'domain', target: 'ops.internal.example.com → 172.31.128.12', ports: '固定解析', protocol: '-' });
-  demo.push({ kind: 'domain', target: 'git.internal.example.com', ports: '443', protocol: 'TCP' });
-  renderResources(demo);
+async function loadPreviewData() {
+  const { installPreview } = await import('./preview.mjs');
+  installPreview(receiveStatus);
+  document.getElementById('preview-indicator').hidden = false;
+  detectedInterfaces = await window.go.main.App.GetInterfaces();
+  await refreshProfiles();
 }
 
 // ---------- 启动 ----------
@@ -670,19 +701,16 @@ async function initApp() {
 
   if (window.runtime) {
     window.runtime.EventsOn('vpn-status', (status) => {
-      updateStatusUI(status);
+      receiveStatus(status);
       if (!status.running && status.profileId === activeProfile?.id) refreshResources();
     });
 
     window.runtime.EventsOn('vpn-resources', (payload) => {
+      profileResources.set(payload.profileId, payload.entries || []);
       if (payload.profileId === activeProfile?.id) renderResources(payload.entries);
     });
 
-    window.runtime.EventsOn('status-tick', (status) => {
-      if (status.profileId !== activeProfile?.id) return;
-      uptimeDisplay.innerText = formatSeconds(status.duration);
-      updateInfoFields(status);
-    });
+    window.runtime.EventsOn('status-tick', status => receiveStatus(status));
 
     window.runtime.EventsOn('vpn-connections', (statuses) => { connectionStatuses = statuses || []; renderConnections(); });
 
@@ -695,10 +723,9 @@ async function initApp() {
     if (window.go && window.go.main && window.go.main.App) {
       detectedInterfaces = await window.go.main.App.GetInterfaces();
       await refreshProfiles();
-      updateStatusUI(await window.go.main.App.GetStatus());
-      refreshResources();
+
     } else if (PREVIEW) {
-      loadPreviewData();
+      await loadPreviewData();
     }
   } catch (err) {
     console.error('Init error:', err);
@@ -730,31 +757,56 @@ async function refreshConnections() {
 }
 function renderConnections() {
   const list = document.getElementById('connection-list');
+  const focused = document.activeElement?.closest('[data-profile-action]');
+  const focusID = focused?.dataset.profileId;
+  const focusAction = focused?.dataset.profileAction;
   list.replaceChildren();
-  for (const status of connectionStatuses) {
-    const button = document.createElement('button');
-    button.className = 'connection-row';
-    button.classList.toggle('selected', status.profileId === activeProfile?.id);
-    const name = document.createElement('span');
-    name.textContent = `${status.activeProfile} · ${{univpn:'UniVPN', topsec:'TopSAP', easyconnect:'深信服'}[status.protocol] || status.protocol}`;
-    const state = document.createElement('span');
-    state.className = `connection-state ${status.state}`;
-    state.textContent = STATE_WORDS[status.state] || status.state;
-    button.append(name, state);
-    button.addEventListener('click', async () => {
-      await window.go.main.App.SetActiveProfile(status.profileId);
-      profileSelect.value = status.profileId;
-      updateProfileView(cachedProfiles.find(p => p.id === status.profileId));
-      updateStatusUI(await window.go.main.App.GetStatus());
-      refreshResources(); renderConnections();
-    });
-    list.appendChild(button);
+  document.getElementById('profile-count').textContent = cachedProfiles.length;
+  document.getElementById('global-connected').textContent = connectionStatuses.filter(s => s.state === 'connected').length;
+  document.getElementById('global-pending').textContent = `${connectionStatuses.filter(s => s.state === 'connecting').length} 连接中`;
+  const errors = connectionStatuses.filter(s => s.state === 'error').length;
+  const errorSummary = document.getElementById('global-errors');
+  errorSummary.hidden = !errors;
+  errorSummary.textContent = `${errors} 条异常`;
+  document.getElementById('btn-stop-all').disabled = modeSaving || !connectionStatuses.some(s => s.running);
+  for (const profile of cachedProfiles) {
+    const status = connectionStatuses.find(s => s.profileId === profile.id) || {state:'disconnected', running:false};
+    if (connectionFilter === 'running' && !status.running) continue;
+    const row = document.createElement('div');
+    row.className = 'connection-row';
+    row.dataset.profileId = profile.id;
+    row.classList.toggle('selected', profile.id === activeProfile?.id);
+    const state = status.state === 'connecting' ? (status.stage || '连接中') : STATE_WORDS[status.state] || '未连接';
+    row.innerHTML = `<div class="connection-identity"><button class="connection-name" data-profile-action="select" aria-label="查看 ${escapeHTML(profile.name)}">${escapeHTML(profile.name)}</button><div class="connection-meta"><span class="protocol-tag">${protocolNames[profile.protocol || 'easyconnect']}</span><span class="connection-gateway" title="${escapeHTML(profile.server)}:${profile.port}">${escapeHTML(profile.server)}:${profile.port}</span></div></div><div><span class="connection-state ${status.state}" title="${escapeHTML(status.lastError || status.message || state)}">${escapeHTML(state)}</span><span class="connection-time">${status.running ? formatSeconds(status.duration || 0) : status.state === 'error' ? '查看详情排查' : '等待连接'}</span></div><div class="connection-modes">${(status.running ? status.tunMode : profile.tunMode) ? '<span class="mode-tag">TUN 分流</span>' : ''}${!(status.running ? status.disableProxy : profile.disableProxy) ? '<span class="mode-tag">本地代理</span>' : ''}</div><div class="connection-actions"><button class="connection-action ${status.running ? 'stop' : ''}" data-profile-action="toggle">${pendingActions.has(profile.id) ? '处理中' : status.running ? status.state === 'connecting' ? '取消' : '断开' : status.state === 'error' ? '重试' : '连接'}</button><button class="connection-view" data-profile-action="select" aria-label="查看 ${escapeHTML(profile.name)} 详情">查看</button></div>`;
+    for (const button of row.querySelectorAll('[data-profile-action]')) {
+      button.dataset.profileId = profile.id;
+      button.disabled = modeSaving || (button.dataset.profileAction === 'toggle' && pendingActions.has(profile.id));
+      button.addEventListener('click', () => button.dataset.profileAction === 'toggle' ? toggleConnection(profile.id) : selectProfile(profile.id));
+      if (button.dataset.profileAction === 'select') button.setAttribute('aria-pressed', String(profile.id === activeProfile?.id));
+    }
+    list.appendChild(row);
   }
-  const count = connectionStatuses.filter(s => s.running).length;
-  if (count) {
-    const stop = document.createElement('button');
-    stop.className = 'btn-chip danger'; stop.textContent = `断开全部（${count}）`;
-    stop.addEventListener('click', () => window.go.main.App.StopAllVPN());
-    list.appendChild(stop);
+  if (!list.children.length) {
+    const empty = document.createElement('div');
+    empty.className = 'list-empty';
+    empty.textContent = cachedProfiles.length ? '没有运行中的连接，可切回“全部”选择 VPN。' : '还没有 VPN 配置，点击“新建 VPN”添加。';
+    list.appendChild(empty);
   }
+  if (focusID) Array.from(list.querySelectorAll('[data-profile-action]')).find(b => b.dataset.profileId === focusID && b.dataset.profileAction === focusAction)?.focus({preventScroll:true});
 }
+
+for (const button of document.querySelectorAll('[data-connection-filter]')) {
+  button.addEventListener('click', () => {
+    connectionFilter = button.dataset.connectionFilter;
+    for (const b of document.querySelectorAll('[data-connection-filter]')) {
+      b.classList.toggle('active', b === button);
+      b.setAttribute('aria-pressed', String(b === button));
+    }
+    renderConnections();
+  });
+}
+document.getElementById('btn-stop-all').addEventListener('click', async () => {
+  if (!confirm('断开所有正在运行的 VPN？')) return;
+  try { await window.go.main.App.StopAllVPN(); await refreshProfiles(); }
+  catch (err) { showToast(String(err)); }
+});
