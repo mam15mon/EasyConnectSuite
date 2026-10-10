@@ -160,6 +160,8 @@ func Start(opts Options) (*Engine, error) {
 		return nil, fmt.Errorf("不支持的 VPN 类型: %s", conf.Protocol)
 	}
 
+	stopWatch := context.AfterFunc(e.ctx, vpnClient.Close)
+	e.registerTerminal("StopClientWatch", func(context.Context) error { stopWatch(); return nil })
 	log.Printf("VPN protocol: %s", conf.Protocol)
 	e.emitProgress("认证中", "正在验证账号并登录 VPN 服务器…")
 
@@ -313,6 +315,9 @@ func Start(opts Options) (*Engine, error) {
 		clientIP = ip.String()
 	}
 
+	if e.ctx.Err() != nil {
+		return nil, e.ctx.Err()
+	}
 	if e.fatal.Load() {
 		return nil, fmt.Errorf("VPN 隧道在启动期间断开")
 	}

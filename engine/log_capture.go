@@ -15,6 +15,7 @@ type logCapture struct {
 	engines  map[*Engine]bool
 	files    map[string]*rotatingWriter
 	previous io.Writer
+	once     sync.Once
 }
 
 func (h *logCapture) Write(p []byte) (int, error) {
@@ -24,6 +25,9 @@ func (h *logCapture) Write(p []byte) (int, error) {
 		if e.opts.OnLog != nil {
 			callbacks = append(callbacks, e.opts.OnLog)
 		}
+	}
+	if len(h.files) == 0 && h.previous != nil {
+		_, _ = h.previous.Write(p)
 	}
 	for _, w := range h.files {
 		_, _ = w.Write(p)
@@ -35,12 +39,9 @@ func (h *logCapture) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 func (e *Engine) startLogCapture() {
+	engineLogs.once.Do(func() { engineLogs.previous = stdlog.Writer(); stdlog.SetOutput(&engineLogs) })
 	engineLogs.mu.Lock()
 	defer engineLogs.mu.Unlock()
-	if len(engineLogs.engines) == 0 {
-		engineLogs.previous = stdlog.Writer()
-		stdlog.SetOutput(&engineLogs)
-	}
 	engineLogs.engines[e] = true
 	if path := e.opts.LogFile; path != "" && engineLogs.files[path] == nil {
 		if w, err := newRotatingWriter(path, engineLogLimit); err == nil {
@@ -53,9 +54,6 @@ func (e *Engine) stopLogCapture() {
 	defer engineLogs.mu.Unlock()
 	delete(engineLogs.engines, e)
 	if len(engineLogs.engines) == 0 {
-		if engineLogs.previous != nil {
-			stdlog.SetOutput(engineLogs.previous)
-		}
 		for path, w := range engineLogs.files {
 			_ = w.Close()
 			delete(engineLogs.files, path)
