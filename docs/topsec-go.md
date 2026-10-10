@@ -32,6 +32,9 @@ TopSAP 标准模式现已接入同一 Windows EXE。协议核心在 `engine/tops
 | 证书策略 | 默认不发送凭据给不受信任证书；手动忽略可连接；公钥不一致仍拒绝 |
 | 三协议管理 | 模拟 EasyConnect/UniVPN/TopSAP 并发，停止 TopSAP 保留另外两条会话及独立端口/槽位 |
 | Go 检查 | 根模块 `go test ./...`、`go vet ./...`、`go test -race ./...` 通过 |
+| Windows 交付包 | 最终前端与 windows/amd64 生产构建通过，Compress=false；PE 无 UPX 节，文件 20,633,088 字节 |
 | 实际新版 EXE | 仍待用户验证 Go 登录、内网访问及系统 TUN 共存；之前的真实成功连接由官方客户端完成 |
 
 构建命令：`wails build -m -nosyncgomod -trimpath -o EasyConnectGUI-multi-vpn-topsec.exe`。本次不使用 UPX。
+
+交付文件 SHA-256：`28ECB1A2AFC5714391C9F218A7DD4019DBD71E893921EA43106C94AA6E7EB2A2`。
