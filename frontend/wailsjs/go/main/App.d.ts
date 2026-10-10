@@ -21,6 +21,8 @@ export function SaveProfile(arg1:main.Profile):Promise<main.Profile>;
 
 export function SetActiveProfile(arg1:string):Promise<boolean>;
 
+export function SetProfileTUNMode(arg1:string,arg2:boolean):Promise<boolean>;
+
 export function SetProxyEnabled(arg1:boolean):Promise<void>;
 
 export function SetTUNMode(arg1:boolean):Promise<boolean>;
