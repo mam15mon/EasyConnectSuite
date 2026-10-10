@@ -1,19 +1,7 @@
-# UniVPN 认证 MAC 格式对齐与返回码日志
+# Authentication MAC encoding and failure logging
 
-## Goal
+Read-only inspection finds actual AUTH result 2 / 0x00000002 in the running diagnostic UI. Official successful authentication logs identify a domain matching the configured gateway, and a MAC TLV of 14 uppercase characters in four-hex-digit hyphen groups. Go currently emits 17 lowercase colon-separated characters. The pinned source's working Python prototype emits the observed official format.
 
-读取实际错误得到 AUTH 返回码2；官方成功日志显示认证域与Go一致，但MAC为14字符大写连字符分组，Go为17字符冒号格式。对齐工作原型的稳定MAC编码并持久化拒绝返回码。
+Correct MAC wire encoding using that prototype's stable username+gateway algorithm, retain auth escaping/domain/certificate behavior and immediate rejection stop. Persist only numeric rejection metadata into the existing engine.log. Keep all private logs, configurations, identifiers and credentials out of task/Git. No automatic real login, protocol fallback, MAC probing or changes to the running official client. Deliver a new uncompressed EXE.
 
-## Requirements
-
-- TBD
-
-## Acceptance Criteria
-
-- [ ] TBD
-
-## Notes
-
-- Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
-- Lightweight tasks can remain PRD-only.
-- For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
+Acceptance: literal reference vectors pass for the MAC value and complete authentication frame, mock TLS authentication verifies all fields independently, rejected authentication persists numeric code without credentials, root race/vet and Wails build pass. Live login success remains a separate user test; code 2 has no confirmed semantic mapping.
