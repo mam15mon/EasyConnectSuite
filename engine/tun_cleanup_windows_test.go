@@ -107,3 +107,70 @@ $result | ConvertTo-Json -Compress
 		})
 	}
 }
+
+func TestStaleCleanupIncludesAllOwnedTUNSlots(t *testing.T) {
+	const mocks = `
+$script:dnsRemoved = 0; $script:routesRemoved = 0
+function Get-DnsClientNrptRule {
+ [pscustomobject]@{ Name='a'; Comment='EasyConnectSuite resource TUN' }
+ [pscustomobject]@{ Name='b'; Comment='EasyConnectSuite resource TUN #1' }
+ [pscustomobject]@{ Name='other'; Comment='another VPN' }
+}
+function Get-NetAdapter {
+ [pscustomobject]@{ Name='EasyConnect Suite'; InterfaceIndex=42 }
+ [pscustomobject]@{ Name='EasyConnect Suite #1'; InterfaceIndex=43 }
+ [pscustomobject]@{ Name='EasyConnect Suite #2'; InterfaceIndex=44 }
+ [pscustomobject]@{ Name='another VPN'; InterfaceIndex=45 }
+}
+function Get-NetIPAddress {
+ [pscustomobject]@{ InterfaceIndex=42; AddressFamily='IPv4'; IPAddress='198.19.128.1' }
+ [pscustomobject]@{ InterfaceIndex=43; AddressFamily='IPv4'; IPAddress='198.19.128.5' }
+ [pscustomobject]@{ InterfaceIndex=44; AddressFamily='IPv4'; IPAddress='192.0.2.1' }
+ [pscustomobject]@{ InterfaceIndex=45; AddressFamily='IPv4'; IPAddress='198.19.128.9' }
+}
+function Get-NetRoute {
+ param($InterfaceIndex,$AddressFamily,$PolicyStore)
+ if ($InterfaceIndex -notin @(42,43)) { throw 'touched wrong adapter' }
+ [pscustomobject]@{InterfaceIndex=$InterfaceIndex;DestinationPrefix='10.42.0.0/16';Protocol='NetMgmt';RouteMetric=0;NextHop='0.0.0.0'}
+}
+function Remove-DnsClientNrptRule {
+ param($Name,[switch]$Force)
+ if ($Name -notin @('a','b')) { throw 'removed other DNS' }; $script:dnsRemoved++
+}
+function Remove-NetRoute {
+ param([Parameter(ValueFromPipeline)]$InputObject,$PolicyStore,$Confirm)
+ process { if ($InputObject.InterfaceIndex -notin @(42,43)) { throw 'removed other route' };$script:routesRemoved++ }
+}
+function Clear-DnsClientCache {}
+`
+	for _, probe := range []bool{true, false} {
+		payload, _ := json.Marshal(map[string]any{"action": "cleanup", "probe": probe, "tag": nrptTag, "name": tunName, "address": "198.19.128.1"})
+		script := mocks + "\n$result = & {\n" + networkScript + "\n} | ConvertFrom-Json\n" + `
+$result | Add-Member -NotePropertyName dnsRemoved -NotePropertyValue $script:dnsRemoved
+$result | Add-Member -NotePropertyName routesRemoved -NotePropertyValue $script:routesRemoved
+$result | ConvertTo-Json -Compress
+`
+		cmd := exec.CommandContext(t.Context(), "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		cmd.Stdin = strings.NewReader(string(payload))
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatal(err, string(output))
+		}
+		var result struct {
+			routeResult
+			DNSRemoved    int `json:"dnsRemoved"`
+			RoutesRemoved int `json:"routesRemoved"`
+		}
+		if err := json.Unmarshal(output, &result); err != nil {
+			t.Fatal(err, string(output))
+		}
+		want := 2
+		if probe {
+			want = 0
+		}
+		if !result.Pending || result.Error != "" || result.DNSRemoved != want || result.RoutesRemoved != want {
+			t.Fatalf("multi-slot cleanup: %s", output)
+		}
+	}
+}
