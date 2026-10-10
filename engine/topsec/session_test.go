@@ -97,7 +97,7 @@ func newGateway(t *testing.T) *gateway {
 				fmt.Fprint(w, `{"Ret":0}`)
 				return
 			}
-			fmt.Fprint(w, `{"Ret":0,"res_list":[{"module":"na","protocol":"ip","ip":"198.51.100.0","mask":"255.255.255.0","port":"","domain":""}]}`)
+			fmt.Fprint(w, `{"Ret":0,"net_param":{"vip_v4":"10.91.0.9","dns1_v4":"0.0.0.0","dns2_v4":"0.0.0.0"},"res_list":[{"module":"na","protocol":"ip","ip":"198.51.100.0","mask":"255.255.255.0","port":"","domain":""}]}`)
 		case "/vone/login/logout":
 			g.logouts.Add(1)
 			fmt.Fprint(w, `{"Ret":0}`)
@@ -194,7 +194,7 @@ func TestSessionIPv4AndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b.Close()
-	if a.IP().String() != "10.91.0.2" || len(a.Routes()) != 1 || a.Routes()[0].String() != "198.51.100.0/24" || len(a.DNSServers()) != 0 {
+	if a.IP().String() != "10.91.0.9" || len(a.Routes()) != 1 || a.Routes()[0].String() != "198.51.100.0/24" || len(a.DNSServers()) != 0 {
 		t.Fatal("incorrect session configuration")
 	}
 	for _, protocol := range []byte{6, 17} {

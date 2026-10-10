@@ -74,6 +74,10 @@ func topSAPGateway(t *testing.T, reject bool) (*topSAPClient, *atomic.Int32) {
 					t.Error("incorrect data command")
 					return
 				}
+				// The gateway only accepts the address assigned by TYPE=all.
+				if len(body) < 20 || !bytes.Equal(body[12:16], []byte{10, 91, 0, 9}) {
+					continue
+				}
 				packet := echoIPv4(body)
 				if packet == nil {
 					continue
@@ -101,7 +105,7 @@ func topSAPGateway(t *testing.T, reject bool) (*topSAPClient, *atomic.Int32) {
 			if err := r.ParseForm(); err != nil || r.Form.Get("TYPE") != "all" || !r.Form.Has("HASH") || r.Form.Get("HASH") != "" {
 				t.Error("full resource request differs from native TYPE=all contract")
 			}
-			fmt.Fprint(w, `{"Ret":0,"res_list":[{"module":"na","protocol":"ip","ip":"198.51.100.0","mask":"255.255.255.0","port":"","domain":""}]}`)
+			fmt.Fprint(w, `{"Ret":0,"net_param":{"vip_v4":"10.91.0.9","dns1_v4":"0.0.0.0","dns2_v4":"0.0.0.0"},"res_list":[{"module":"na","protocol":"ip","ip":"198.51.100.0","mask":"255.255.255.0","port":"","domain":""}]}`)
 		case "/vone/login/logout":
 			fmt.Fprint(w, `{"Ret":0}`)
 		default:
