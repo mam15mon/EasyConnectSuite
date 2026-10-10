@@ -218,29 +218,37 @@ func newHTTPServer(bindAddr string, handler http.Handler) *http.Server {
 	}
 }
 
-func ServeHTTP(bindAddr string, dialer ProxyDialer) {
-	proxy := newHTTPProxy(dialer)
+type httpService struct {
+	server *http.Server
+	proxy  *httpProxy
+}
 
-	log.Printf("HTTP server listening on %s", bindAddr)
+func (s *httpService) Close() error {
+	s.proxy.close()
+	return s.server.Close()
+}
 
-	server := newHTTPServer(bindAddr, proxy)
-
-	hook_func.RegisterTerminalFunc("CloseHTTPListener", func(ctx context.Context) error {
-		log.Println("Closing HTTP listener...")
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		defer proxy.close()
-		if err := server.Shutdown(ctx); err != nil {
-			return fmt.Errorf("close HTTP listener failed: %w", err)
-		}
-		return nil
-	})
-
-	if err := server.ListenAndServe(); err != nil {
-		if errors.Is(err, http.ErrServerClosed) {
-			log.Println("HTTP server closed")
-		} else {
-			log.Println("HTTP listen failed: " + err.Error())
-		}
+// StartHTTP binds synchronously and returns the owner of this proxy only.
+func StartHTTP(bindAddr string, dialer ProxyDialer) (io.Closer, error) {
+	listener, err := net.Listen("tcp", bindAddr)
+	if err != nil {
+		return nil, err
 	}
+	proxy := newHTTPProxy(dialer)
+	server := newHTTPServer(bindAddr, proxy)
+	go func() {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("HTTP proxy failed: %v", err)
+		}
+	}()
+	return &httpService{server, proxy}, nil
+}
+
+func ServeHTTP(bindAddr string, dialer ProxyDialer) {
+	server, err := StartHTTP(bindAddr, dialer)
+	if err != nil {
+		log.Printf("HTTP listen failed: %v", err)
+		return
+	}
+	hook_func.RegisterTerminalFunc("CloseHTTPListener", func(context.Context) error { return server.Close() })
 }

@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
+	"io"
 	"net"
 
 	"github.com/mythologyli/zju-connect/internal/hook_func"
@@ -11,7 +11,7 @@ import (
 	"github.com/things-go/go-socks5"
 )
 
-func ServeSocks5(bindAddr string, dialer ProxyDialer, resolver ProxyResolver, user string, password string) {
+func StartSocks5(bindAddr string, dialer ProxyDialer, resolver ProxyResolver, user string, password string) (io.Closer, error) {
 	var authMethods []socks5.Authenticator
 	if user != "" && password != "" {
 		authMethods = append(authMethods, socks5.UserPassAuthenticator{
@@ -31,29 +31,23 @@ func ServeSocks5(bindAddr string, dialer ProxyDialer, resolver ProxyResolver, us
 		socks5.WithLogger(socks5.NewLogger(log.NewLogger("[SOCKS5] "))),
 	)
 
-	log.Printf("SOCKS5 server listening on %s", bindAddr)
-
 	listener, err := net.Listen("tcp", bindAddr)
 	if err != nil {
-		// Do not panic: when embedded in the EasyConnect Suite GUI a
-		// panic here would take the whole app down. Just report and stop.
+		return nil, err
+	}
+	go func() {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Printf("SOCKS5 server failed: %v", err)
+		}
+	}()
+	return listener, nil
+}
+
+func ServeSocks5(bindAddr string, dialer ProxyDialer, resolver ProxyResolver, user string, password string) {
+	listener, err := StartSocks5(bindAddr, dialer, resolver, user, password)
+	if err != nil {
 		log.Printf("SOCKS5 listen failed: %v", err)
 		return
 	}
-
-	hook_func.RegisterTerminalFunc("CloseSocks5Listener", func(ctx context.Context) error {
-		log.Println("Closing SOCKS5 listener...")
-		if err := listener.Close(); err != nil {
-			return fmt.Errorf("close SOCKS5 listener failed: %w", err)
-		}
-		return nil
-	})
-
-	if err = server.Serve(listener); err != nil {
-		if errors.Is(err, net.ErrClosed) {
-			log.Println("SOCKS5 server closed")
-		} else {
-			log.Println("SOCKS5 listen failed: " + err.Error())
-		}
-	}
+	hook_func.RegisterTerminalFunc("CloseSocks5Listener", func(context.Context) error { return listener.Close() })
 }

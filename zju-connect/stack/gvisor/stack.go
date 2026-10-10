@@ -25,9 +25,10 @@ import (
 )
 
 type Stack struct {
-	gvisorStack *stack.Stack
-	resolve     zcdns.LocalServer
-	ipPool      *ippool.IPPool[[]clientpkg.DomainResource]
+	stopRequested func() bool
+	gvisorStack   *stack.Stack
+	resolve       zcdns.LocalServer
+	ipPool        *ippool.IPPool[[]clientpkg.DomainResource]
 
 	endpoint *Endpoint
 	ipMu     sync.Mutex
@@ -144,7 +145,7 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (written int, terr
 					continue
 				}
 
-				if hook_func.IsTerminal() {
+				if ep.owner != nil && ep.owner.reconnectStopped() {
 					return list.Len(), nil
 				}
 
@@ -181,7 +182,12 @@ func joinPacketSlices(slices [][]byte) []byte {
 }
 
 func NewStack(client clientpkg.Client) (*Stack, error) {
-	s := &Stack{done: make(chan struct{})}
+	return NewOwnedStack(client, hook_func.IsTerminal)
+}
+
+// NewOwnedStack isolates shutdown from other embedded VPN connections.
+func NewOwnedStack(client clientpkg.Client, stopped func() bool) (*Stack, error) {
+	s := &Stack{done: make(chan struct{}), stopRequested: stopped}
 
 	s.gvisorStack = stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
@@ -464,7 +470,7 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 }
 
 func (s *Stack) reconnectStopped() bool {
-	if hook_func.IsTerminal() {
+	if s.stopRequested != nil && s.stopRequested() {
 		return true
 	}
 	select {
@@ -516,13 +522,13 @@ func (s *Stack) newL3ConnSafe() (conn io.ReadWriteCloser, err error) {
 // exits silently.
 func (s *Stack) Run() {
 	for {
-		if hook_func.IsTerminal() {
+		if s.reconnectStopped() {
 			return
 		}
 
 		err := s.readLoopOnce()
 
-		if hook_func.IsTerminal() {
+		if s.reconnectStopped() {
 			return
 		}
 		if err == nil {
