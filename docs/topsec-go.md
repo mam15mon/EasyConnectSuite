@@ -7,7 +7,7 @@ TopSAP 标准模式现已接入同一 Windows EXE。协议核心在 `engine/tops
 ## 使用测试版
 
 1. 在官方 TopSAP 中断开连接，并从托盘退出旧版 EasyConnect Suite，避免账号会话和程序单实例冲突。
-2. 启动 `build/bin/EasyConnectGUI-multi-vpn-topsec-fix2.exe`。
+2. 启动 `build/bin/EasyConnectGUI-multi-vpn-workspace-v2.exe`。当前双栏界面与稳定性日志说明见 [multi-vpn-workspace.md](multi-vpn-workspace.md)。
 3. 新建配置，选择「天融信 TopSAP（标准模式）」，填写原网关地址、实际端口、账号和密码。本轮网关使用自定义端口，请按官方配置填写。
 4. 如果网关证书名称或证书链不受信任，可按用户要求手动开启「忽略服务器证书校验」。默认关闭，仅作用于当前配置；开启后无法验证网关身份。认证与数据通道仍须使用相同公钥。
 5. 连接后检查资源列表和内网访问。TUN 使用服务器返回的 IPv4 前缀，并保留该配置的本地 SOCKS5/HTTP 代理；其他配置可继续单独连接、断开。
@@ -30,16 +30,17 @@ TopSAP 标准模式现已接入同一 Windows EXE。协议核心在 `engine/tops
 | 本地 TLS 模拟网关 | 成功、一次拒绝、缺失资源、取消、损坏帧、幂等注销和会话隔离通过 |
 | 改密权限回归 | 成功响应含 `change_pswd=on` 时继续获取资源和建立隧道；此字段是允许改密，不是强制改密 |
 | 完整资源请求回归 | 对照原生代码改用 `TYPE=all`；模拟 `TYPE=phone` 只返回联系信息，先复现缺失资源再修复 |
+| 数据虚拟 IP 回归 | 数据 IP/DNS 取自完整配置 net_param；认证与配置返回不同 IP 时，gVisor TCP/UDP 模拟往返仍通过；缺失/无效 IP 明确停止 |
 | 持久化诊断 | 成功、认证拒绝及缺失资源失败的阶段、HTTP、Ret、资源数量和注销结果落盘通过；日志不含凭据、令牌或报文 |
 | gVisor 集成 | 实际 TCP 握手及 TCP/UDP 应用数据往返通过；没有安装系统 TUN |
 | 证书策略 | 默认不发送凭据给不受信任证书；手动忽略可连接；公钥不一致仍拒绝 |
 | 三协议管理 | 模拟 EasyConnect/UniVPN/TopSAP 并发，停止 TopSAP 保留另外两条会话及独立端口/槽位 |
 | Go 检查 | 根模块 `go test ./...`、`go vet ./...`、`go test -race ./...` 通过 |
-| Windows 交付包 | fix2 前端与 windows/amd64 生产构建通过，Compress=false；文件 20,653,568 字节 |
-| 实际新版 EXE | 仍待用户验证 Go 登录、内网访问及系统 TUN 共存；之前的真实成功连接由官方客户端完成 |
+| Windows 交付包 | workspace-v2 前端与 windows/amd64 生产构建通过，Compress=false；文件 20,685,312 字节 |
+| 实际 Go EXE | 用户确认 fix4 登录和内网访问成功，日志出现双向数据；新版长期稳定性、真实 UDP 及系统 TUN 共存仍待验证 |
 
-构建命令：`wails build -m -nosyncgomod -trimpath -o EasyConnectGUI-multi-vpn-topsec-fix2.exe`。本次不使用 UPX。
+构建命令：`wails build -m -nosyncgomod -trimpath -o EasyConnectGUI-multi-vpn-workspace-v2.exe`。本次不使用 UPX。
 
-交付文件 SHA-256：`455DDA50508C06BAE53A7DF7CD019DACB7BF1DD80E79D2207247D30E67BEFFC7`。
+交付文件 SHA-256：`4F11AC1174AB978DAEF77F34E865CE782B5F704A4343E19C50190F9D1895E83C`。
 
-日志位置：`%APPDATA%/EasyConnectVPN/logs/engine.log`。TopSAP 行包含进程内会话编号、认证/完整配置/数据 TLS/隧道 ACK 阶段、HTTP 状态和耗时、Ret、资源数量；首次收发和关闭字节统计可确认隧道是否有实际数据。失败阶段及注销结果同样落盘。密码、用户名、S_CODE、cookie、会话令牌和数据包内容不写入日志。
+日志位置：`%APPDATA%/EasyConnectVPN/logs/engine.log`，8 MiB 轮转并保留 `.old`。TopSAP 行包含 PID、配置 ID、进程内会话编号、认证/完整配置/数据 TLS/隧道 ACK 阶段、HTTP 状态和耗时、Ret、资源数量；首次收发、每分钟收发累计/增量与最后活动时间、关闭字节统计可确认隧道是否有实际数据。失败阶段及注销结果同样落盘。密码、用户名、S_CODE、cookie、会话令牌和数据包内容不写入日志。
