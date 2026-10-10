@@ -134,7 +134,7 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 		return nil, err
 	}
 	authenticated = true
-	log.Printf("TopSAP [%d] profile=%q authentication accepted Ret=0", s.id)
+	log.Printf("TopSAP [%d] profile=%q authentication accepted Ret=0", s.id, s.connectionID)
 	if login.User.NetAccess != "on" || login.User.Algorithm != "standard" || login.User.Protocol != "standard" || login.User.Compress != "off" {
 		return nil, errors.New("TopSAP 数据隧道模式暂不支持")
 	}
@@ -347,7 +347,7 @@ func (s *Session) Close() error {
 		_ = s.conn.Close()
 		s.logout()
 		s.transport.CloseIdleConnections()
-		log.Printf("TopSAP [%d] profile=%q closed", s.id)
+		log.Printf("TopSAP [%d] profile=%q closed", s.id, s.connectionID)
 	})
 	return nil
 }
@@ -358,7 +358,7 @@ func (s *Session) logout() {
 	if _, err := s.post(ctx, "logout", nil, nil); err != nil {
 		log.Printf("TopSAP [%d] profile=%q logout failed: %v", s.id, s.connectionID, err)
 	} else {
-		log.Printf("TopSAP [%d] profile=%q logout completed", s.id)
+		log.Printf("TopSAP [%d] profile=%q logout completed", s.id, s.connectionID)
 	}
 }
 
