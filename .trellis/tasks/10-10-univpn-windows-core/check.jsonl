@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "核对构建与真实连接证据"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "认证失败与清理要求"}
