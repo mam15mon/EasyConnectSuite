@@ -1,19 +1,18 @@
-# 验证 UniVPN Windows 协议核心
+# UniVPN Windows core validation
 
-## Goal
+## Requirement
+The user approved investigating Huawei/Leagsoft UniVPN as the next backend for a unified VPN client and requested installing Mindfold Trellis to support the work.
 
-构建并验证华为联软 UniVPN 实验性 OpenConnect 核心，为统一客户端接入提供可复现依据。真实网关兼容性待授权服务器验证。
+## Scope
+Validate the independent experimental OpenConnect-based UniVPN engine on Windows before wiring it into the existing desktop. Preserve current EasyConnect behavior.
 
-## Requirements
+## Acceptance
+- Official Trellis CLI and Codex project integration work; concrete project specs replace empty templates.
+- A pinned UniVPN patch source and pinned upstream OpenConnect archive are used, with archive SHA-256 verification.
+- The Windows core builds, starts and lists the experimental UniVPN protocol.
+- Local protocol tests distinguish authentication refusal, frame handling and transport from actual gateway interoperability.
+- Record reproducible commands, source revisions, dependencies and limitations.
+- Live compatibility requires the user's client version, authentication method and an authorized test gateway; do not claim it without evidence.
 
-- TBD
-
-## Acceptance Criteria
-
-- [ ] TBD
-
-## Notes
-
-- Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
-- Lightweight tasks can remain PRD-only.
-- For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
+## Constraints
+No new fallback mechanisms. No credentials in commands, logs, task documents or Git. No GUI support claims before backend verification.
