@@ -65,6 +65,7 @@ func main() {
 		app.initDefaultConfig()
 		app.loadConfigFile()
 		app.normalizeProfiles()
+		app.selectConnectionLocked()
 	}
 
 	err = wails.Run(&options.App{

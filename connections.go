@@ -139,12 +139,24 @@ func (a *App) connectionResources(id string, c *vpnConnection, entries []engine.
 	}
 	a.emitConnectionLocked(c.status, c.resources)
 }
-func (a *App) StartVPN() string { return a.startVPN(engine.Start) }
-func (a *App) startVPN(start func(engine.Options) (*engine.Engine, error)) string {
-	return a.startConnection(func(opts engine.Options) (vpnEngine, error) { return start(opts) })
+func (a *App) StartVPN() string {
+	return a.startConnection(func(opts engine.Options) (vpnEngine, error) { return engine.Start(opts) })
+}
+func (a *App) StartProfileVPN(id string) string {
+	return a.startConnectionID(id, func(opts engine.Options) (vpnEngine, error) { return engine.Start(opts) })
 }
 func (a *App) startConnection(start func(engine.Options) (vpnEngine, error)) string {
 	a.mu.Lock()
+	id := a.appConfig.ActiveProfileID
+	a.mu.Unlock()
+	return a.startConnectionID(id, start)
+}
+func (a *App) startConnectionID(id string, start func(engine.Options) (vpnEngine, error)) string {
+	a.mu.Lock()
+	if a.shuttingDown {
+		a.mu.Unlock()
+		return "程序正在退出"
+	}
 	if a.restarting {
 		a.mu.Unlock()
 		return "正在以管理员身份重新启动"
@@ -153,7 +165,17 @@ func (a *App) startConnection(start func(engine.Options) (vpnEngine, error)) str
 		a.mu.Unlock()
 		return "正在初始化或重启，请稍候"
 	}
-	p := a.getActiveProfileLocked()
+	var p Profile
+	for _, profile := range a.appConfig.Profiles {
+		if profile.ID == id {
+			p = profile
+			break
+		}
+	}
+	if p.ID == "" {
+		a.mu.Unlock()
+		return "服务器配置不存在"
+	}
 	if p.Server == "" || p.Username == "" {
 		a.mu.Unlock()
 		return "配置不完整：服务器地址或用户名为空"
@@ -195,7 +217,9 @@ func (a *App) startConnection(start func(engine.Options) (vpnEngine, error)) str
 	c.status.Stage = "准备中"
 	c.status.Message = "正在准备连接…"
 	a.connections[p.ID] = c
-	a.status = c.status
+	if p.ID == a.appConfig.ActiveProfileID {
+		a.status = c.status
+	}
 	a.emitConnectionLocked(c.status, nil)
 	logDir := filepath.Join(os.Getenv("APPDATA"), "EasyConnectVPN", "logs")
 	if err := os.MkdirAll(logDir, 0755); err != nil {
@@ -265,6 +289,7 @@ func (a *App) stopConnection(id string) string {
 	a.emitConnectionLocked(c.status, nil)
 	return "OK"
 }
+func (a *App) StopProfileVPN(id string) string { return a.stopConnection(id) }
 func (a *App) StopVPN() string {
 	a.mu.Lock()
 	id := a.appConfig.ActiveProfileID

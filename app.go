@@ -74,6 +74,7 @@ type App struct {
 	connections  map[string]*vpnConnection
 	starting     bool
 	restarting   bool
+	shuttingDown bool
 	startTime    time.Time
 	tickerCancel context.CancelFunc
 	configPath   string
@@ -108,6 +109,7 @@ func NewApp() *App {
 	app.initDefaultConfig()
 	app.loadConfigFile()
 	app.normalizeProfiles()
+	app.selectConnectionLocked()
 	return app
 }
 
@@ -201,6 +203,9 @@ func (a *App) startup(ctx context.Context) {
 
 // shutdown cleans up resources
 func (a *App) shutdown(ctx context.Context) {
+	a.mu.Lock()
+	a.shuttingDown = true
+	a.mu.Unlock()
 	RemoveTrayIcon()
 	if a.tickerCancel != nil {
 		a.tickerCancel()

@@ -699,7 +699,7 @@ proxyModeToggle.addEventListener('change', async () => {
 
 btnToggle.addEventListener('click', async () => {
   if (currentStatus.running) {
-    await window.go.main.App.StopVPN();
+    await window.go.main.App.StopProfileVPN(activeProfile.id);
   } else {
     if (activeProfile?.tunMode) {
       try {
@@ -711,7 +711,7 @@ btnToggle.addEventListener('click', async () => {
     }
     updateStatusUI({ running: true, state: 'connecting', stage: '准备中', message: '正在准备连接…', tunMode: !!activeProfile?.tunMode, disableProxy: !!activeProfile?.disableProxy });
     const connectingID = activeProfile?.id;
-    const res = await window.go.main.App.StartVPN();
+    const res = await window.go.main.App.StartProfileVPN(connectingID);
     if (res !== 'OK' && connectingID === activeProfile?.id) {
       showToast('[连接失败] ' + res);
       updateStatusUI({ running: false, state: 'error', lastError: res });
@@ -812,10 +812,12 @@ document.getElementById('btn-refresh-resources').addEventListener('click', () =>
 function loadPreviewData() {
   const demoProfiles = [
     { id: 'p1', name: 'IDC 生产节点 (带2FA)', server: '111.205.145.240', port: 58443, enable2FA: true },
-    { id: 'p2', name: '测试开发集群', server: '10.0.0.8', port: 443, enable2FA: false },
+    { id: 'p2', name: 'UniVPN 开发集群', protocol: 'univpn', server: '10.0.0.8', port: 443, enable2FA: false, socksPort:1082, httpPort:1083 },
   ];
   cachedProfiles = demoProfiles;
   activeProfile = demoProfiles[0];
+  connectionStatuses = demoProfiles.map(p => ({ profileId:p.id, activeProfile:p.name, protocol:p.protocol || "easyconnect", running:true, state:"connected" }));
+  renderConnections();
   profileSelect.innerHTML = demoProfiles.map(p =>
     `<option value="${p.id}">${p.name}${p.enable2FA ? ' [2FA]' : ''}</option>`).join('');
 
