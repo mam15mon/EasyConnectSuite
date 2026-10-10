@@ -2,7 +2,6 @@ package service
 
 import (
 	"bufio"
-	"context"
 	"github.com/mythologyli/zju-connect/dial"
 	"io"
 	"net"
@@ -97,5 +96,4 @@ func TestHTTPOwnedListenersRemainIndependent(t *testing.T) {
 		t.Fatal("second proxy no longer serves", err)
 	}
 	response.Body.Close()
-	_ = context.Canceled
 }
