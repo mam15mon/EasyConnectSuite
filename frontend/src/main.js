@@ -7,227 +7,42 @@ const app = document.querySelector('#app');
 
 app.innerHTML = `
   <header class="top">
-    <div class="brand">
-      <div class="brand-icon-wrap">
-        <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-          <path d="M9 12l2 2 4-4"/>
-        </svg>
-      </div>
-      <div>
-        <span class="brand-name">EasyConnect Suite</span>
-      </div>
-      <span class="brand-badge">多 VPN</span>
-    </div>
-
-    <div class="top-status">
-      <div class="uptime-badge">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"/>
-          <polyline points="12 6 12 12 16 14"/>
-        </svg>
-        <span class="uptime" id="uptime-display">00:00:00</span>
-      </div>
-      <div class="status-pill">
-        <span class="lamp" id="state-lamp"></span>
-        <span class="top-state-word" id="top-state-word">未连接</span>
-      </div>
-    </div>
+    <div class="brand"><span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6z"/><path d="m8 12 3 3 5-6"/></svg></span><div><span class="brand-name">VPN 工作台</span><span class="brand-caption">EasyConnect Suite</span></div></div>
+    <div class="top-status" aria-live="polite"><span class="summary-online"><i></i><strong id="global-connected">0</strong> 已连接</span><span id="global-pending">0 连接中</span><span id="global-errors" hidden></span></div>
+    <button class="btn-solid" id="btn-new-profile">＋ 新建 VPN</button>
   </header>
-
-  <div class="deck">
-    <!-- 左侧控制栏 -->
-    <div class="deck-col-left">
-      <!-- 隧道核心状态卡片 -->
-      <section class="card hero-card">
-        <div class="hero-state-header">
-          <div class="hero-state-title-wrap">
-            <div class="state-radar">
-              <span class="state-radar-dot"></span>
-              <span class="state-radar-ring"></span>
-            </div>
-            <span class="state-word" id="state-word">未连接</span>
-          </div>
-        </div>
-        <div class="state-note" id="state-note">通道未建立</div>
-
+  <main class="workspace">
+    <section class="connections-panel" aria-labelledby="connections-heading">
+      <div class="section-head"><div><h1 id="connections-heading">全部连接 <span id="profile-count" class="panel-count-badge">0</span></h1><p>各条 VPN 独立运行，点击名称查看详情。</p></div><div class="overview-actions"><div class="view-filters" aria-label="连接筛选"><button class="active" data-connection-filter="all" aria-pressed="true">全部</button><button data-connection-filter="running" aria-pressed="false">运行中</button></div><button class="btn-plain danger" id="btn-stop-all" disabled>断开全部</button></div></div>
+      <div class="connection-columns" aria-hidden="true"><span>连接名称 / 网关</span><span>状态 / 时长</span><span>访问方式</span><span>操作</span></div>
+      <div class="connection-list" id="connection-list" aria-label="VPN 连接列表"></div>
+    </section>
+    <div class="detail-deck">
+      <section class="detail-panel" aria-labelledby="detail-name">
+        <div class="detail-heading"><div><span class="section-label">当前查看</span><h2 id="detail-name">选择一条 VPN</h2><span id="detail-gateway" class="subtle"></span></div><span class="connection-state" id="state-word">未连接</span></div>
+        <select class="profile-select" id="profile-select" aria-label="切换查看的 VPN"></select>
+        <p class="state-note" id="state-note">添加配置后即可连接。</p>
+        <div class="detail-actions"><button class="master-switch" id="btn-toggle"><span id="btn-label">连接</span></button><button class="btn-plain" id="btn-edit-profile">编辑配置</button><button class="btn-plain danger" id="btn-del-profile">删除</button></div>
+        <div class="detail-duration"><span>连接时长</span><span id="uptime-display">00:00:00</span></div>
         <div class="mode-controls">
-          <label class="tun-mode-control" id="tun-mode-note" title="开启时需要管理员授权">
-            <span class="tun-mode-title">TUN 模式</span>
-            <input type="checkbox" id="tun-mode-toggle" role="switch" aria-label="TUN 模式" disabled />
-          </label>
-
-          <label class="tun-mode-control" id="proxy-mode-note" title="SOCKS5 / HTTP，可与 TUN 同时开启">
-            <span class="tun-mode-title">本地代理</span>
-            <input type="checkbox" id="proxy-mode-toggle" role="switch" aria-label="本地代理" disabled />
-          </label>
+          <label class="tun-mode-control" id="tun-mode-note" title="开启时需要管理员授权"><div><span class="tun-mode-title">TUN 分流</span><small>按授权资源接管系统流量</small></div><input type="checkbox" id="tun-mode-toggle" role="switch" aria-label="TUN 分流" disabled /></label>
+          <label class="tun-mode-control" id="proxy-mode-note"><div><span class="tun-mode-title">本地代理</span><small>SOCKS5 / HTTP 代理端口</small></div><input type="checkbox" id="proxy-mode-toggle" role="switch" aria-label="本地代理" disabled /></label>
         </div>
-
-        <div class="master-btn-wrap">
-          <button class="master-switch" id="btn-toggle">
-            <svg id="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-            </svg>
-            <span id="btn-label">建立隧道</span>
-          </button>
-        </div>
-
         <div class="telemetry-grid">
-          <div class="telemetry-item" id="item-client-ip" title="点击复制虚拟内网 IP">
-            <div class="telemetry-label-row">
-              <span class="telemetry-label">虚拟内网 IP</span>
-              <svg class="copy-hint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
-            </div>
-            <span class="telemetry-val pending" id="client-ip-val">—</span>
-          </div>
-
-          <div class="telemetry-item" id="item-dns" title="点击复制内网 DNS">
-            <div class="telemetry-label-row">
-              <span class="telemetry-label">内网 DNS</span>
-              <svg class="copy-hint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
-            </div>
-            <span class="telemetry-val pending" id="dns-val">—</span>
-          </div>
-
-          <div class="telemetry-item" id="item-socks" title="点击复制 SOCKS5 地址">
-            <div class="telemetry-label-row">
-              <span class="telemetry-label">SOCKS5 代理</span>
-              <svg class="copy-hint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
-            </div>
-            <span class="telemetry-val" id="socks-port-val">127.0.0.1:1080</span>
-          </div>
-
-          <div class="telemetry-item" id="item-http" title="点击复制 HTTP 代理地址">
-            <div class="telemetry-label-row">
-              <span class="telemetry-label">HTTP 代理</span>
-              <svg class="copy-hint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
-            </div>
-            <span class="telemetry-val" id="http-port-val">127.0.0.1:1081</span>
-          </div>
+          <button class="telemetry-item" id="item-client-ip" title="复制虚拟 IP"><span class="telemetry-label">虚拟 IP</span><span class="telemetry-val pending" id="client-ip-val">—</span></button>
+          <button class="telemetry-item" id="item-dns" title="复制内网 DNS"><span class="telemetry-label">内网 DNS</span><span class="telemetry-val pending" id="dns-val">—</span></button>
+          <button class="telemetry-item" id="item-socks" title="复制 SOCKS5 地址"><span class="telemetry-label">SOCKS5</span><span class="telemetry-val" id="socks-port-val">—</span></button>
+          <button class="telemetry-item" id="item-http" title="复制 HTTP 代理地址"><span class="telemetry-label">HTTP 代理</span><span class="telemetry-val" id="http-port-val">—</span></button>
         </div>
       </section>
-
-      <!-- 服务器节点配置卡片 -->
-      <section class="card profiles-card">
-        <div class="card-head">
-          <div class="card-title-group">
-            <svg class="card-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
-              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
-              <line x1="6" y1="6" x2="6.01" y2="6"/>
-              <line x1="6" y1="18" x2="6.01" y2="18"/>
-            </svg>
-            <span class="card-title">节点配置</span>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="profile-select-wrap">
-            <select class="profile-select" id="profile-select"></select>
-            <svg class="profile-select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
-          </div>
-          <div class="connection-list" id="connection-list" aria-label="VPN 连接列表"></div>
-          <div class="profile-actions-row">
-            <button class="btn-chip" id="btn-new-profile">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              <span>新建</span>
-            </button>
-            <button class="btn-chip" id="btn-edit-profile">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-              </svg>
-              <span>编辑</span>
-            </button>
-            <button class="btn-chip danger" id="btn-del-profile" title="删除当前配置">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 6 5 6 21 6"/>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-              </svg>
-              <span>删除</span>
-            </button>
-          </div>
-        </div>
+      <section class="resources-panel" aria-labelledby="resources-heading">
+        <div class="resource-heading"><div><h2 id="resources-heading">授权资源 <span class="panel-count-badge" id="route-count"></span></h2><p id="resource-owner">当前连接的内网 IP 与域名</p></div><button class="btn-plain" id="btn-refresh-resources" title="刷新当前连接的资源视图">刷新</button></div>
+        <div class="routes-search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input class="routes-filter" id="routes-filter" type="search" placeholder="筛选 IP、域名或端口" aria-label="筛选当前 VPN 资源" /></div>
+        <div class="route-table" id="route-table"><div class="route-empty">连接后显示服务器授权的资源。</div></div>
       </section>
     </div>
-
-    <!-- 右侧可达资源网格 -->
-    <div class="deck-col-right">
-      <section class="card routes-card">
-        <div class="card-head">
-          <div class="card-title-group">
-            <svg class="card-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="2" y1="12" x2="22" y2="12"/>
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-            </svg>
-            <span class="card-title">可达内网资源</span>
-            <span class="panel-count-badge" id="route-count"></span>
-          </div>
-
-          <div class="routes-toolbar">
-            <div class="routes-search-wrap">
-              <svg class="routes-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="8"/>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-              </svg>
-              <input class="routes-filter" id="routes-filter" type="text" placeholder="快速筛选 IP / 域名..." />
-            </div>
-            <button class="btn-icon-action" id="btn-refresh-resources" title="重新从网关拉取资源列表">
-              <svg id="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="23 4 23 10 17 10"/>
-                <polyline points="1 20 1 14 7 14"/>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-              </svg>
-              <span>刷新</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="route-table" id="route-table">
-          <div class="route-empty">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M5 12h14"/>
-              <path d="M12 5l7 7-7 7"/>
-            </svg>
-            <span>建立隧道后，在此展示服务端授权访问的内网网段与域名映射</span>
-          </div>
-        </div>
-      </section>
-    </div>
-  </div>
-
-  <footer class="hint-bar">
-    <div class="hint-left">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-        <line x1="8" y1="21" x2="16" y2="21"/>
-        <line x1="12" y1="17" x2="12" y2="21"/>
-      </svg>
-      <span>关闭窗口将最小化到系统托盘，网络通道与代理服务保持常驻</span>
-    </div>
-    <div>
-      <span>日志目录：</span>
-      <code id="log-path-hint" title="点击复制日志路径">%APPDATA%\\EasyConnectVPN\\logs</code>
-    </div>
-  </footer>
-
+  </main>
+  <footer class="hint-bar"><span id="preview-indicator" hidden>演示预览 · 使用模拟数据</span><span>关闭窗口后，各条连接继续在托盘运行。</span><button id="log-path-hint" title="复制日志目录">日志目录</button></footer>
   <!-- Profile 编辑弹窗 -->
   <div class="modal-overlay" id="modal-overlay">
     <div class="modal-box">
@@ -361,7 +176,6 @@ const btnLabel = document.getElementById('btn-label');
 const uptimeDisplay = document.getElementById('uptime-display');
 const stateWord = document.getElementById('state-word');
 const stateNote = document.getElementById('state-note');
-const topStateWord = document.getElementById('top-state-word');
 const clientIpVal = document.getElementById('client-ip-val');
 const dnsVal = document.getElementById('dns-val');
 const socksPortVal = document.getElementById('socks-port-val');
@@ -476,7 +290,6 @@ function updateStatusUI(status) {
   document.body.dataset.state = status.state;
   const word = status.state === 'connecting' ? status.stage : STATE_WORDS[status.state];
   stateWord.innerText = word;
-  topStateWord.innerText = word;
 
   if (status.state === 'connected') {
     btnLabel.innerText = '断开隧道';
