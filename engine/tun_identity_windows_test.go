@@ -3,8 +3,10 @@
 package engine
 
 import (
+	"context"
 	"net/netip"
 	"testing"
+	"time"
 )
 
 func TestTUNSlotsAreDistinctAndInsideReservedRange(t *testing.T) {
@@ -25,6 +27,45 @@ func TestTUNSlotsAreDistinctAndInsideReservedRange(t *testing.T) {
 	}
 	if _, _, _, _, err := tunIdentity(64); err == nil {
 		t.Fatal("slot outside reserved range")
+	}
+}
+
+type tunCleanupCheck func() error
+
+func (check tunCleanupCheck) Close() error { return check() }
+
+func TestTUNCloseAllowsPendingHandlersBeforeReleasingClaims(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	ingress := &tunIngress{ctx: ctx, cancel: cancel}
+	tunPolicies.Lock()
+	tunPolicies.claims[ingress] = tunClaim{prefixes: []string{"10.42.0.0/16"}}
+	tunPolicies.Unlock()
+	observed := make(chan bool, 1)
+	ingress.connections.Store(tunCleanupCheck(func() error {
+		tunPolicies.Lock()
+		_, reserved := tunPolicies.claims[ingress]
+		ingress.mu.RLock()
+		closed := ingress.closed
+		ingress.mu.RUnlock()
+		tunPolicies.Unlock()
+		observed <- reserved && closed && ctx.Err() != nil
+		return nil
+	}), true)
+	done := make(chan error, 1)
+	go func() { done <- ingress.Close() }()
+	select {
+	case err := <-done:
+		if err != nil || !<-observed {
+			t.Fatal("pending handler did not observe closed with claims reserved", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("TUN teardown blocked pending handler on policy lock")
+	}
+	tunPolicies.Lock()
+	_, reserved := tunPolicies.claims[ingress]
+	tunPolicies.Unlock()
+	if reserved {
+		t.Fatal("completed teardown retained route claims")
 	}
 }
 func TestTUNClaimsRejectSamePrefixAndDNSButAllowSpecificRoutes(t *testing.T) {
