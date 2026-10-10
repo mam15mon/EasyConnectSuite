@@ -78,7 +78,9 @@ func newGateway(t *testing.T) *gateway {
 				return
 			}
 			http.SetCookie(w, &http.Cookie{Name: "topafasfasfassession_id", Value: "synthetic-session", Path: "/", Secure: true, HttpOnly: true})
-			fmt.Fprint(w, `{"Ret":0,"user_param":{"topafasfasfassession_id":"synthetic-session","netacc":"on","alg":"standard","protocal":"standard","compress":"off"},"net_param":{"vip_v4":"10.91.0.2","dns1_v4":"0.0.0.0","dns2_v4":"0.0.0.0"}}`)
+			// The successful official sample allows password changes; this is
+			// a portal permission, not a prerequisite for opening the tunnel.
+			fmt.Fprint(w, `{"Ret":0,"user_param":{"topafasfasfassession_id":"synthetic-session","netacc":"on","alg":"standard","protocal":"standard","compress":"off","change_pswd":"on"},"net_param":{"vip_v4":"10.91.0.2","dns1_v4":"0.0.0.0","dns2_v4":"0.0.0.0"}}`)
 		case "/vone/login/get_config_info":
 			cookie, err := r.Cookie("topafasfasfassession_id")
 			if err != nil || cookie.Value != "synthetic-session" || !r.Form.Has("HASH") || r.Form.Get("HASH") != "" || r.Form.Get("TYPE") != "phone" {
