@@ -190,8 +190,8 @@ func TestStoppingTopSAPRetainsEasyConnectAndUniVPN(t *testing.T) {
 		return e, nil
 	}
 	for _, id := range []string{"a", "b", p.ID} {
-		if err := a.SetActiveProfile(id); err != nil {
-			t.Fatal(err)
+		if ok := a.SetActiveProfile(id); !ok {
+			t.Fatal("could not select profile", id)
 		}
 		if got := a.startConnection(start); got != "OK" {
 			t.Fatal(got)
