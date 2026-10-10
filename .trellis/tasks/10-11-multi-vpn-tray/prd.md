@@ -6,14 +6,20 @@
 
 ## Requirements
 
-- TBD
+- 托盘列出全部配置及各自状态；已连接、连接中、重连中、异常和未连接明确区分。
+- 每条配置独立连接/重试/取消/断开；动作捕获配置 ID，不依赖工作台当前选择，不停止其他连接。
+- 仅「查看详情」改变工作台选择；保留打开工作台、断开全部、退出并清理全部连接。
+- 悬浮提示汇总所有连接，并显示配置状态；长名称和非 BMP 字符正确处理。
+- 不自动登录真实网关，不添加重试/协议兜底，不覆盖用户正在使用的 EXE。
 
 ## Acceptance Criteria
 
-- [ ] TBD
+- [ ] 多状态菜单与汇总对应全体连接，勾选依据连接状态而非选中配置。
+- [ ] 菜单动作固定到 profile ID；选择改变后逐条断开仍只停止目标，未知/已删除配置不替代为当前配置。
+- [ ] 连接失败有明确提示，退出清理复用既有生命周期与日志。
+- [ ] 托盘提示 Unicode/长度正确，状态更新与图标移除不竞争写入。
+- [ ] Go test/vet/race 与 Windows 未压缩生产构建通过，区分自动验证与未操作的原生托盘交互。
 
 ## Notes
 
-- Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
-- Lightweight tasks can remain PRD-only.
-- For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
+用户授权直接改造多 VPN 托盘。使用脱敏内存会话验证，不触碰真实配置和运行会话。
