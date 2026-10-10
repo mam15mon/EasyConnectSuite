@@ -47,3 +47,30 @@
 ### Next Steps
 
 - 接入 GUI、配置和既有 gVisor/TUN/本地代理；获取真实网关和版本后验证兼容性。
+
+
+## Session 2: UniVPN 多连接 EXE 与 UPX 交付
+<!-- trellis-session: v=2 fp=ca8d980ea8fe1354 -->
+
+**Date**: 2026-10-10
+**Task**: UniVPN 多连接 EXE 与 UPX 交付
+**Branch**: `codex/univpn-windows-core`
+
+### Summary
+
+已将 Go UniVPN 接入 GUI/gVisor/代理/TUN并隔离多配置生命周期、端口、状态与资源。根模块 race/vet、修改的依赖包及前端验证通过。两个本地 TLS UniVPN 会话并发及停止一条后另一条继续传输通过。EXE 20,516,352 字节，UPX ultra-brute/LZMA 压缩到 5,882,368 字节并通过 upx -t。保留旧客户端运行；真实网关/管理员 TUN 未验证，依赖全量测试有两项既有 Windows Unix 权限断言失败。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `eb4242e` | build: record verified UPX multi VPN executable and complete delivery checks |
+| `02155ed` | docs: document multiple TUN slots and ownership based cleanup |
+| `7f188fc` | fix: release TUN policy lock before waiting for network teardown |
+| `21ca12f` | fix: 回收启动失败期间新资源并验证两条 UniVPN 隧道独立关闭 |
+| `82d0d10` | fix: 将 GUI 连接操作绑定配置 ID 并阻止退出时新增连接 |
+| `441275e` | feat: 按服务器配置管理独立并发连接和全部关闭 |
+
+### Status
+
+[OK] **Completed**

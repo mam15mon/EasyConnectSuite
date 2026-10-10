@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 1
+- **Total Sessions**: 2
 - **Last Active**: 2026-10-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~49 | Active |
+| `journal-1.md` | ~76 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 2 | 2026-10-10 | UniVPN 多连接 EXE 与 UPX 交付 | `eb4242e`, `02155ed`, `7f188fc`, `21ca12f`, `82d0d10`, `441275e` | `codex/univpn-windows-core` |
 | 1 | 2026-10-10 | Trellis 初始化与 Go UniVPN 协议核心验证 | `9b74da6`, `8511ca4`, `6b7dd53`, `b8256a6`, `cdd247f`, `bc981d4`, `246f360` | `codex/univpn-windows-core` |
 <!-- @@@/auto:session-history -->
 
