@@ -2,6 +2,7 @@ package topsec
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,6 +25,9 @@ func localDeviceCode() (string, error) {
 		return "", err
 	}
 	var selected [][]byte
+	// The native client carries RegQueryValueEx's byte count between adapters,
+	// including non-PCI entries and ERROR_MORE_DATA. This affects its identity.
+	pnpBytes := 256
 	for a := adapter; a != nil; a = a.Next {
 		name := string(bytes.TrimRight(a.AdapterName[:], "\x00"))
 		path := `SYSTEM\CurrentControlSet\Control\Network\{4D36E972-E325-11CE-BFC1-08002BE10318}\` + name + `\Connection`
@@ -31,9 +35,18 @@ func localDeviceCode() (string, error) {
 		if err != nil {
 			continue
 		}
-		pnp, _, err := key.GetStringValue("PnPInstanceId")
+		value := make([]byte, pnpBytes)
+		n, _, err := key.GetValue("PnPInstanceId", value)
+		pnpBytes = n
 		_ = key.Close()
-		if err == nil && strings.Contains(pnp, "PCI") && a.AddressLength == 6 {
+		if err != nil {
+			continue
+		}
+		wide := make([]uint16, n/2)
+		for i := range wide {
+			wide[i] = binary.LittleEndian.Uint16(value[2*i:])
+		}
+		if strings.Contains(windows.UTF16ToString(wide), "PCI") && a.AddressLength == 6 {
 			selected = append(selected, append([]byte(nil), a.Address[:6]...))
 		}
 	}
