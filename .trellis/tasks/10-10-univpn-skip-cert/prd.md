@@ -1,19 +1,5 @@
-# UniVPN 按配置忽略服务器证书校验
+# UniVPN certificate verification switch
 
-## Goal
+User explicitly asks to ignore the untrusted-certificate error. Add a UniVPN-only profile checkbox with a clear warning; default off, including old profiles. Persist the option and pass it to both TLS handshakes for that connection, without an automatic retry/fallback. The existing control/data public-key equality check remains required. Password authentication and other profiles retain their behavior.
 
-用户明确要求忽略不受信任网关证书；增加默认关闭的每配置开关，并保留双 TLS 通道身份一致性检查。
-
-## Requirements
-
-- TBD
-
-## Acceptance Criteria
-
-- [ ] TBD
-
-## Notes
-
-- Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
-- Lightweight tasks can remain PRD-only.
-- For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
+Acceptance: default rejects an untrusted mock gateway, explicit opt-in connects, mismatched channel keys still fail with opt-in, profile persistence and option propagation pass, UI/bindings and Windows EXE rebuild succeed, and UPX integrity passes. Real gateway compatibility remains unverified. Existing executables/processes are preserved; deliver a new artifact name.
