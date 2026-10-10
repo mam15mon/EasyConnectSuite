@@ -2,7 +2,6 @@ package main
 
 import (
 	"EasyConnectSuite/engine"
-	"context"
 	"errors"
 	"path/filepath"
 	"sync/atomic"
@@ -166,5 +165,4 @@ func TestElevationDoesNotInterruptOtherConnections(t *testing.T) {
 		t.Fatal("elevation interrupted active connections")
 	}
 	a.StopAllVPN()
-	_ = context.Canceled
 }

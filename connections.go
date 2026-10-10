@@ -17,6 +17,7 @@ type vpnEngine interface {
 	Resources() []engine.ResourceEntry
 }
 type vpnConnection struct {
+	ctx       context.Context
 	engine    vpnEngine
 	cancel    context.CancelFunc
 	ready     chan struct{}
@@ -116,7 +117,7 @@ func (a *App) anyRunningLocked() bool {
 func (a *App) connectionStatus(id string, c *vpnConnection, s engine.Status) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.connections[id] != c || c.stopping {
+	if a.connections[id] != c || c.stopping || c.ctx.Err() != nil {
 		return
 	}
 	applyEngineStatus(&c.status, &c.started, &c.resources, s)
@@ -129,7 +130,7 @@ func (a *App) connectionStatus(id string, c *vpnConnection, s engine.Status) {
 func (a *App) connectionResources(id string, c *vpnConnection, entries []engine.ResourceEntry) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.connections[id] != c || c.stopping {
+	if a.connections[id] != c || c.stopping || c.ctx.Err() != nil {
 		return
 	}
 	c.resources = append([]engine.ResourceEntry(nil), entries...)
@@ -188,7 +189,7 @@ func (a *App) startConnection(start func(engine.Options) (vpnEngine, error)) str
 		a.connections = make(map[string]*vpnConnection)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &vpnConnection{cancel: cancel, ready: make(chan struct{}), started: time.Now(), slot: slot, status: disconnectedStatus(p)}
+	c := &vpnConnection{ctx: ctx, cancel: cancel, ready: make(chan struct{}), started: time.Now(), slot: slot, status: disconnectedStatus(p)}
 	c.status.Running = true
 	c.status.State = "connecting"
 	c.status.Stage = "准备中"
