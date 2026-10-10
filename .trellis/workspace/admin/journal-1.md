@@ -175,3 +175,30 @@ Actual diagnostic result is AUTH code 2; no verified semantic mapping. Observed 
 ### Next Steps
 
 - 用户使用新版 EXE 验证真实 TopSAP 登录、内网访问及系统 TUN 共存
+
+
+## Session 7: 修复 TopSAP 改密权限误判
+<!-- trellis-session: v=2 fp=7f0fc702de83a485 -->
+
+**Date**: 2026-10-10
+**Task**: 修复 TopSAP 改密权限误判
+**Branch**: `codex/univpn-windows-core`
+
+### Summary
+
+对照成功官方抓包、资源缓存及本机门户脚本，确认 change_pswd=on 是允许改密而非强制改密。将字段补入成功模拟响应先复现失败，删除错误拦截及无用字段后全量 Go 测试/vet 通过，生成未压缩 topsec-fix1.exe。真实登录和内网访问仍待用户验证。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a65d322` | test: 用允许改密的成功报文复现 TopSAP 登录误判 |
+| `e59960e` | fix: 不再将 TopSAP 改密权限当作强制改密条件 |
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户退出旧版并使用 topsec-fix1.exe 重新连接，核查真实登录及内网访问
