@@ -134,7 +134,7 @@ func Start(opts Options) (*Engine, error) {
 	var vpnClient managedClient
 	switch conf.Protocol {
 	case "topsec":
-		vpnClient = newTopSAPClient(e.ctx, conf, underlayDialer)
+		vpnClient = newTopSAPClient(e.ctx, conf, opts.InsecureSkipVerify, underlayDialer)
 	case "univpn":
 		vpnClient = newUniVPNClient(e.ctx, conf, opts.Domain, opts.InsecureSkipVerify, underlayDialer)
 	case "easyconnect":

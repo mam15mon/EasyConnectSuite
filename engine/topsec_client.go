@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -27,11 +28,16 @@ type topSAPClient struct {
 	updateIP func(net.IP) error
 }
 
-func newTopSAPClient(ctx context.Context, conf configs.Config, underlay client.UnderlayDialer) *topSAPClient {
+func newTopSAPClient(ctx context.Context, conf configs.Config, insecureSkipVerify bool, underlay client.UnderlayDialer) *topSAPClient {
 	ctx, cancel := context.WithCancel(ctx)
-	return &topSAPClient{ctx: ctx, cancel: cancel, options: topsec.Options{
+	c := &topSAPClient{ctx: ctx, cancel: cancel, options: topsec.Options{
 		Server: net.JoinHostPort(conf.ServerAddress, strconv.Itoa(conf.ServerPort)), Username: conf.Username, Password: conf.Password, DialContext: underlay.DialContext,
 	}}
+	if insecureSkipVerify {
+		// User-selected per-profile option; both channels must still share a key.
+		c.options.TLSConfig = &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}
+	}
+	return c
 }
 func (c *topSAPClient) Setup() error {
 	c.mu.Lock()

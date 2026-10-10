@@ -251,7 +251,7 @@ app.innerHTML = `
             <input type="checkbox" id="form-insecure-skip-verify" />
             <span>忽略服务器证书校验（不安全）</span>
           </label>
-          <small>仅对当前 UniVPN 配置生效；开启后无法验证网关身份，账号密码可能被冒充的网关获取。</small>
+          <small>仅对当前配置生效；开启后无法验证网关身份，账号密码可能被冒充的网关获取。</small>
         </div>
         <div class="form-group">
           <label class="form-label">节点名称（备注）</label>
@@ -631,7 +631,7 @@ document.getElementById('btn-modal-save').addEventListener('click', async () => 
     id: formId.value.trim(),
     protocol: formProtocol.value,
     domain: formProtocol.value === "univpn" ? formDomain.value.trim() : "",
-    insecureSkipVerify: formProtocol.value === "univpn" && formInsecureSkipVerify.checked,
+    insecureSkipVerify: formProtocol.value !== "easyconnect" && formInsecureSkipVerify.checked,
     socksPort: Number(formSocksPort.value) || 0,
     httpPort: Number(formHTTPPort.value) || 0,
     name: formName.value.trim() || '未命名配置',
@@ -903,7 +903,7 @@ function updateProtocolFields() {
   const uni = formProtocol.value === 'univpn';
   const easy = formProtocol.value === 'easyconnect';
   document.getElementById('form-domain-container').hidden = !uni;
-  document.getElementById('form-cert-container').hidden = !uni;
+  document.getElementById('form-cert-container').hidden = easy;
   for (const input of [formEnable2FA, formEnableKeepAlive, formDisableKeepAlive]) {
     input.closest('.toggle-row').style.display = easy ? '' : 'none';
   }

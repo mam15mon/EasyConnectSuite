@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -183,5 +184,38 @@ func TestTopSAPAdapterRefusalIsTerminal(t *testing.T) {
 	err := c.Setup()
 	if !errors.Is(err, topsec.ErrLoginRejected) || !errors.Is(err, easyconnect.ErrLoginRejected) || count.Load() != 1 {
 		t.Fatal("authentication refusal lost or retried", err)
+	}
+}
+
+func TestTopSAPCertificateVerificationRequiresProfileOptIn(t *testing.T) {
+	for _, skip := range []bool{false, true} {
+		t.Run(fmt.Sprint(skip), func(t *testing.T) {
+			gateway, count := topSAPGateway(t, false)
+			host, portText, err := net.SplitHostPort(gateway.options.Server)
+			if err != nil {
+				t.Fatal(err)
+			}
+			port, err := strconv.Atoi(portText)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conf := configs.Default()
+			conf.ServerAddress = host
+			conf.ServerPort = port
+			conf.Username = "test"
+			conf.Password = "test"
+			c := newTopSAPClient(context.Background(), conf, skip, &certificateTestUnderlay{})
+			defer c.Close()
+			err = c.Setup()
+			if skip {
+				if err != nil || count.Load() != 1 {
+					t.Fatal("explicit opt-in did not connect", err)
+				}
+			} else {
+				if err == nil || count.Load() != 0 {
+					t.Fatal("credentials sent without trusted certificate")
+				}
+			}
+		})
 	}
 }
