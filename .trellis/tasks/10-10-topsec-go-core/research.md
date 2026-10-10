@@ -90,3 +90,20 @@ A fresh collection was prepared, but the user stopped Computer Use with Escape b
 ## Fresh live journal ready for user sample
 
 On user asking what to do next, restarted the bounded MITM and prepared the active subscription's temporary expiring extension plus immediate runtime rules without Windows UI automation. Runtime verification reports the experimental node/rule present and 27 rules. A credential-free direct curl probe received HTTP 200; the new JSONL already contains both plaintext request and response. The user only needs to connect/reconnect the official TopSAP, visit one normal internal resource, then keep the tunnel connected and report completion. Do not require disconnect to save messages: per-message flushing is verified. Cleanup remains the tested graceful-stop hook with exact marked-block removal and runtime restoration.
+
+## Complete live tunnel sample verified
+
+User reports successful official login and internal resource access in the fresh live-journal run. Verified na_client.exe -> TOPSAP-MITM-RESEARCH and python.exe -> DIRECT before graceful stop. The completed session journal is held outside Git; SHA-256 is 97a61f9ba58415aafa2cb86833ef79abff0913c43d0caf1c4c97b10f12420db0. Authentication/control HTTP and the persistent TLS 1.2 data stream are saved. Graceful stop exits 0; controller returns to 25 rules with no experimental node/rule, and the subscription extension matches its original bytes.
+
+Offline parser reassembles directional bytes independently of tcp_message boundaries. Client stream begins with a 130-byte HTTP CONNECT prelude, whose target is loopback port 4430; the server stream starts directly with the binary header. After the prelude, both streams are fully consumed by 16-byte headers containing four big-endian uint32 words and a body of word 3's length. This is sample-proven framing, not proof of each header word's semantic name or all supported modes.
+
+| Direction | Stream bytes | Binary frames | Observed header tuple: (word 1, command word, body length, word 4) |
+| --- | --- | --- | --- |
+| Client | 207311 (includes CONNECT) | 2710 | command 1 once, command 7 once, command 15 2708 times; word 1=0 and word 4=1 |
+| Server | 4375572 | 4468 | command 2 once with empty body; command 15 4467 times with word 1=0x0000AABB and word 4=0xEEFF0800 |
+
+Every command-15 payload (7175 total) parses as IPv4 with IP total length exactly equal to the frame body length. All have protocol 6 (TCP); 13 normalized TCP endpoint pairs occur in both directions. Thus actual request/response tunnel traffic is established. No UDP sample was observed, and command 7 must not be called heartbeat without further evidence.
+
+Client command-1 setup body is 328 bytes. The only nonzero regions in this sample are one byte at offset 3 and the exact login response session token at offset 72 (18 bytes here). This is an exact field match, not an inferred cookie conversion; keep actual token local. Command 7 has eight zero bytes; server command 2 has an empty body. Real setup payload must not be committed or replayed as a static fixture.
+
+The authentication response's netacc/com_res fields are short switch-like strings, not resource JSON/XML. Resource ACL discovery remains a separate requirement. Remaining implementation evidence: derive authentication HASH inputs from native/source boundaries, obtain actual resource authorization schema, corroborate setup fields/command semantics from native code, and validate UDP behavior. Do not ship a full Go TopSAP implementation based on a hardcoded real token, guessed HASH or invented ACL.
