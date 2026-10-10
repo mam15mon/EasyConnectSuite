@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"io"
 	"math/big"
@@ -412,5 +413,30 @@ func TestMalformedFramesAndResourceTLVs(t *testing.T) {
 		if _, _, err := parseVIP(vip); err == nil {
 			t.Fatal("invalid route accepted")
 		}
+	}
+}
+
+func TestWireReferenceVectors(t *testing.T) {
+	// Independent wire bytes from the pinned protocol/C reference, not the mock encoder.
+	wire, err := hex.DecodeString("c192a4d60166001c00000000000000004500001400000000000600000000000000000000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := wire[16:]
+	encoded, err := frame(0x66, wire[8:])
+	if err != nil || !bytes.Equal(encoded, wire) || !validIPv4(packet) {
+		t.Fatalf("IPv4 wire encoding differs: %x, %v", encoded, err)
+	}
+	if got := authValue("a%&+b"); string(got) != "a%25%26%2Bb\x00" {
+		t.Fatalf("authentication escaping differs: %q", got)
+	}
+	vip, err := hex.DecodeString("00000000000100050a5a00022000060005c633640018")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ip, routes, err := parseVIP(vip)
+	if err != nil || ip != netip.MustParseAddr("10.90.0.2") || len(routes) != 1 ||
+		routes[0] != netip.MustParsePrefix("198.51.100.0/24") {
+		t.Fatalf("VIP wire decoding differs: %v, %v, %v", ip, routes, err)
 	}
 }
