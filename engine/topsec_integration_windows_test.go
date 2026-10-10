@@ -219,6 +219,54 @@ func TestTopSAPAdapterRefusalIsTerminal(t *testing.T) {
 	}
 }
 
+func TestTopSAPMissingResourcesFailureIsPersisted(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "engine.log")
+	capture := &Engine{opts: Options{LogFile: logPath}}
+	capture.startLogCapture()
+	defer capture.stopLogCapture()
+	var logouts atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/vone/login/auth_param":
+			fmt.Fprint(w, `{pswd:"on",check_client_before_login:"off",auth_protocol:"0",data_protocol:"0",twoway_auth_switch:"off"}`)
+		case "/vone/login/user_pswd":
+			fmt.Fprint(w, `{"Ret":0,"user_param":{"topafasfasfassession_id":"private-test-token","netacc":"on","alg":"standard","protocal":"standard","compress":"off"},"net_param":{"vip_v4":"10.91.0.2"}}`)
+		case "/vone/login/get_config_info":
+			fmt.Fprint(w, `{"Ret":0,"phone":"","mail":""}`)
+		case "/vone/login/logout":
+			logouts.Add(1)
+			fmt.Fprint(w, `{"Ret":0}`)
+		default:
+			t.Error("missing resources must not start a data tunnel")
+			http.Error(w, "unexpected", 400)
+		}
+	}))
+	defer server.Close()
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	ctx, cancel := context.WithCancel(context.Background())
+	c := &topSAPClient{ctx: ctx, cancel: cancel, options: topsec.Options{Server: strings.TrimPrefix(server.URL, "https://"), Username: "private-test-user", Password: "private-test-password", TLSConfig: &tls.Config{RootCAs: roots}}}
+	defer c.Close()
+	err := c.Setup()
+	if err == nil || !strings.Contains(err.Error(), "未返回完整资源列表") || logouts.Load() != 1 {
+		t.Fatal("missing resources were accepted or failed session was not revoked", err)
+	}
+	logged, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	for _, marker := range []string{"authentication accepted Ret=0", "endpoint=get_config_info", "Ret=0 resources_present=false resources=0", "解析服务器资源", "未返回完整资源列表", "TopSAP setup failed:", "logout completed"} {
+		if !strings.Contains(string(logged), marker) {
+			t.Fatalf("resource failure missing persistent marker %q", marker)
+		}
+	}
+	for _, secret := range []string{"private-test-user", "private-test-password", "private-test-token"} {
+		if strings.Contains(string(logged), secret) {
+			t.Fatal("failure logs exposed credentials or session token")
+		}
+	}
+}
+
 func TestTopSAPCertificateVerificationRequiresProfileOptIn(t *testing.T) {
 	for _, skip := range []bool{false, true} {
 		t.Run(fmt.Sprint(skip), func(t *testing.T) {
