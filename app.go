@@ -451,31 +451,7 @@ func (a *App) handleEngineStatus(s engine.Status) {
 }
 
 func (a *App) syncTrayTooltipLocked() {
-	if a.anyRunningLocked() {
-		count := 0
-		for _, c := range a.connections {
-			if c.status.Running {
-				count++
-			}
-		}
-		UpdateTrayTooltip(fmt.Sprintf("VPN 客户端\n%d 条连接运行中", count))
-		return
-	}
-	var tip string
-	if a.status.Running {
-		if a.status.State == "connected" {
-			if a.status.ClientIP != "" {
-				tip = fmt.Sprintf("EasyConnect VPN\n已连接: %s\nIP: %s", a.status.ActiveProfile, a.status.ClientIP)
-			} else {
-				tip = fmt.Sprintf("EasyConnect VPN\n已连接: %s", a.status.ActiveProfile)
-			}
-		} else {
-			tip = fmt.Sprintf("EasyConnect VPN\n%s: %s", a.status.Stage, a.status.ActiveProfile)
-		}
-	} else {
-		tip = "EasyConnect VPN (未连接)"
-	}
-	UpdateTrayTooltip(tip)
+	UpdateTrayTooltip(trayTooltip(a.trayStatusesLocked()))
 }
 
 func (a *App) getActiveProfileLocked() Profile {
