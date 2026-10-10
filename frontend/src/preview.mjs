@@ -28,9 +28,10 @@ export function installPreview(onStatus) {
     SetProxyEnabled:async enabled=>{ profiles.find(p=>p.id===selected).disableProxy=!enabled; },
     StartProfileVPN:async id=>{
       const status=statuses.get(id);
+      const profile=profiles.find(p=>p.id===id);
       const version=(generation.get(id)||0)+1;
       generation.set(id,version);
-      Object.assign(status,{running:true,state:'connecting',stage:'认证中',message:'演示：正在连接网关…',lastError:'',duration:0}); emit(id);
+      Object.assign(status,{tunMode:profile.tunMode,disableProxy:!!profile.disableProxy,socksPort:String(profile.socksPort),httpPort:String(profile.httpPort),running:true,state:'connecting',stage:'认证中',message:'演示：正在连接网关…',lastError:'',duration:0}); emit(id);
       await new Promise(resolve=>setTimeout(resolve,650));
       if(generation.get(id)!==version)return 'OK';
       Object.assign(status,{state:'connected',stage:'',clientIp:'192.0.2.20'});emit(id);return 'OK';

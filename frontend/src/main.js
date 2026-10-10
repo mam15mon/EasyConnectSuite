@@ -28,15 +28,16 @@ app.innerHTML = `
           <label class="tun-mode-control" id="tun-mode-note" title="开启时需要管理员授权"><div><span class="tun-mode-title">TUN 分流</span><small>按授权资源接管系统流量</small></div><input type="checkbox" id="tun-mode-toggle" role="switch" aria-label="TUN 分流" disabled /></label>
           <label class="tun-mode-control" id="proxy-mode-note"><div><span class="tun-mode-title">本地代理</span><small>SOCKS5 / HTTP 代理端口</small></div><input type="checkbox" id="proxy-mode-toggle" role="switch" aria-label="本地代理" disabled /></label>
         </div>
+
+      </section>
+      <section class="resources-panel" aria-labelledby="resources-heading">
+        <div class="resource-heading"><div><h2 id="resources-heading">授权资源 <span class="panel-count-badge" id="route-count"></span></h2><p id="resource-owner">当前连接的内网 IP 与域名</p></div><button class="btn-plain" id="btn-refresh-resources" title="刷新当前连接的资源视图">刷新</button></div>
         <div class="telemetry-grid">
           <button class="telemetry-item" id="item-client-ip" title="复制虚拟 IP"><span class="telemetry-label">虚拟 IP</span><span class="telemetry-val pending" id="client-ip-val">—</span></button>
           <button class="telemetry-item" id="item-dns" title="复制内网 DNS"><span class="telemetry-label">内网 DNS</span><span class="telemetry-val pending" id="dns-val">—</span></button>
           <button class="telemetry-item" id="item-socks" title="复制 SOCKS5 地址"><span class="telemetry-label">SOCKS5</span><span class="telemetry-val" id="socks-port-val">—</span></button>
           <button class="telemetry-item" id="item-http" title="复制 HTTP 代理地址"><span class="telemetry-label">HTTP 代理</span><span class="telemetry-val" id="http-port-val">—</span></button>
         </div>
-      </section>
-      <section class="resources-panel" aria-labelledby="resources-heading">
-        <div class="resource-heading"><div><h2 id="resources-heading">授权资源 <span class="panel-count-badge" id="route-count"></span></h2><p id="resource-owner">当前连接的内网 IP 与域名</p></div><button class="btn-plain" id="btn-refresh-resources" title="刷新当前连接的资源视图">刷新</button></div>
         <div class="routes-search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input class="routes-filter" id="routes-filter" type="search" placeholder="筛选 IP、域名或端口" aria-label="筛选当前 VPN 资源" /></div>
         <div class="route-table" id="route-table"><div class="route-empty">连接后显示服务器授权的资源。</div></div>
       </section>
@@ -45,10 +46,10 @@ app.innerHTML = `
   <footer class="hint-bar"><span id="preview-indicator" hidden>演示预览 · 使用模拟数据</span><span>关闭窗口后，各条连接继续在托盘运行。</span><button id="log-path-hint" title="复制日志目录">日志目录</button></footer>
   <!-- Profile 编辑弹窗 -->
   <div class="modal-overlay" id="modal-overlay">
-    <div class="modal-box">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-head">
         <div class="modal-title" id="modal-title">编辑服务器配置</div>
-        <button class="modal-close" id="modal-close-btn">&times;</button>
+        <button class="modal-close" id="modal-close-btn" aria-label="关闭配置编辑">&times;</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="form-id" />
@@ -69,26 +70,26 @@ app.innerHTML = `
           <small>仅对当前配置生效；开启后无法验证网关身份，账号密码可能被冒充的网关获取。</small>
         </div>
         <div class="form-group">
-          <label class="form-label">节点名称（备注）</label>
+          <label class="form-label" for="form-name">节点名称（备注）</label>
           <input type="text" class="form-input" id="form-name" placeholder="例如：公司生产环境、学校内网" />
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">VPN 服务器地址</label>
+            <label class="form-label" for="form-server">VPN 服务器地址</label>
             <input type="text" class="form-input" id="form-server" placeholder="vpn.example.com 或公网 IP" />
           </div>
           <div class="form-group">
-            <label class="form-label">服务端口</label>
+            <label class="form-label" for="form-port">服务端口</label>
             <input type="number" class="form-input" id="form-port" value="443" />
           </div>
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">登录账号</label>
+            <label class="form-label" for="form-username">登录账号</label>
             <input type="text" class="form-input" id="form-username" placeholder="用户名" />
           </div>
           <div class="form-group">
-            <label class="form-label">登录密码</label>
+            <label class="form-label" for="form-password">登录密码</label>
             <input type="password" class="form-input" id="form-password" placeholder="••••••••" />
           </div>
         </div>
@@ -102,7 +103,7 @@ app.innerHTML = `
           <span>二次认证（登录时自动提交 TOTP 动态码）</span>
         </label>
         <div class="form-group" id="form-totp-container" style="display:none">
-          <label class="form-label">TOTP 动态秘钥 (Base32)</label>
+          <label class="form-label" for="form-totp">TOTP 动态秘钥 (Base32)</label>
           <input type="text" class="form-input" id="form-totp" placeholder="例如 JBSWY3DPEHPK3PXP" />
         </div>
 
@@ -111,7 +112,7 @@ app.innerHTML = `
           <span>自定义会话保活地址（默认使用内置轻量探测）</span>
         </label>
         <div class="form-group" id="form-keepalive-container" style="display:none">
-          <label class="form-label">保活目标 URL（连接期间定期心跳探测）</label>
+          <label class="form-label" for="form-keepalive-url">保活目标 URL（连接期间定期心跳探测）</label>
           <input type="text" class="form-input" id="form-keepalive-url" placeholder="http://172.31.112.1" />
         </div>
 
@@ -122,7 +123,7 @@ app.innerHTML = `
 
 
         <div class="form-group">
-          <label class="form-label">出口物理网卡</label>
+          <label class="form-label" for="form-nic">出口物理网卡</label>
           <select class="form-select" id="form-nic">
             <option value="以太网">以太网</option>
             <option value="WLAN">WLAN</option>
@@ -393,9 +394,10 @@ async function selectProfile(id) {
   routesFilter.value = '';
   updateStatusUI(connectionStatuses.find(s => s.profileId === id) || {profileId:id, running:false, state:'disconnected'});
   renderResources(profileResources.get(id) || []);
-  selectionQueue = selectionQueue.then(() => window.go.main.App.SetActiveProfile(id));
+  const selection = selectionQueue.then(() => window.go.main.App.SetActiveProfile(id));
+  selectionQueue = selection.catch(() => {});
   try {
-    if (!await selectionQueue) throw new Error('服务器配置不存在');
+    if (!await selection) throw new Error('服务器配置不存在');
     if (version !== selectionVersion) return;
     const status = await window.go.main.App.GetStatus();
     if (version !== selectionVersion) return;

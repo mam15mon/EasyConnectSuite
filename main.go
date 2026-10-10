@@ -69,11 +69,11 @@ func main() {
 	}
 
 	err = wails.Run(&options.App{
-		Title:             "EasyConnect VPN 管理器",
-		Width:             980,
-		Height:            700,
+		Title:             "EasyConnect Suite · VPN 工作台",
+		Width:             1080,
+		Height:            820,
 		MinWidth:          840,
-		MinHeight:         600,
+		MinHeight:         660,
 		HideWindowOnClose: true,
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "EasyConnectSuite-6f1c2a90-INSTANCE",
@@ -89,7 +89,7 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour: &options.RGBA{R: 15, G: 23, B: 42, A: 1},
+		BackgroundColour: &options.RGBA{R: 244, G: 246, B: 250, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
 		Bind: []interface{}{
