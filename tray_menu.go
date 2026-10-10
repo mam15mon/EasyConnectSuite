@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"strings"
 	"unicode/utf16"
 )
@@ -114,6 +116,7 @@ func trayLifecycleAction(s VPNStatus) (string, trayAction) {
 }
 
 func (a *App) executeTrayAction(action trayAction) string {
+	log.Printf("[VPN pid=%d profile=%q] tray action=%s", os.Getpid(), action.profileID, action.kind)
 	switch action.kind {
 	case "connect":
 		return a.StartProfileVPN(action.profileID)

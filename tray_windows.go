@@ -163,10 +163,8 @@ func appendTrayMenu(menu, flags, id uintptr, text string) {
 	procAppendMenuW.Call(menu, flags, id, uintptr(unsafe.Pointer(ptr)))
 }
 
-func showTrayMenu(app *App, hwnd uintptr, pt POINT) {
-	statuses := app.trayStatuses()
+func buildTrayMenu(statuses []VPNStatus) (uintptr, map[uintptr]trayAction) {
 	menu, _, _ := procCreatePopupMenu.Call()
-	defer procDestroyMenu.Call(menu)
 	appendTrayMenu(menu, MF_GRAYED, 0, traySummary(statuses))
 	appendTrayMenu(menu, MF_STRING, 1003, "打开 VPN 工作台")
 	procAppendMenuW.Call(menu, MF_SEPARATOR, 0, 0)
@@ -210,6 +208,12 @@ func showTrayMenu(app *App, hwnd uintptr, pt POINT) {
 	}
 	appendTrayMenu(menu, flags, 1002, "断开全部 VPN")
 	appendTrayMenu(menu, MF_STRING, 1004, "退出程序（断开全部）")
+	return menu, actions
+}
+
+func showTrayMenu(app *App, hwnd uintptr, pt POINT) {
+	menu, actions := buildTrayMenu(app.trayStatuses())
+	defer procDestroyMenu.Call(menu)
 	cmd, _, _ := procTrackPopupMenu.Call(menu, TPM_RIGHTBUTTON|TPM_RETURNCMD, uintptr(pt.X), uintptr(pt.Y), 0, hwnd, 0)
 	switch cmd {
 	case 1003:
