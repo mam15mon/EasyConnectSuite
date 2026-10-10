@@ -461,13 +461,42 @@ func (w *windowsRoutes) setDNS(names []string) error {
 	return err
 }
 
+// CleanupStaleTUN runs before connecting, after Wails acquires its single-instance
+// lock. Probe mode detects residue without requiring administrator privileges.
+func CleanupStaleTUN(probeOnly bool) (bool, error) {
+	result, err := (&windowsRoutes{}).run(map[string]any{
+		"action": "cleanup", "probe": probeOnly, "tag": nrptTag,
+		"name": tunName, "address": netip.MustParsePrefix(tunPrefix).Addr().String(),
+	})
+	return result.Pending, err
+}
+
 const networkScript = `
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $p = [Console]::In.ReadToEnd() | ConvertFrom-Json
-$added = @(); $removed = @(); $failure = ''
+$added = @(); $removed = @(); $failure = ''; $pending = $false
 try {
   switch ($p.action) {
+    'cleanup' {
+      $rules = @(Get-DnsClientNrptRule | Where-Object { $_.Comment -eq $p.tag })
+      $routes = @(foreach ($adapter in @(Get-NetAdapter -IncludeHidden | Where-Object { $_.Name -eq $p.name })) {
+        $addresses = @(Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4)
+        if (@($addresses | Where-Object { $_.IPAddress -eq $p.address }).Count -gt 0) {
+          Get-NetRoute -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -PolicyStore ActiveStore |
+            Where-Object { $_.Protocol -eq 'NetMgmt' -and $_.RouteMetric -eq 0 -and $_.NextHop -eq '0.0.0.0' -and $_.DestinationPrefix -ne '0.0.0.0/0' }
+        }
+      })
+      $pending = $rules.Count -gt 0 -or $routes.Count -gt 0
+      if ($pending -and -not $p.probe) {
+        foreach ($rule in $rules) { Remove-DnsClientNrptRule -Name $rule.Name -Force }
+        foreach ($route in $routes) {
+          $route | Remove-NetRoute -Confirm:$false
+          $removed += $route.DestinationPrefix
+        }
+        Clear-DnsClientCache
+      }
+    }
     'configure' {
       Set-NetIPInterface -InterfaceIndex $p.index -AddressFamily IPv4 -AutomaticMetric Disabled -InterfaceMetric 0
       Set-DnsClientServerAddress -InterfaceIndex $p.index -ResetServerAddresses
@@ -482,5 +511,5 @@ try {
     }
   }
 } catch { $failure = $_.Exception.Message }
-@{ added = @($added); removed = @($removed); error = $failure } | ConvertTo-Json -Compress
+@{ added = @($added); removed = @($removed); error = $failure; pending = $pending } | ConvertTo-Json -Compress
 `

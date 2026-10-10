@@ -16,6 +16,7 @@ type routeResult struct {
 	Added   []string `json:"added"`
 	Removed []string `json:"removed"`
 	Error   string   `json:"error"`
+	Pending bool     `json:"pending"`
 }
 
 type routeBackend interface {

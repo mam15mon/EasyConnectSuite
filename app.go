@@ -145,6 +145,12 @@ func (a *App) saveConfigFile() error {
 // startup is called when the app starts
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	if restarting, err := a.cleanupTUNOnStartup(); restarting {
+		runtime.Quit(ctx)
+		return
+	} else if err != nil {
+		a.handleEngineStatus(engine.Status{Phase: engine.PhaseError, Message: err.Error()})
+	}
 
 	// Start Windows system tray
 	StartTray(a, ctx)

@@ -9,9 +9,32 @@ import (
 	"strconv"
 	"unsafe"
 
+	"EasyConnectSuite/engine"
+
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows"
 )
+
+func (a *App) recoverStaleTUN(elevated bool, cleanup func(bool) (bool, error), launch func(string) error) (bool, error) {
+	pending, err := cleanup(!elevated)
+	if err != nil {
+		return false, fmt.Errorf("清理上次遗留的 TUN 配置失败：%w", err)
+	}
+	if !pending || elevated {
+		return false, nil
+	}
+	if err := launch(a.configPath); err != nil {
+		return false, fmt.Errorf("遗留的 TUN 配置需要管理员权限清理：%w", err)
+	}
+	a.mu.Lock()
+	a.restarting = true
+	a.mu.Unlock()
+	return true, nil
+}
+
+func (a *App) cleanupTUNOnStartup() (bool, error) {
+	return a.recoverStaleTUN(windows.GetCurrentProcessToken().IsElevated(), engine.CleanupStaleTUN, launchTUNAdministrator)
+}
 
 // SetTUNMode returns true when an elevated replacement has been launched.
 func (a *App) SetTUNMode(enabled bool) (bool, error) {
