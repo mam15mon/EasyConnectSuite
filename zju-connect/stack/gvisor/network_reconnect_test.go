@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 func TestReconnectWaitsForNetworkBeyondLoginLimit(t *testing.T) {
@@ -54,11 +56,56 @@ type networkReconnectClient struct {
 	attempt func() error
 }
 
-func (c networkReconnectClient) NewL3Conn() (interfaceConn io.ReadWriteCloser, err error) {
+func (c networkReconnectClient) NewL3Conn() (io.ReadWriteCloser, error) {
 	if err := c.attempt(); err != nil {
 		return nil, err
 	}
 	return c.connection, nil
+}
+
+func TestReconnectNetworkErrorClassification(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"unreachable", fmt.Errorf("request: %w", &net.OpError{Op: "dial", Err: syscall.EHOSTUNREACH}), true},
+		{"timeout", fmt.Errorf("request: %w", os.ErrDeadlineExceeded), true},
+		{"authentication", errors.New("invalid credentials"), false},
+		{"protocol", errors.New("invalid L3 handshake"), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isReconnectNetworkError(test.err); got != test.want {
+				t.Fatalf("network error = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestCloseStopsOfflineReconnectDuringCooldown(t *testing.T) {
+	hook_func.ResetTerminalFuncs()
+	t.Cleanup(hook_func.ResetTerminalFuncs)
+	s := &Stack{endpoint: &Endpoint{}, gvisorStack: stack.New(stack.Options{}), done: make(chan struct{})}
+	attempted := make(chan struct{})
+	s.SetupRelogin(func() error {
+		close(attempted)
+		return &net.OpError{Op: "dial", Net: "tcp", Err: syscall.EHOSTUNREACH}
+	})
+	s.SetupFatalHandler(func(err error) { t.Errorf("manual close reported fatal error: %v", err) })
+	finished := make(chan bool, 1)
+	go func() { finished <- s.rebuildL3Conn(nil, errors.New("EOF")) }()
+	<-attempted
+	s.Close()
+	// A new engine resets the global terminal flag; the old stack must stay stopped.
+	hook_func.ResetTerminalFuncs()
+	select {
+	case recovered := <-finished:
+		if recovered {
+			t.Fatal("closed stack reported recovery")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("manual close did not interrupt the reconnect cooldown")
+	}
 }
 
 func TestReconnectStillLimitsLoginFailures(t *testing.T) {

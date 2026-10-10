@@ -37,6 +37,18 @@ func TestNewAutoDetectDisabled(t *testing.T) {
 	}
 }
 
+func TestMissingUnderlayInterfaceReturnsDialError(t *testing.T) {
+	originalFind := findDefaultInterface
+	findDefaultInterface = func() string { return "" }
+	t.Cleanup(func() { findDefaultInterface = originalFind })
+	dialer := &Dialer{autoDetect: true, requireBound: true}
+	_, err := dialer.DialContext(t.Context(), "tcp", "127.0.0.1:0")
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) || opErr.Op != "dial" {
+		t.Fatalf("missing interface did not produce a dial error: %v", err)
+	}
+}
+
 func TestAutoDetectionIsDeferredAndSharedByConcurrentFirstDials(t *testing.T) {
 	originalFind := findDefaultInterface
 	originalDial := dialOnInterface
