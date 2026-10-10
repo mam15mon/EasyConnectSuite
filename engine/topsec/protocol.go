@@ -76,10 +76,16 @@ func decodeObject(data []byte, target any) error {
 			for i < len(data) && (data[i] >= 'a' && data[i] <= 'z' || data[i] >= 'A' && data[i] <= 'Z' || data[i] == '_' || i > start && data[i] >= '0' && data[i] <= '9') {
 				i++
 			}
-			if i > start {
+			end := i
+			for end < len(data) && strings.ContainsRune(" \r\n\t", rune(data[end])) {
+				end++
+			}
+			if i > start && end < len(data) && data[end] == ':' {
 				out.WriteByte('"')
 				out.Write(data[start:i])
 				out.WriteByte('"')
+			} else {
+				out.Write(data[start:i])
 			}
 			continue
 		}

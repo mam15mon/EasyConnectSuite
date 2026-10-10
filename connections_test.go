@@ -157,6 +157,24 @@ func TestProtocolAndPortsPersistAndOldProfilesMigrate(t *testing.T) {
 		t.Fatal("unsupported auth accepted")
 	}
 }
+
+func TestTopSAPProfileKeepsResourceRoutingAndExistingProtocols(t *testing.T) {
+	a := multiTestApp(t)
+	p, err := a.SaveProfile(Profile{Name: "TopSAP", Protocol: "topsec", Server: "test.invalid", Port: 443, Username: "test", Password: " space ", TUNMode: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := a.buildEngineConfig(p)
+	if conf.Protocol != "topsec" || !conf.DisableZJUConfig || !conf.DisableKeepAlive || conf.Password != " space " || conf.SocksBind == "" || conf.HTTPBind == "" {
+		t.Fatal("incorrect TopSAP profile mapping")
+	}
+	if a.appConfig.Profiles[0].Protocol != "easyconnect" || a.appConfig.Profiles[1].Protocol != "univpn" {
+		t.Fatal("existing profiles changed")
+	}
+	if _, err := a.SaveProfile(Profile{Protocol: "topsec", Port: 443, Enable2FA: true}); err == nil {
+		t.Fatal("unsupported authentication accepted")
+	}
+}
 func TestElevationDoesNotInterruptOtherConnections(t *testing.T) {
 	a := multiTestApp(t)
 	a.startConnection(func(o engine.Options) (vpnEngine, error) {
