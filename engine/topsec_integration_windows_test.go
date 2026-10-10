@@ -13,6 +13,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -96,6 +98,9 @@ func topSAPGateway(t *testing.T, reject bool) (*topSAPClient, *atomic.Int32) {
 			http.SetCookie(w, &http.Cookie{Name: "topafasfasfassession_id", Value: "mock-session", Path: "/", Secure: true})
 			fmt.Fprint(w, `{"Ret":0,"user_param":{"topafasfasfassession_id":"mock-session","netacc":"on","alg":"standard","protocal":"standard","compress":"off"},"net_param":{"vip_v4":"10.91.0.2","dns1_v4":"0.0.0.0","dns2_v4":"0.0.0.0"}}`)
 		case "/vone/login/get_config_info":
+			if err := r.ParseForm(); err != nil || r.Form.Get("TYPE") != "all" || !r.Form.Has("HASH") || r.Form.Get("HASH") != "" {
+				t.Error("full resource request differs from native TYPE=all contract")
+			}
 			fmt.Fprint(w, `{"Ret":0,"res_list":[{"module":"na","protocol":"ip","ip":"198.51.100.0","mask":"255.255.255.0","port":"","domain":""}]}`)
 		case "/vone/login/logout":
 			fmt.Fprint(w, `{"Ret":0}`)
@@ -132,6 +137,10 @@ func topSAPReadClient(r *bufio.Reader) (uint32, []byte, error) {
 	return binary.BigEndian.Uint32(h[4:]), body, err
 }
 func TestTopSAPAdapterGVisorTCPAndUDP(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "engine.log")
+	capture := &Engine{opts: Options{LogFile: logPath}}
+	capture.startLogCapture()
+	defer capture.stopLogCapture()
 	c, _ := topSAPGateway(t, false)
 	if err := c.Setup(); err != nil {
 		t.Fatal(err)
@@ -178,12 +187,35 @@ func TestTopSAPAdapterGVisorTCPAndUDP(t *testing.T) {
 			}
 		})
 	}
+	c.Close()
+	logged, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{"certificate_verify=true", "endpoint=auth_param status=200", "authentication accepted Ret=0", "TYPE=all", "resources_present=true resources=1", "resources ready routes=1 dns_servers=0", "等待隧道确认 ACK", "tunnel ready", "first IPv4 packet sent", "first IPv4 packet received", "rx_bytes=", "logout completed", "closed"} {
+		if !strings.Contains(string(logged), marker) {
+			t.Fatalf("missing persistent log marker %q", marker)
+		}
+	}
+	for _, secret := range []string{"mock-session", "dGVzdA==", "S_CODE=", "P=", "U="} {
+		if strings.Contains(string(logged), secret) {
+			t.Fatal("setup or data logs exposed private authentication fields")
+		}
+	}
 }
 func TestTopSAPAdapterRefusalIsTerminal(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "engine.log")
+	capture := &Engine{opts: Options{LogFile: logPath}}
+	capture.startLogCapture()
+	defer capture.stopLogCapture()
 	c, count := topSAPGateway(t, true)
 	err := c.Setup()
 	if !errors.Is(err, topsec.ErrLoginRejected) || !errors.Is(err, easyconnect.ErrLoginRejected) || count.Load() != 1 {
 		t.Fatal("authentication refusal lost or retried", err)
+	}
+	logged, readErr := os.ReadFile(logPath)
+	if readErr != nil || !strings.Contains(string(logged), "TopSAP setup failed:") || !strings.Contains(string(logged), "账号密码认证") || !strings.Contains(string(logged), "TopSAP authentication rejected: Ret=-1001") {
+		t.Fatal("refusal stage and numeric cause were not persisted", readErr)
 	}
 }
 
