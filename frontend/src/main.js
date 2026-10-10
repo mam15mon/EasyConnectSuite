@@ -794,10 +794,8 @@ async function refreshConnections() {
 }
 function renderConnections() {
   const list = document.getElementById('connection-list');
-  const focused = document.activeElement?.closest('[data-profile-action]');
-  const focusID = focused?.dataset.profileId;
-  const focusAction = focused?.dataset.profileAction;
-  list.replaceChildren();
+  const rows = new Map(Array.from(list.querySelectorAll('.connection-row')).map(row => [row.dataset.profileId, row]));
+  const visibleIDs = new Set();
   document.getElementById('profile-count').textContent = cachedProfiles.length;
   document.getElementById('global-connected').textContent = connectionStatuses.filter(s => s.state === 'connected').length;
   document.getElementById('global-pending').textContent = `${connectionStatuses.filter(s => s.state === 'connecting').length} 连接中`;
@@ -809,28 +807,64 @@ function renderConnections() {
   for (const profile of cachedProfiles) {
     const status = connectionStatuses.find(s => s.profileId === profile.id) || {state:'disconnected', running:false};
     if (connectionFilter === 'running' && !status.running) continue;
-    const row = document.createElement('div');
-    row.className = 'connection-row';
-    row.dataset.profileId = profile.id;
+    let row = rows.get(profile.id);
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'connection-row';
+      row.dataset.profileId = profile.id;
+      row.innerHTML = '<div class="connection-identity"><button class="connection-name" data-profile-action="select"></button><div class="connection-meta"><span class="protocol-tag"></span><span class="connection-gateway"></span></div></div><button class="connection-action" data-profile-action="toggle"></button><div class="connection-status-line"><span class="connection-state"></span><span class="connection-time"></span></div>';
+    }
     row.classList.toggle('selected', profile.id === activeProfile?.id);
     const state = status.state === 'connecting' ? (status.stage || '连接中') : STATE_WORDS[status.state] || '未连接';
-    row.innerHTML = `<div class="connection-identity"><button class="connection-name" data-profile-action="select" aria-label="查看 ${escapeHTML(profile.name)}">${escapeHTML(profile.name)}</button><div class="connection-meta"><span class="protocol-tag">${protocolNames[profile.protocol || 'easyconnect']}</span><span class="connection-gateway" title="${escapeHTML(profile.server)}:${profile.port}">${escapeHTML(profile.server)}:${profile.port}</span></div></div><button class="connection-action ${status.running ? 'stop' : ''}" data-profile-action="toggle" aria-label="${status.running ? status.state === 'connecting' ? '取消' : '断开' : status.state === 'error' ? '重试' : '连接'} ${escapeHTML(profile.name)}">${pendingActions.has(profile.id) && status.state !== 'connecting' ? '处理中' : status.running ? status.state === 'connecting' ? '取消' : '断开' : status.state === 'error' ? '重试' : '连接'}</button><div class="connection-status-line"><span class="connection-state ${status.state}" title="${escapeHTML(status.lastError || status.message || state)}">${escapeHTML(state)}</span><span class="connection-time">${status.running ? formatSeconds(status.duration || 0) : status.state === 'error' ? '查看详情' : ''}</span></div>`;
+    const name = row.querySelector('.connection-name');
+    name.textContent = profile.name;
+    name.setAttribute('aria-label', `查看 ${profile.name}`);
+    name.setAttribute('aria-pressed', String(profile.id === activeProfile?.id));
+    row.querySelector('.protocol-tag').textContent = protocolNames[profile.protocol || 'easyconnect'];
+    const gateway = row.querySelector('.connection-gateway');
+    gateway.textContent = gateway.title = `${profile.server}:${profile.port}`;
+    const action = row.querySelector('.connection-action');
+    const actionWord = status.running ? status.state === 'connecting' ? '取消' : '断开' : status.state === 'error' ? '重试' : '连接';
+    action.textContent = pendingActions.has(profile.id) && status.state !== 'connecting' ? '处理中' : actionWord;
+    action.setAttribute('aria-label', `${actionWord} ${profile.name}`);
+    action.classList.toggle('stop', !!status.running);
+    const stateLabel = row.querySelector('.connection-state');
+    stateLabel.textContent = state;
+    stateLabel.className = `connection-state ${status.state}`;
+    stateLabel.title = status.lastError || status.message || state;
+    row.querySelector('.connection-time').textContent = status.running ? formatSeconds(status.duration || 0) : status.state === 'error' ? '查看详情' : '';
     for (const button of row.querySelectorAll('[data-profile-action]')) {
       button.dataset.profileId = profile.id;
       button.disabled = modeSaving || (button.dataset.profileAction === 'toggle' && pendingActions.has(profile.id) && status.state !== 'connecting');
-      button.addEventListener('click', () => button.dataset.profileAction === 'toggle' ? toggleConnection(profile.id) : selectProfile(profile.id));
-      if (button.dataset.profileAction === 'select') button.setAttribute('aria-pressed', String(profile.id === activeProfile?.id));
     }
-    list.appendChild(row);
+    const position = visibleIDs.size;
+    visibleIDs.add(profile.id);
+    if (list.children[position] !== row) list.insertBefore(row, list.children[position] || null);
   }
-  if (!list.children.length) {
-    const empty = document.createElement('div');
-    empty.className = 'list-empty';
+  for (const [id, row] of rows) if (!visibleIDs.has(id)) row.remove();
+  let empty = list.querySelector('.list-empty');
+  if (!visibleIDs.size) {
+    if (!empty) {
+      empty = document.createElement('div');
+      empty.className = 'list-empty';
+      list.appendChild(empty);
+    }
     empty.textContent = cachedProfiles.length ? '没有运行中的连接，可切回“全部”选择 VPN。' : '还没有 VPN 配置，点击“新建 VPN”添加。';
-    list.appendChild(empty);
+  } else {
+    empty?.remove();
   }
-  if (focusID) Array.from(list.querySelectorAll('[data-profile-action]')).find(b => b.dataset.profileId === focusID && b.dataset.profileAction === focusAction)?.focus({preventScroll:true});
 }
+
+document.getElementById('connection-list').addEventListener('click', event => {
+  const row = event.target.closest('.connection-row');
+  if (!row || modeSaving) return;
+  const action = event.target.closest('[data-profile-action="toggle"]');
+  if (action) {
+    if (!action.disabled) toggleConnection(row.dataset.profileId);
+  } else {
+    selectProfile(row.dataset.profileId);
+  }
+});
 
 for (const button of document.querySelectorAll('[data-connection-filter]')) {
   button.addEventListener('click', () => {
