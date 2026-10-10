@@ -1,6 +1,14 @@
-# UniVPN Go 协议核心
+# UniVPN 接入与多 VPN EXE
 
-当前 `engine/univpn` 是 Go 原生的报文传输核心，按华为／联软 UniVPN 的已观察协议子集实现。它尚未接入 GUI、gVisor、Windows TUN 或本地代理，也没有连接用户的真实网关。现有 EXE 不包含 UniVPN 支持。
+UniVPN Go 核心已接入 GUI、gVisor TCP/UDP、本地 SOCKS5/HTTP 代理及 Windows 资源 TUN，编译进同一个 EXE。可同时运行多个 EasyConnect、UniVPN 配置；选择配置不会停止已有连接。用户确认的认证方式为账号密码，真实网关和客户端版本尚未提供，不能据模拟测试推断所有固件兼容。
+
+## 使用
+
+从托盘退出旧客户端后启动 `EasyConnectGUI-multi-vpn-upx.exe`。新建配置时选择 UniVPN，填写服务器、端口、账号、密码及可选认证域。认证域按网关配置填写，允许为空。每个配置保存独立的 SOCKS5/HTTP 端口，新配置自动选择尚未被其他配置使用的端口对；实际绑定失败会显示连接错误。
+
+连接第一个配置后，选择第二个配置并连接。连接列表显示每条会话的协议和状态；主界面状态与资源属于当前选中的配置。支持逐条断开和“断开全部”，程序退出关闭所有会话。正在运行或停止中的配置不能编辑或删除。
+
+使用系统流量分流时开启 TUN，需要管理员权限。已有其他连接时先断开全部再切换权限，避免管理员重启打断会话。不同会话使用独立虚拟网卡、地址、路由所有权和 NRPT 标记。同一程序内完全相同的路由前缀，以及父子关系或相同名称的 DNS 命名空间会报冲突。不同长度前缀仍使用最长匹配；若两条 VPN 需要访问相同目的地址，可通过各自本地代理选择会话。
 
 ## 已实现
 
@@ -10,18 +18,22 @@
 - 控制通道每 10 秒发送心跳，数据通道每 15 秒发送心跳；数据和心跳写入使用同一把锁。
 - 第一次认证拒绝返回 `ErrLoginRejected`，核心不重复登录。控制通道失败或调用方取消时关闭两条通道，并解除阻塞的数据读取。
 
-`Session.Read/Write` 接收或返回完整 IPv4 报文，后续接入时复用项目已有的 gVisor TCP/UDP 栈。测试中的 TCP、UDP、ICMP 报文往返只证明封装传输，不等于真实应用网络访问已验证。
+`Session.Read/Write` 接收或返回完整 IPv4 报文，适配器复用项目已有的 gVisor TCP/UDP 栈和重连流程。第一次明确认证拒绝即停止登录或重连；临时网络失败等待网络恢复，手动停止取消正在认证或重连的连接。每条连接持有自己的上下文、清理回调、代理监听器与活动连接，停止一条不会执行另一条的清理。进程共享日志捕获在其他引擎停止后仍可继续写入。
 
 ## 验证结果（Windows，2026-10-10）
 
 | 检查 | 结果 |
 | --- | --- |
-| `go test ./engine/univpn -count=1 -timeout=45s` | 通过，本地真实 TLS 模拟网关 |
-| `go test -race ./engine/univpn -count=1 -timeout=60s` | 通过，使用临时 CGO/MinGW 环境 |
-| `go test ./...` | 通过，包含既有应用和 engine 测试 |
+| `go test -race ./... -count=1 -timeout=75s` | 通过，包含应用、引擎及协议核心，使用临时 CGO/MinGW 环境 |
 | `go vet ./...` | 通过 |
 | `go build ./...` | Windows 编译通过 |
 | `go test ./engine/univpn -run TestWireReferenceVectors -count=1` | 独立线格式样例通过 |
+| 本地 TLS 模拟网关 + gVisor | TCP/UDP 载荷往返通过；两个独立 UniVPN 会话并发，停止第一条后第二条继续传输 |
+| 多配置管理与代理 | 独立状态、端口、错误隔离、取消启动、逐条停止和关闭活动连接通过 |
+| TUN 内存替身 | 独立标识、相同前缀/DNS 冲突、更具体路由和多网卡遗留清理通过 |
+| 修改涉及的 zju-connect 包测试及 vet | 通过；EasyConnect、service、gVisor 的 race 测试通过 |
+| zju-connect 全模块测试 | 两项既有 Unix 权限断言在 Windows 失败：keylog/PCAP 要求 `0600`；其余通过 |
+| 前端构建和资源过滤测试 | 通过 |
 
 测试覆盖分段帧读取、认证转义、错误密码只连接一次、地址和路由、两条 TLS 通道身份绑定、不受信证书拒绝、IPv4 报文往返、两种心跳、控制连接丢失、连接期间与会话期间取消，以及损坏的帧、TLV、路由和数据报文。
 
@@ -35,11 +47,11 @@
 - OpenConnect 参考版本 `70d1e79d1e55849dfc71dcc199b1edb535b547e4`，源码归档 SHA256 `c193f6f0f197bf4cdcc15d74c8803f9073406ddcd2f4d4ce8455ee1f76dcb72f` 已核对。
 - Go 移植包保留 LGPL-2.1-or-later 许可和来源说明，见 `engine/univpn/LICENSE` 与 `engine/univpn/NOTICE.md`。上游 Python 管理层的 MIT 许可不能用于替换协议核心许可。
 
-## 后续接入边界
+## 验证边界
 
-真实网关和客户端版本尚未提供，用户确认当前认证仅需账号密码。GUI 后端选择、配置保存、gVisor 接口适配、SOCKS5/HTTP 代理和 Windows TUN 仍需后续实现及验证。
+真实网关和客户端版本尚未提供。TUN 测试使用内存替身，不创建真实网卡或修改本机网络；管理员权限下的真实 TUN、真实网关以及其他 VPN 客户端共存仍需现场验证。
 
-此核心没有自动重认证、其他协议兜底、MFA、浏览器认证、IPv6、DTLS、压缩或固件协商。地址／路由 TLV 不提供已验证的 DNS、域名资源信息，因此这里不推测或创建 Windows NRPT 规则。
+未实现其他厂商协议、MFA、浏览器认证、IPv6、DTLS、协议压缩或固件自动协商。UPX 只压缩 EXE 文件。地址／路由 TLV 不提供已验证的 DNS、域名资源信息，因此不推测或创建 UniVPN 的 Windows NRPT 规则。当前也没有额外的 UniVPN DNS 配置功能；EasyConnect 原有域名资源与分域 NRPT 保持支持。
 
 ## Trellis
 
