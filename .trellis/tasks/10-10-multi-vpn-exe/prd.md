@@ -1,19 +1,9 @@
-# 将 UniVPN 接入 EXE 并支持多 VPN 并发
-
-## Goal
-
-同一 GUI 内独立连接深信服和 UniVPN 配置，隔离生命周期、代理端口与 TUN 规则，并构建压缩 EXE。
-
-## Requirements
-
-- TBD
-
-## Acceptance Criteria
-
-- [ ] TBD
-
-## Notes
-
-- Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
-- Lightweight tasks can remain PRD-only.
-- For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
+# 多 VPN EXE
+用户要求在 EXE 内使用 UniVPN，并同时连接不同 VPN，已经授权实现。
+## 验收
+- 旧配置继续按 EasyConnect 解释，新配置选择 UniVPN 并填写认证域。
+- 每配置独立连接和断开，选择配置不停止其他连接，退出关闭全部。
+- 隔离生命周期、状态、资源、代理端口及 TUN 标识。端口、相同 TUN 前缀和 DNS 规则冲突明确失败。
+- UniVPN 复用 gVisor、本地代理和资源 TUN；认证拒绝停止重连。
+- Windows EXE 构建、UPX 压缩与检查通过，模拟与真实网关验证分别记录。
+真实网关和版本尚未提供。不增加其他厂商、MFA、IPv6、DTLS或协议兜底。
