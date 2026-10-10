@@ -1,8 +1,8 @@
 {
   "id": "univpn-windows-core",
   "name": "univpn-windows-core",
-  "title": "验证 UniVPN Windows 协议核心",
-  "description": "构建并验证华为联软 UniVPN 实验性 OpenConnect 核心，为统一客户端接入提供可复现依据。真实网关兼容性待授权服务器验证。",
+  "title": "验证 UniVPN Go 协议核心",
+  "description": "用 Go 实现并验证华为联软 UniVPN 已观察的账号密码与双 TLS IPv4 子集。GUI 接入和真实网关兼容性为后续验证阶段。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,

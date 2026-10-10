@@ -5,7 +5,7 @@
 - [x] Verify OpenConnect archive and correct patch application.
 - [x] Run native codec and upstream Python tests; record Windows C build failure.
 - [x] Implement Go framing, authentication fields and address/route parsing.
-- [ ] Implement dual-TLS session, heartbeats and IPv4 packet transport.
-- [ ] Test against local TLS mock gateways and malformed input.
-- [ ] Run Go tests, Windows compilation and vet.
-- [ ] Record evidence and keep live gateway/GUI integration pending.
+- [x] Implement dual-TLS session, heartbeats and IPv4 packet transport.
+- [x] Test against local TLS mock gateways and malformed input.
+- [x] Run Go tests, race detector, Windows compilation and vet.
+- [x] Record evidence in docs/univpn-go.md and keep live gateway/GUI integration pending.

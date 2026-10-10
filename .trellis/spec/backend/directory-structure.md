@@ -4,6 +4,7 @@
 - app.go owns profiles, Wails methods, status events and the active engine.
 - engine/engine.go adapts zju-connect and owns startup/shutdown callbacks.
 - engine/policy.go and routes.go derive policy from VPN server resources.
+- engine/univpn/ contains the standalone LGPL-2.1-or-later Go UniVPN packet transport. It is not yet wired into engine.Start; docs/univpn-go.md records its scope and validation.
 - engine/tun_windows.go handles TCP/UDP TUN ingress; routes_windows.go owns Windows routes.
 - tun_mode_windows.go handles elevation and stale-rule cleanup; tray_windows.go owns the tray.
 - zju-connect/ is a local Go module selected by the root go.mod replace directive. It contains protocol clients, gVisor networking and proxy services.
