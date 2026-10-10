@@ -1,7 +1,7 @@
 # Implementation
 
-- [ ] Add profile/engine flag and UniVPN TLS configuration.
-- [ ] Add GUI checkbox, save/load and generated bindings.
-- [ ] Test explicit skip, default rejection, mismatched channel identity and persistence/propagation.
-- [ ] Run root test/race/vet, frontend build and Windows build.
-- [ ] Deliver uncompressed EXE as requested, update specs/docs, archive and journal.
+- [x] Add profile/engine flag and UniVPN TLS configuration.
+- [x] Add GUI checkbox, save/load and generated bindings.
+- [x] Test explicit skip, default rejection, mismatched channel identity and persistence/propagation.
+- [x] Run root race/test/vet, frontend build and Windows build.
+- [x] Deliver uncompressed EXE as requested and update specs/docs; archive and journal during finish-work.
