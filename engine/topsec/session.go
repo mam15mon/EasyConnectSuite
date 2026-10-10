@@ -21,6 +21,7 @@ import (
 )
 
 type Options struct {
+	ConnectionID               string
 	Server, Username, Password string
 	TLSConfig                  *tls.Config
 	DialContext                func(context.Context, string, string) (net.Conn, error)
@@ -29,6 +30,9 @@ type Options struct {
 // Session reads and writes complete IPv4 packets. TCP and UDP are supplied by
 // the existing gVisor stack; this transport does not install routes or DNS.
 type Session struct {
+	connectionID     string
+	startedAt        time.Time
+	lastRX, lastTX   atomic.Int64
 	id               uint64
 	rxBytes, txBytes atomic.Uint64
 	conn             *tls.Conn
@@ -38,6 +42,7 @@ type Session struct {
 	ip               netip.Addr
 	routes           []netip.Prefix
 	dns              []string
+	ctx              context.Context
 	cancel           context.CancelFunc
 	stopWatch        func() bool
 	readMu, writeMu  sync.Mutex
@@ -80,14 +85,14 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 	}
 	transport := &http.Transport{Proxy: nil, DialContext: dialer, TLSClientConfig: cfg, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 15 * time.Second, MaxResponseHeaderBytes: 64 << 10, ForceAttemptHTTP2: false}
 	jar, _ := cookiejar.New(nil)
-	s := &Session{id: nextSessionID.Add(1), transport: transport, server: "https://" + opts.Server, cancel: cancel}
+	s := &Session{ctx: sessionCtx, connectionID: opts.ConnectionID, id: nextSessionID.Add(1), transport: transport, server: "https://" + opts.Server, cancel: cancel}
 	stage := "获取认证参数"
 	setStage := func(name string) {
 		stage = name
-		log.Printf("TopSAP [%d] stage=%s", s.id, stage)
+		log.Printf("TopSAP [%d] profile=%q stage=%s", s.id, s.connectionID, stage)
 	}
 	startedAt := time.Now()
-	log.Printf("TopSAP [%d] start gateway=%s certificate_verify=%t", s.id, opts.Server, !cfg.InsecureSkipVerify)
+	log.Printf("TopSAP [%d] profile=%q start gateway=%s certificate_verify=%t", s.id, s.connectionID, opts.Server, !cfg.InsecureSkipVerify)
 	s.http = &http.Client{Transport: transport, Jar: jar, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
 		return errors.New("TopSAP 浏览器重定向认证暂不支持")
 	}}
@@ -96,7 +101,7 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 	defer func() {
 		if !succeeded {
 			err = fmt.Errorf("TopSAP %s: %w", stage, err)
-			log.Printf("TopSAP [%d] setup failed elapsed=%s: %v", s.id, time.Since(startedAt).Round(time.Millisecond), err)
+			log.Printf("TopSAP [%d] profile=%q setup failed elapsed=%s: %v", s.id, s.connectionID, time.Since(startedAt).Round(time.Millisecond), err)
 			cancel()
 			if s.conn != nil {
 				_ = s.conn.Close()
@@ -129,7 +134,7 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 		return nil, err
 	}
 	authenticated = true
-	log.Printf("TopSAP [%d] authentication accepted Ret=0", s.id)
+	log.Printf("TopSAP [%d] profile=%q authentication accepted Ret=0", s.id)
 	if login.User.NetAccess != "on" || login.User.Algorithm != "standard" || login.User.Protocol != "standard" || login.User.Compress != "off" {
 		return nil, errors.New("TopSAP 数据隧道模式暂不支持")
 	}
@@ -145,7 +150,7 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 	if err = resources.check(); err != nil {
 		return nil, err
 	}
-	log.Printf("TopSAP [%d] config consistency token_present=%t token_matches_login=%t vip_present=%t vip_matches_login=%t", s.id, resources.User.Token != "", resources.User.Token == login.User.Token, resources.Net.IP != "", resources.Net.IP == login.Net.IP)
+	log.Printf("TopSAP [%d] profile=%q config consistency token_present=%t token_matches_login=%t vip_present=%t vip_matches_login=%t", s.id, s.connectionID, resources.User.Token != "", resources.User.Token == login.User.Token, resources.Net.IP != "", resources.Net.IP == login.Net.IP)
 	setStage("解析服务器资源")
 	s.routes, err = parseResources(resources)
 	if err != nil {
@@ -157,7 +162,7 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 	if err != nil || !s.ip.Is4() || s.ip.IsUnspecified() {
 		return nil, fmt.Errorf("TopSAP 完整配置中的虚拟 IPv4 地址无效: %w", errProtocol)
 	}
-	log.Printf("TopSAP [%d] data configuration source=full_config vip_changed=%t", s.id, resources.Net.IP != login.Net.IP)
+	log.Printf("TopSAP [%d] profile=%q data configuration source=full_config vip_changed=%t", s.id, s.connectionID, resources.Net.IP != login.Net.IP)
 	for _, text := range []string{resources.Net.DNS1, resources.Net.DNS2} {
 		if text == "" || text == "0.0.0.0" {
 			continue
@@ -168,7 +173,7 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 		}
 		s.dns = append(s.dns, addr.String())
 	}
-	log.Printf("TopSAP [%d] resources ready routes=%d dns_servers=%d", s.id, len(s.routes), len(s.dns))
+	log.Printf("TopSAP [%d] profile=%q resources ready routes=%d dns_servers=%d", s.id, s.connectionID, len(s.routes), len(s.dns))
 	setStage("连接数据通道")
 	raw, err := dialer(setupCtx, "tcp", opts.Server)
 	if err != nil {
@@ -219,14 +224,20 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 	if err = setupCtx.Err(); err != nil {
 		return nil, err
 	}
+	s.startedAt = time.Now()
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		s.monitorTraffic(sessionCtx, ticker.C)
+	}()
 	succeeded = true
-	log.Printf("TopSAP [%d] tunnel ready elapsed=%s", s.id, time.Since(startedAt).Round(time.Millisecond))
+	log.Printf("TopSAP [%d] profile=%q tunnel ready elapsed=%s", s.id, s.connectionID, time.Since(startedAt).Round(time.Millisecond))
 	return s, nil
 }
 
 func (s *Session) post(ctx context.Context, path string, form url.Values, result any) ([]byte, error) {
 	startedAt := time.Now()
-	log.Printf("TopSAP [%d] HTTP POST endpoint=%s", s.id, path)
+	log.Printf("TopSAP [%d] profile=%q HTTP POST endpoint=%s", s.id, s.connectionID, path)
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.server+"/vone/login/"+path, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
@@ -235,10 +246,10 @@ func (s *Session) post(ctx context.Context, path string, form url.Values, result
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := s.http.Do(request)
 	if err != nil {
-		log.Printf("TopSAP [%d] HTTP failed endpoint=%s elapsed=%s: %v", s.id, path, time.Since(startedAt).Round(time.Millisecond), err)
+		log.Printf("TopSAP [%d] profile=%q HTTP failed endpoint=%s elapsed=%s: %v", s.id, s.connectionID, path, time.Since(startedAt).Round(time.Millisecond), err)
 		return nil, err
 	}
-	log.Printf("TopSAP [%d] HTTP response endpoint=%s status=%d elapsed=%s", s.id, path, response.StatusCode, time.Since(startedAt).Round(time.Millisecond))
+	log.Printf("TopSAP [%d] profile=%q HTTP response endpoint=%s status=%d elapsed=%s", s.id, s.connectionID, path, response.StatusCode, time.Since(startedAt).Round(time.Millisecond))
 	defer response.Body.Close()
 	if response.StatusCode == 401 || response.StatusCode == 403 {
 		return nil, &AuthenticationError{Code: response.StatusCode}
@@ -260,9 +271,9 @@ func (s *Session) post(ctx context.Context, path string, form url.Values, result
 	}
 	if r, ok := result.(*reply); ok {
 		if r.Ret == nil {
-			log.Printf("TopSAP [%d] response endpoint=%s bytes=%d Ret=missing resources_present=%t resources=%d", s.id, path, len(data), r.Resources != nil, len(r.Resources))
+			log.Printf("TopSAP [%d] profile=%q response endpoint=%s bytes=%d Ret=missing resources_present=%t resources=%d", s.id, s.connectionID, path, len(data), r.Resources != nil, len(r.Resources))
 		} else {
-			log.Printf("TopSAP [%d] response endpoint=%s bytes=%d Ret=%d resources_present=%t resources=%d", s.id, path, len(data), *r.Ret, r.Resources != nil, len(r.Resources))
+			log.Printf("TopSAP [%d] profile=%q response endpoint=%s bytes=%d Ret=%d resources_present=%t resources=%d", s.id, s.connectionID, path, len(data), *r.Ret, r.Resources != nil, len(r.Resources))
 		}
 	}
 	if response.TLS == nil || len(response.TLS.PeerCertificates) == 0 {
@@ -291,18 +302,19 @@ func (s *Session) Read(b []byte) (int, error) {
 	defer s.readMu.Unlock()
 	command, body, err := readFrame(s.conn)
 	if err != nil {
-		log.Printf("TopSAP [%d] tunnel read ended: %v", s.id, err)
+		log.Printf("TopSAP [%d] profile=%q tunnel read ended canceled=%t rx_bytes=%d tx_bytes=%d cause=%v", s.id, s.connectionID, s.ctx.Err() != nil, s.rxBytes.Load(), s.txBytes.Load(), err)
 		return 0, err
 	}
 	if command != 15 {
-		log.Printf("TopSAP [%d] unexpected data command=%d", s.id, command)
+		log.Printf("TopSAP [%d] profile=%q unexpected data command=%d", s.id, s.connectionID, command)
 		return 0, errProtocol
 	}
 	if len(b) < len(body) {
 		return 0, io.ErrShortBuffer
 	}
+	s.lastRX.Store(time.Now().UnixNano())
 	if s.rxBytes.Add(uint64(len(body))) == uint64(len(body)) {
-		log.Printf("TopSAP [%d] first IPv4 packet received bytes=%d", s.id, len(body))
+		log.Printf("TopSAP [%d] profile=%q first IPv4 packet received bytes=%d protocol=%d tcp_flags=0x%02x ip_checksum_ok=%t", s.id, s.connectionID, len(body), body[9], tcpFlags(body), ipv4HeaderChecksumOK(body))
 	}
 	return copy(b, body), nil
 }
@@ -316,17 +328,18 @@ func (s *Session) Write(b []byte) (int, error) {
 		return 0, err
 	}
 	if err := writeAll(s.conn, frame(15, b)); err != nil {
-		log.Printf("TopSAP [%d] tunnel write failed: %v", s.id, err)
+		log.Printf("TopSAP [%d] profile=%q tunnel write failed canceled=%t rx_bytes=%d tx_bytes=%d cause=%v", s.id, s.connectionID, s.ctx.Err() != nil, s.rxBytes.Load(), s.txBytes.Load(), err)
 		return 0, err
 	}
+	s.lastTX.Store(time.Now().UnixNano())
 	if s.txBytes.Add(uint64(len(b))) == uint64(len(b)) {
-		log.Printf("TopSAP [%d] first IPv4 packet sent bytes=%d protocol=%d source_matches_vip=%t ip_checksum_ok=%t", s.id, len(b), b[9], bytes.Equal(b[12:16], s.ip.AsSlice()), ipv4HeaderChecksumOK(b))
+		log.Printf("TopSAP [%d] profile=%q first IPv4 packet sent bytes=%d protocol=%d source_matches_vip=%t ip_checksum_ok=%t", s.id, s.connectionID, len(b), b[9], bytes.Equal(b[12:16], s.ip.AsSlice()), ipv4HeaderChecksumOK(b))
 	}
 	return len(b), nil
 }
 func (s *Session) Close() error {
 	s.closeOnce.Do(func() {
-		log.Printf("TopSAP [%d] closing rx_bytes=%d tx_bytes=%d", s.id, s.rxBytes.Load(), s.txBytes.Load())
+		log.Printf("TopSAP [%d] profile=%q closing rx_bytes=%d tx_bytes=%d", s.id, s.connectionID, s.rxBytes.Load(), s.txBytes.Load())
 		s.cancel()
 		if s.stopWatch != nil {
 			s.stopWatch()
@@ -334,7 +347,7 @@ func (s *Session) Close() error {
 		_ = s.conn.Close()
 		s.logout()
 		s.transport.CloseIdleConnections()
-		log.Printf("TopSAP [%d] closed", s.id)
+		log.Printf("TopSAP [%d] profile=%q closed", s.id)
 	})
 	return nil
 }
@@ -343,8 +356,38 @@ func (s *Session) logout() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if _, err := s.post(ctx, "logout", nil, nil); err != nil {
-		log.Printf("TopSAP [%d] logout failed: %v", s.id, err)
+		log.Printf("TopSAP [%d] profile=%q logout failed: %v", s.id, s.connectionID, err)
 	} else {
-		log.Printf("TopSAP [%d] logout completed", s.id)
+		log.Printf("TopSAP [%d] profile=%q logout completed", s.id)
 	}
+}
+
+// Traffic sampling observes the existing transport; it sends no keepalive or probe.
+func (s *Session) monitorTraffic(ctx context.Context, ticks <-chan time.Time) {
+	var previousRX, previousTX uint64
+	previousSample := s.startedAt
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticks:
+			now := time.Now()
+			rx, tx := s.rxBytes.Load(), s.txBytes.Load()
+			log.Printf("TopSAP [%d] profile=%q traffic uptime=%s sample_gap=%s rx_bytes=%d tx_bytes=%d rx_delta=%d tx_delta=%d last_rx_age=%s last_tx_age=%s", s.id, s.connectionID, now.Sub(s.startedAt).Round(time.Second), now.Sub(previousSample).Round(time.Second), rx, tx, rx-previousRX, tx-previousTX, packetAge(now, s.lastRX.Load()), packetAge(now, s.lastTX.Load()))
+			previousRX, previousTX, previousSample = rx, tx, now
+		}
+	}
+}
+func packetAge(now time.Time, timestamp int64) string {
+	if timestamp == 0 {
+		return "never"
+	}
+	return now.Sub(time.Unix(0, timestamp)).Round(time.Second).String()
+}
+func tcpFlags(packet []byte) byte {
+	header := int(packet[0]&15) * 4
+	if packet[9] != 6 || len(packet) < header+14 {
+		return 0
+	}
+	return packet[header+13]
 }
