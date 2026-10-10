@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -290,4 +293,56 @@ func TestSetupCancellationAndCorruptStream(t *testing.T) {
 			t.Fatal("corrupt frame accepted", err)
 		}
 	})
+}
+
+func TestCertificateOptInStillRejectsDifferentDataKey(t *testing.T) {
+	g := newGateway(t)
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{SerialNumber: big.NewInt(2), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, public, private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: private}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+		_ = conn.(*tls.Conn).Handshake()
+		_, _ = conn.Read(make([]byte, 1))
+	}()
+	opts := g.options()
+	opts.TLSConfig = &tls.Config{InsecureSkipVerify: true}
+	var count atomic.Int32
+	opts.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if count.Add(1) == 2 {
+			address = listener.Addr().String()
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, address)
+	}
+	s, err := dial(context.Background(), opts, "tOn2cYFE+wqTmNHkz2AA7g==")
+	if err == nil {
+		_ = s.Close()
+		t.Fatal("different data key accepted after certificate opt-in")
+	}
+	if !strings.Contains(err.Error(), "公钥不一致") || g.logouts.Load() != 1 {
+		t.Fatal("pin check or failure cleanup missing", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("data connection leaked")
+	}
 }

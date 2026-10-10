@@ -175,6 +175,45 @@ func TestTopSAPProfileKeepsResourceRoutingAndExistingProtocols(t *testing.T) {
 		t.Fatal("unsupported authentication accepted")
 	}
 }
+
+func TestStoppingTopSAPRetainsEasyConnectAndUniVPN(t *testing.T) {
+	a := multiTestApp(t)
+	p, err := a.SaveProfile(Profile{Name: "TopSAP", Protocol: "topsec", Server: "top.invalid", Port: 443, Username: "test", InsecureSkipVerify: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engines := map[string]*fakeVPNEngine{}
+	start := func(o engine.Options) (vpnEngine, error) {
+		e := &fakeVPNEngine{opts: o}
+		engines[o.Config.Protocol] = e
+		o.OnStatus(engine.Status{Phase: engine.PhaseConnected})
+		return e, nil
+	}
+	for _, id := range []string{"a", "b", p.ID} {
+		if err := a.SetActiveProfile(id); err != nil {
+			t.Fatal(err)
+		}
+		if got := a.startConnection(start); got != "OK" {
+			t.Fatal(got)
+		}
+	}
+	defer a.StopAllVPN()
+	if engines["topsec"].opts.TUNSlot == engines["univpn"].opts.TUNSlot || engines["topsec"].opts.Config.SocksBind == engines["easyconnect"].opts.Config.SocksBind || !engines["topsec"].opts.InsecureSkipVerify || engines["univpn"].opts.InsecureSkipVerify {
+		t.Fatal("TopSAP session shares slot/port/certificate option")
+	}
+	if got := a.StopVPN(); got != "OK" {
+		t.Fatal(got)
+	}
+	for _, protocol := range []string{"easyconnect", "univpn"} {
+		e := engines[protocol]
+		if e.stopped.Load() || e.opts.Context.Err() != nil {
+			t.Fatal("TopSAP stop interrupted", protocol)
+		}
+	}
+	if !engines["topsec"].stopped.Load() {
+		t.Fatal("TopSAP did not stop")
+	}
+}
 func TestElevationDoesNotInterruptOtherConnections(t *testing.T) {
 	a := multiTestApp(t)
 	a.startConnection(func(o engine.Options) (vpnEngine, error) {
