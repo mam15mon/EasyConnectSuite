@@ -181,7 +181,7 @@ func (g *mockGateway) control(conn net.Conn) {
 		return
 	}
 	// Literal TLV vector independently generated with the working Python prototype.
-	wantTLVs, err := hex.DecodeString("000100096d6f636b75736572000002000a70253236253242253235000003000e423636422d423532352d33443838")
+	wantTLVs, err := hex.DecodeString("000100096d6f636b75736572000002000b70253236253242253235000003000e423636422d423532352d33443838")
 	wantAuth := append([]byte("localhost"), make([]byte, 251)...)
 	wantAuth = append(wantAuth, wantTLVs...)
 	if err != nil || !bytes.Equal(auth, wantAuth) {
