@@ -15,6 +15,7 @@ import (
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/configs"
+	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
 )
 
@@ -54,6 +55,10 @@ func (c *uniVPNClient) Setup() error {
 	s, err := univpn.Dial(c.ctx, c.options)
 	if err != nil {
 		if errors.Is(err, univpn.ErrLoginRejected) {
+			var rejection *univpn.AuthenticationError
+			if errors.As(err, &rejection) {
+				log.Printf("UniVPN authentication rejected: code=%d (0x%08X)", rejection.Code, rejection.Code)
+			}
 			return fmt.Errorf("%w: %w", easyconnect.ErrLoginRejected, err)
 		}
 		return err

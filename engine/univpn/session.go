@@ -3,7 +3,6 @@ package univpn
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
 	"encoding/binary"
 	"errors"
@@ -149,8 +148,7 @@ func Dial(ctx context.Context, opts Options) (*Session, error) {
 	}
 	auth := make([]byte, 260)
 	copy(auth, domain)
-	hash := sha256.Sum256([]byte(opts.Username))
-	mac := fmt.Sprintf("02:%02x:%02x:%02x:%02x:%02x", hash[1], hash[2], hash[3], hash[4], hash[5])
+	mac := stableMAC(opts.Username, host)
 	for i, value := range [][]byte{authValue(opts.Username), authValue(opts.Password), []byte(mac)} {
 		auth, err = appendTLV(auth, uint16(i+1), value)
 		if err != nil {

@@ -6,6 +6,7 @@ package univpn
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -84,6 +85,13 @@ func parseTLVs(body []byte, visit func(uint16, []byte) error) error {
 func authValue(value string) []byte {
 	escaped := strings.NewReplacer("%", "%25", "&", "%26", "+", "%2B").Replace(value)
 	return append([]byte(escaped), 0)
+}
+
+// Match the working prototype's locally administered identifier and wire format.
+func stableMAC(username, gateway string) string {
+	hash := sha256.Sum256([]byte(username + "|" + gateway))
+	hash[0] = (hash[0] | 2) & 0xfe
+	return fmt.Sprintf("%02X%02X-%02X%02X-%02X%02X", hash[0], hash[1], hash[2], hash[3], hash[4], hash[5])
 }
 
 func parseToken(body []byte) ([32]byte, error) {

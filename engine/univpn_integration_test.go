@@ -9,11 +9,15 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"io"
 	"math/big"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -180,8 +184,15 @@ func integrationGateway(t *testing.T, reject bool) (string, *tls.Config) {
 					if gatewayFrame(conn, 0, make([]byte, 4)) != nil {
 						return
 					}
-					cmd, _, err := gatewayRead(conn)
+					cmd, auth, err := gatewayRead(conn)
 					if err != nil || cmd != 1 {
+						return
+					}
+					wantTLVs, _ := hex.DecodeString("0001000574657374000002000574657374000003000e394538372d433543302d33463536")
+					wantAuth := append([]byte("127.0.0.1"), make([]byte, 251)...)
+					wantAuth = append(wantAuth, wantTLVs...)
+					if !bytes.Equal(auth, wantAuth) {
+						t.Error("authentication frame differs from literal protocol vector")
 						return
 					}
 					body := make([]byte, 44)
@@ -316,6 +327,10 @@ func TestUniVPNAdapterGVisorTCPAndUDP(t *testing.T) {
 	}
 }
 func TestUniVPNAdapterAuthenticationRefusalIsTerminal(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "engine.log")
+	capture := &Engine{opts: Options{LogFile: logPath}}
+	capture.startLogCapture()
+	defer capture.stopLogCapture()
 	c := integrationClient(t, true)
 	err := c.Setup()
 	if !errors.Is(err, easyconnect.ErrLoginRejected) || !errors.Is(err, univpn.ErrLoginRejected) {
@@ -324,6 +339,13 @@ func TestUniVPNAdapterAuthenticationRefusalIsTerminal(t *testing.T) {
 	var rejection *univpn.AuthenticationError
 	if !errors.As(err, &rejection) || rejection.Code != 1 {
 		t.Fatal("adapter lost gateway result", err)
+	}
+	logged, readErr := os.ReadFile(logPath)
+	if readErr != nil || !strings.Contains(string(logged), "UniVPN authentication rejected: code=1 (0x00000001)") {
+		t.Fatal("authentication failure was not persisted", readErr)
+	}
+	if strings.Contains(string(logged), "test") || strings.Contains(string(logged), "5a5a") {
+		t.Fatal("authentication metadata log exposed credentials or token")
 	}
 }
 

@@ -39,3 +39,15 @@ func TestAuthenticationStatusesRemainDistinct(t *testing.T) {
 		t.Fatal("valid success response changed", err)
 	}
 }
+
+func TestAuthenticationMACMatchesWorkingPrototypeVectors(t *testing.T) {
+	// Values from the pinned Python stable_mac implementation, not this encoder.
+	for _, test := range []struct{ username, host, want string }{
+		{"mockuser", "127.0.0.1", "B66B-B525-3D88"},
+		{"test", "127.0.0.1", "9E87-C5C0-3F56"},
+	} {
+		if got := stableMAC(test.username, test.host); got != test.want {
+			t.Fatalf("MAC wire identifier differs: %s", got)
+		}
+	}
+}

@@ -180,16 +180,11 @@ func (g *mockGateway) control(conn net.Conn) {
 		g.problems <- errors.New("wrong authentication frame")
 		return
 	}
-	fields := 0
-	err = parseTLVs(auth[260:], func(kind uint16, value []byte) error {
-		fields++
-		if kind == 1 && string(value) != "mockuser\x00" || kind == 2 && string(value) != "p%26%2B%25\x00" ||
-			kind == 3 && (len(value) != 17 || string(value[:3]) != "02:") {
-			return errors.New("wrong authentication field")
-		}
-		return nil
-	})
-	if err != nil || fields != 3 {
+	// Literal TLV vector independently generated with the working Python prototype.
+	wantTLVs, err := hex.DecodeString("000100096d6f636b75736572000002000a70253236253242253235000003000e423636422d423532352d33443838")
+	wantAuth := append([]byte("localhost"), make([]byte, 251)...)
+	wantAuth = append(wantAuth, wantTLVs...)
+	if err != nil || !bytes.Equal(auth, wantAuth) {
 		g.problems <- errors.New("invalid authentication TLVs")
 		return
 	}
