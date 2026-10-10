@@ -794,6 +794,9 @@ async function refreshConnections() {
 }
 function renderConnections() {
   const list = document.getElementById('connection-list');
+  const focused = document.activeElement?.closest('[data-profile-action]');
+  const focusID = focused?.dataset.profileId;
+  const focusAction = focused?.dataset.profileAction;
   const rows = new Map(Array.from(list.querySelectorAll('.connection-row')).map(row => [row.dataset.profileId, row]));
   const visibleIDs = new Set();
   document.getElementById('profile-count').textContent = cachedProfiles.length;
@@ -853,6 +856,7 @@ function renderConnections() {
   } else {
     empty?.remove();
   }
+  if (focusID) list.querySelector(`[data-profile-id="${CSS.escape(focusID)}"] [data-profile-action="${focusAction}"]`)?.focus({preventScroll:true});
 }
 
 document.getElementById('connection-list').addEventListener('click', event => {
