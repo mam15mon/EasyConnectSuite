@@ -1,6 +1,6 @@
 # EasyConnect Suite
 
-支持深信服 EasyConnect 和华为／联软 UniVPN 协议子集的第三方 Windows 图形客户端。一个 EXE 可同时连接多个配置，分别管理连接状态、资源、本地代理和 TUN。EasyConnect 引擎基于 [zju-connect](https://github.com/mythologyli/zju-connect)(上游 commit `4031c52`)，UniVPN 使用 Go 协议移植；**引擎源码直接编译进 GUI 进程**，无需 OpenConnect 或 Python 子进程。UniVPN 的真实网关兼容性尚未验证，支持范围见 [UniVPN 接入说明](docs/univpn-go.md)。
+支持深信服 EasyConnect、华为／联软 UniVPN 及天融信 TopSAP 标准模式协议子集的第三方 Windows 图形客户端。一个 EXE 可同时连接多个配置，分别管理连接状态、资源、本地代理和 TUN。EasyConnect 引擎基于 [zju-connect](https://github.com/mythologyli/zju-connect)(上游 commit `4031c52`)，UniVPN 和 TopSAP 使用 Go 协议核心；**引擎源码直接编译进 GUI 进程**，无需 OpenConnect 或 Python 子进程。支持范围见 [UniVPN 接入说明](docs/univpn-go.md)及 [TopSAP 测试版说明](docs/topsec-go.md)；TopSAP 的新版 EXE 仍待真实网关验证。
 
 ## 目录结构
 
@@ -11,7 +11,8 @@ EasyConnectSuite/
 ├── connections.go     按配置隔离的连接管理
 ├── tray_windows.go    托盘与多连接状态
 ├── engine/            引擎适配层:把上游 main.go 改写为可启停、带回调的库
-│   └── univpn/        Go 原生 UniVPN TLS/IPv4 协议核心
+│   ├── univpn/        Go 原生 UniVPN TLS/IPv4 协议核心
+│   └── topsec/        Go 原生 TopSAP 标准模式 TLS/IPv4 协议核心
 ├── zju-connect/       上游源码 fork(vendor),含以下修改:
 │   ├── stack/gvisor/stack.go        ★ EOF 不再 panic,改为自动重登 + 重建隧道
 │   ├── internal/hook_func/          ★ 增加 ResetTerminalFuncs(支持进程内重启)
@@ -60,7 +61,7 @@ upx -t build/bin/EasyConnectGUI-multi-vpn-upx.exe
 ## 同时连接多个 VPN
 
 1. 从托盘退出旧客户端，运行新版 EXE。单实例机制会阻止第二个窗口代替正在运行的旧实例。
-2. 新建或编辑配置，选择 EasyConnect 或 UniVPN。UniVPN 填写服务器、端口、账号、密码及网关要求的认证域；认证域允许留空。
+2. 新建或编辑配置，选择 EasyConnect、UniVPN 或 TopSAP。UniVPN 填写服务器、端口、账号、密码及网关要求的认证域；认证域允许留空。TopSAP 目前支持已验证的标准模式账号密码认证，按官方配置填写实际端口。
 3. 每个配置使用独立 SOCKS5/HTTP 端口。新配置自动分配未被其他配置使用的端口对，通常依次为 `1080/1081`、`1082/1083`；端口已被外部程序占用时，该连接明确报错。
 4. 连接第一个配置，再选择另一个配置连接。切换配置只切换当前查看的状态和资源。可以逐条断开，也可以点击“断开全部”；退出程序关闭全部连接。
 
