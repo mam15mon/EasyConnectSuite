@@ -232,3 +232,30 @@ Actual diagnostic result is AUTH code 2; no verified semantic mapping. Observed 
 ### Next Steps
 
 - 用户使用 topsec-fix2.exe 重连后，直接查看 engine.log 确认完整资源和隧道建立
+
+
+## Session 9: 多VPN双栏工作台与稳定性日志交付
+<!-- trellis-session: v=2 fp=4cbbbc263da98493 -->
+
+**Date**: 2026-10-11
+**Task**: 多VPN双栏工作台与稳定性日志交付
+**Branch**: `codex/univpn-windows-core`
+
+### Summary
+
+用户确认 fix4 TopSAP 内网访问成功后，完成左侧独立连接列表与右侧资源/设置/日志页签。补全带 PID/engine/profile/session 的生命周期、停止来源、重连原因、逐项清理日志；TopSAP 每分钟记录累计/增量/最后收发年龄，空闲不误报。Windows 低功耗通知只记录，实际休眠未测试。日志8MiB轮转保留.old，当前配置最新200条显式ID读取并防异步错位。根模块test/vet/race、嵌套gVisor/service test/vet、前端语法和4项过滤测试、CUA脱敏默认/840x660交互、Wails未压缩生产构建通过。交付workspace-v2 20685312字节，SHA256 4F11AC1174AB978DAEF77F34E865CE782B5F704A4343E19C50190F9D1895E83C。未操作真实会话；长期稳定性、真实UDP和多厂商TUN共存继续由TopSAP任务保留。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `db6cf49` | fix: use TopSAP full configuration virtual IP for data traffic |
+| `dc6cee0` | ui: redesign workspace with persistent connection sidebar and focused detail tabs |
+| `badcee7` | ui: bind independent sidebar controls and scoped log tabs with keyboard navigation |
+| `7b8459e` | 构建双栏多VPN工作台及完整诊断日志交付资源 |
+| `a8a7bb1` | 避免连接日志上下文被当作格式字符串解析 |
+| `f715d62` | 记录双栏界面与稳定性诊断验收及未压缩交付版本 |
+
+### Status
+
+[OK] **Completed**
