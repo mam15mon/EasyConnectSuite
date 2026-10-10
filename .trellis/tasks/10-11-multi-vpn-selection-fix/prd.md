@@ -6,14 +6,19 @@
 
 ## Requirements
 
-- TBD
+- 用户报告点击左侧其他连接时右侧仍显示第一个 IDC 的 IP/DNS。
+- 已在显式脱敏预览复现：点击第二条的网关地址，选中项和右侧 IP 保持第一条；名称按钮可正确切换。整条连接行应可选择。
+- 连接时长更新不重建连接行及按钮，保持点击与键盘焦点。
+- 名称、网关、状态、IP、DNS、代理端口、资源与日志跟随所选 ID；连接/断开按钮只操作对应配置，不顺带选择。
+- 不改变协议、真实连接、配置结构或 Wails ABI，不添加兜底，不覆盖运行中的旧包。
 
 ## Acceptance Criteria
 
-- [ ] TBD
+- [ ] 点击地址、状态、空白或名称可选择该行，未连接/出错项清除上条 IP/DNS。
+- [ ] 两条运行会话交替选择，显示各自 IP/DNS/代理与资源，时长更新仍保持选择。
+- [ ] 周期更新保留原有行/按钮，键盘选择与连接按钮隔离保持有效。
+- [ ] 前端检查、脱敏浏览器复现前后验证、Windows 未压缩构建完成。
 
 ## Notes
 
-- Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
-- Lightweight tasks can remain PRD-only.
-- For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
+改动限 frontend/src/main.js 的列表渲染/点击与 style.css 的可点击提示，及构建资源和相关规范记录。
