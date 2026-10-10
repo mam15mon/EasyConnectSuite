@@ -36,6 +36,9 @@ var errTOTPRequired = errors.New("TOTP required")
 var errCertRequired = errors.New("cert required")
 var errNotFound = errors.New("not found")
 
+// ErrLoginRejected marks an explicit rejection from the password login endpoint.
+var ErrLoginRejected = errors.New("Login failed")
+
 func (c *Client) requestTwfID(graphCodeFile string) error {
 	err := c.loginAuthAndPsw(graphCodeFile)
 	if err != nil {
@@ -232,6 +235,9 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	}
 
 	if !strings.Contains(buf.String(), "<Result>1</Result>") {
+		if strings.Contains(buf.String(), "<Result>0</Result>") {
+			return fmt.Errorf("%w: %s", ErrLoginRejected, buf.String())
+		}
 		return errors.New("Login failed: " + buf.String())
 	}
 
@@ -496,7 +502,6 @@ func (c *Client) requestConfig() (string, error) {
 		_ = Body.Close()
 	}(resp.Body)
 
-
 	return buf.String(), nil
 }
 
@@ -581,7 +586,6 @@ func (c *Client) requestResources() (string, error) {
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
 	}(resp.Body)
-
 
 	// EasyConnect Suite fork: persist the raw resource list so an empty
 	// parse result can be diagnosed from the actual server payload.

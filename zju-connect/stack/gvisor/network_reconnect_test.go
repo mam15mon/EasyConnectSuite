@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -108,7 +109,7 @@ func TestCloseStopsOfflineReconnectDuringCooldown(t *testing.T) {
 	}
 }
 
-func TestReconnectStillLimitsLoginFailures(t *testing.T) {
+func TestReconnectStillLimitsOtherFailures(t *testing.T) {
 	hook_func.ResetTerminalFuncs()
 	t.Cleanup(hook_func.ResetTerminalFuncs)
 	s := &Stack{endpoint: &Endpoint{}}
@@ -116,11 +117,29 @@ func TestReconnectStillLimitsLoginFailures(t *testing.T) {
 	s.SetupRelogin(func() error {
 		attempts++
 		s.lastReloginTime = time.Now().Add(-reloginCooldown)
-		return errors.New("invalid credentials")
+		return errors.New("invalid L3 handshake")
 	})
 	fatal := false
 	s.SetupFatalHandler(func(error) { fatal = true })
 	if s.rebuildL3Conn(nil, errors.New("EOF")) || !fatal || attempts != maxReloginAttempts {
 		t.Fatalf("login limit changed: fatal=%v attempts=%d", fatal, attempts)
+	}
+}
+
+func TestReconnectStopsAfterOneRejectedLogin(t *testing.T) {
+	hook_func.ResetTerminalFuncs()
+	t.Cleanup(hook_func.ResetTerminalFuncs)
+	s := &Stack{endpoint: &Endpoint{}}
+	attempts := 0
+	rejected := fmt.Errorf("server reply: %w", easyconnect.ErrLoginRejected)
+	s.SetupRelogin(func() error {
+		attempts++
+		s.lastReloginTime = time.Now().Add(-reloginCooldown)
+		return rejected
+	})
+	var fatal error
+	s.SetupFatalHandler(func(err error) { fatal = err })
+	if s.rebuildL3Conn(nil, errors.New("EOF")) || attempts != 1 || !errors.Is(fatal, easyconnect.ErrLoginRejected) {
+		t.Fatalf("rejected credentials were retried: attempts=%d fatal=%v", attempts, fatal)
 	}
 }
