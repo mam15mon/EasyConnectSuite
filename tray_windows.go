@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	goruntime "runtime"
 	"syscall"
@@ -12,26 +13,27 @@ import (
 )
 
 const (
-	NIM_ADD          = 0x00000000
-	NIM_MODIFY       = 0x00000001
-	NIM_DELETE       = 0x00000002
-	NIF_MESSAGE      = 0x00000001
-	NIF_ICON         = 0x00000002
-	NIF_TIP          = 0x00000004
-	WM_USER          = 0x0400
-	WM_TRAYICON      = WM_USER + 101
-	WM_LBUTTONUP     = 0x0202
-	WM_RBUTTONUP     = 0x0205
-	WM_LBUTTONDBLCLK = 0x0203
-	IDI_APPLICATION  = 32512
-	MF_STRING        = 0x00000000
-	MF_GRAYED        = 0x00000001
-	MF_DISABLED      = 0x00000002
-	MF_CHECKED       = 0x00000008
-	MF_POPUP         = 0x00000010
-	MF_SEPARATOR     = 0x00000800
-	TPM_RIGHTBUTTON  = 0x0002
-	TPM_RETURNCMD    = 0x0100
+	NIM_ADD           = 0x00000000
+	NIM_MODIFY        = 0x00000001
+	NIM_DELETE        = 0x00000002
+	NIF_MESSAGE       = 0x00000001
+	NIF_ICON          = 0x00000002
+	NIF_TIP           = 0x00000004
+	WM_POWERBROADCAST = 0x0218
+	WM_USER           = 0x0400
+	WM_TRAYICON       = WM_USER + 101
+	WM_LBUTTONUP      = 0x0202
+	WM_RBUTTONUP      = 0x0205
+	WM_LBUTTONDBLCLK  = 0x0203
+	IDI_APPLICATION   = 32512
+	MF_STRING         = 0x00000000
+	MF_GRAYED         = 0x00000001
+	MF_DISABLED       = 0x00000002
+	MF_CHECKED        = 0x00000008
+	MF_POPUP          = 0x00000010
+	MF_SEPARATOR      = 0x00000800
+	TPM_RIGHTBUTTON   = 0x0002
+	TPM_RETURNCMD     = 0x0100
 )
 
 var (
@@ -114,6 +116,11 @@ var (
 )
 
 func trayWndProc(hwnd uintptr, msg uint32, wParam uintptr, lParam uintptr) uintptr {
+	if msg == WM_POWERBROADCAST && globalTrayApp != nil {
+		if globalTrayApp.logPowerEvent(wParam) {
+			return 1
+		}
+	}
 	if msg == WM_TRAYICON {
 		switch lParam {
 		case WM_LBUTTONUP, WM_LBUTTONDBLCLK:
@@ -364,4 +371,26 @@ func RemoveTrayIcon() {
 		procPostQuitMessage.Call(0)
 		globalTrayHwnd = 0
 	}
+}
+
+// Windows supplies these events; they do not identify sleep versus hibernation.
+func (a *App) logPowerEvent(event uintptr) bool {
+	var name string
+	switch event {
+	case 4:
+		name = "suspend"
+	case 18:
+		name = "resume_automatic"
+	case 7:
+		name = "resume_user"
+	default:
+		return false
+	}
+	log.Printf("System power pid=%d source=WM_POWERBROADCAST event=%s", os.Getpid(), name)
+	for _, status := range a.GetConnections() {
+		if status.Running {
+			log.Printf("[VPN pid=%d profile=%q] power event=%s state=%s uptime_seconds=%d", os.Getpid(), status.ProfileID, name, status.State, status.Duration)
+		}
+	}
+	return true
 }

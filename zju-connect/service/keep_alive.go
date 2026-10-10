@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/mythologyli/zju-connect/log"
@@ -42,8 +43,8 @@ func KeepAlive(ctx context.Context, resolver ProxyResolver, dialer ProxyDialer, 
 			if remoteUDPResolver != nil {
 				_, err := remoteUDPResolver.LookupIP(requestCtx, "ip4", "www.baidu.com")
 				if err != nil {
-					if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-						log.DebugPrintf("KeepAlive using UDP error: %s", err)
+					if !errors.Is(err, context.Canceled) {
+						log.Printf("KeepAlive using UDP error: %s", err)
 					}
 					useTCP = true
 				} else {
@@ -54,7 +55,7 @@ func KeepAlive(ctx context.Context, resolver ProxyResolver, dialer ProxyDialer, 
 			if useTCP && remoteTCPResolver != nil {
 				_, err := remoteTCPResolver.LookupIP(requestCtx, "ip4", "www.baidu.com")
 				if err != nil {
-					if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+					if !errors.Is(err, context.Canceled) {
 						log.Printf("KeepAlive using TCP error: %s", err)
 					}
 				} else {
@@ -81,8 +82,11 @@ func runHTTPKeepAlive(ctx context.Context, client *http.Client, keepAliveURL str
 		} else {
 			resp, err := client.Do(req)
 			if err != nil {
-				if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-					log.Printf("KeepAlive: %s", err)
+				if !errors.Is(err, context.Canceled) {
+					if requestError, ok := err.(*url.Error); ok {
+						err = requestError.Err
+					}
+					log.Printf("KeepAlive HTTP failed: %s", err)
 				}
 			} else {
 				log.Printf("KeepAlive: OK, status code %d", resp.StatusCode)

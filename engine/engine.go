@@ -201,6 +201,7 @@ func Start(opts Options) (_ *Engine, err error) {
 		return nil, fmt.Errorf("gVisor 网络栈创建失败: %w", err)
 	}
 
+	vpnStack.SetLogContext(fmt.Sprintf("[VPN pid=%d engine=%d profile=%q stack=%p] ", os.Getpid(), e.id, opts.ConnectionID, vpnStack))
 	e.registerTerminal("CloseVPNStack", func(ctx context.Context) error { return vpnStack.Close() })
 	e.emitProgress("加载资源", "正在加载 VPN 资源和访问规则…")
 	policy, err := loadPolicy(conf, vpnClient, vpnStack)
