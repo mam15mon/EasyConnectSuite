@@ -458,8 +458,18 @@ func (e *Engine) execTerminal() {
 
 func (e *Engine) registerTerminal(name string, f lifecycle.TerminalFunc) {
 	e.terminalMu.Lock()
-	defer e.terminalMu.Unlock()
-	e.terminals = append(e.terminals, f)
+	if !e.terminalClosed {
+		e.terminals = append(e.terminals, f)
+		e.terminalMu.Unlock()
+		return
+	}
+	e.terminalMu.Unlock()
+	// A tunnel may fail while startup is still acquiring another resource.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := f(ctx); err != nil {
+		log.Printf("Late cleanup %s failed: %v", name, err)
+	}
 }
 
 func (e *Engine) emitProgress(stage, message string) {

@@ -318,3 +318,43 @@ func TestUniVPNAdapterAuthenticationRefusalIsTerminal(t *testing.T) {
 		t.Fatalf("lost terminal authentication error: %v", err)
 	}
 }
+
+func TestTwoUniVPNTunnelsDoNotShareNetworkOrShutdown(t *testing.T) {
+	first, second := integrationClient(t, false), integrationClient(t, false)
+	if err := first.Setup(); err != nil {
+		t.Fatal(err)
+	}
+	if err := second.Setup(); err != nil {
+		t.Fatal(err)
+	}
+	a, err := gvisor.NewOwnedStack(first, func() bool { return first.ctx.Err() != nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	go a.Run()
+	b, err := gvisor.NewOwnedStack(second, func() bool { return second.ctx.Err() != nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	go b.Run()
+	first.Close()
+	a.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn, err := b.DialUDP(ctx, &net.UDPAddr{IP: net.ParseIP("198.51.100.9"), Port: 1234})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(3 * time.Second))
+	payload := []byte("second VPN survives first shutdown")
+	if _, err := conn.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	reply := make([]byte, len(payload))
+	if _, err := conn.Read(reply); err != nil || !bytes.Equal(reply, payload) {
+		t.Fatal("second network stopped", err)
+	}
+}

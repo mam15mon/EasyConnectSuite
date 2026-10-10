@@ -19,6 +19,10 @@ func TestEngineCleanupIsLocalAndIdempotent(t *testing.T) {
 	if closedA != 1 || closedB != 0 {
 		t.Fatal("cleanup crossed engines")
 	}
+	a.registerTerminal("late A", func(context.Context) error { closedA++; return nil })
+	if closedA != 2 {
+		t.Fatal("resource acquired after startup failure leaked")
+	}
 	b.execTerminal()
 	if closedB != 1 {
 		t.Fatal("second cleanup missing")

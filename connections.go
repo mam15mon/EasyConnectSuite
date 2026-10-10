@@ -107,7 +107,7 @@ func (a *App) GetConnections() []VPNStatus {
 }
 func (a *App) anyRunningLocked() bool {
 	for _, c := range a.connections {
-		if c.status.Running {
+		if c.status.Running || c.stopping {
 			return true
 		}
 	}
