@@ -7,3 +7,5 @@ engine.rotatingWriter caps engine.log at 1 MiB and retains one .old generation. 
 Log connection phases, protocol selection, reconnect decisions and cleanup failures. UI status travels through vpn-status with profileId/protocol; vpn-resources carries {profileId, entries}; vpn-connections carries all profile statuses. Callbacks must check connection identity and cancellation before changing state, so stale callbacks cannot overwrite a restarted profile or another selected profile.
 
 Never print passwords, TOTP secrets, tokens, full authentication payloads or decrypted packets. Native command lines must not contain VPN passwords. Research and tests use local mock gateways or redacted metadata.
+
+UniVPN setup rejection must persist `UniVPN authentication rejected: code=N (0xXXXXXXXX)` through the existing engine logger before returning the terminal error. Startup failure messages returned to the UI are not automatically written into engine.log. Log only the typed numeric code; validate persistence with the shared log capture and reject credential/token output in the test.
