@@ -5,11 +5,9 @@
 package engine
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
-	stdlog "log"
 	"net"
 	"os"
 	"runtime/debug"
@@ -58,7 +56,10 @@ type ResourceEntry struct {
 }
 
 type Options struct {
-	Config configs.Config
+	Config  configs.Config
+	Context context.Context
+	Domain  string
+	TUNSlot int
 
 	// OnLog receives every log line produced by the engine.
 	OnLog func(line string)
@@ -81,9 +82,12 @@ type Engine struct {
 	tun     atomic.Pointer[tunIngress]
 	fatal   atomic.Bool
 
-	stopOnce  sync.Once
-	logClose  io.Closer
-	logWriter *rotatingWriter
+	stopOnce       sync.Once
+	ctx            context.Context
+	cancel         context.CancelFunc
+	terminalMu     sync.Mutex
+	terminalClosed bool
+	terminals      []lifecycle.TerminalFunc
 }
 
 // Start performs the whole login + service bring-up synchronously (the
@@ -98,7 +102,12 @@ func Start(opts Options) (*Engine, error) {
 
 	e := &Engine{conf: conf, opts: opts}
 
-	lifecycle.ResetTerminalFuncs()
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	e.ctx, e.cancel = context.WithCancel(ctx)
+	e.registerTerminal("CancelEngine", func(context.Context) error { e.cancel(); return nil })
 	e.startLogCapture()
 	started := false
 	defer func() {
@@ -107,10 +116,6 @@ func Start(opts Options) (*Engine, error) {
 			e.stopLogCapture()
 		}
 	}()
-
-	// A previous engine run may have marked the global terminal registry
-	// as shut down; clear it so this run can register its hooks.
-	lifecycle.ResetTerminalFuncs()
 
 	e.emitProgress("准备中", "正在初始化网络…")
 
@@ -126,24 +131,34 @@ func Start(opts Options) (*Engine, error) {
 
 	// TLS key logging is a debug feature of the CLI (internal/keylog is
 	// not importable from outside the module); the GUI passes nil.
-	vpnClient := easyconnectclient.NewClient(easyconnectclient.Options{
-		Server: net.JoinHostPort(conf.ServerAddress, strconv.Itoa(conf.ServerPort)),
-		Auth: easyconnectclient.AuthOptions{
-			Username:   conf.Username,
-			Password:   conf.Password,
-			TOTPSecret: conf.TOTPSecret,
-			// Certificate / GraphCodeFile left empty: the GUI profile
-			// model only supports username+password(+TOTP).
-		},
-		SessionID:     conf.TwfID,
-		TestMultiLine: !conf.DisableMultiLine,
-		Resources: easyconnectclient.ResourceOptions{
-			Fetch:          !conf.DisableServerConfig,
-			IncludeDomains: !conf.SkipDomainResource,
-		},
-		UnderlayDialer:  underlayDialer,
-		TLSKeyLogWriter: nil,
-	})
+	var vpnClient managedClient
+	switch conf.Protocol {
+	case "univpn":
+		vpnClient = newUniVPNClient(e.ctx, conf, opts.Domain, underlayDialer)
+	case "easyconnect":
+		vpnClient = easyconnectclient.NewClient(easyconnectclient.Options{
+			OwnedLifecycle: true,
+			Server:         net.JoinHostPort(conf.ServerAddress, strconv.Itoa(conf.ServerPort)),
+			Auth: easyconnectclient.AuthOptions{
+				Username:   conf.Username,
+				Password:   conf.Password,
+				TOTPSecret: conf.TOTPSecret,
+				// Certificate / GraphCodeFile left empty: the GUI profile
+				// model only supports username+password(+TOTP).
+			},
+			SessionID:     conf.TwfID,
+			TestMultiLine: !conf.DisableMultiLine,
+			Resources: easyconnectclient.ResourceOptions{
+				Fetch:          !conf.DisableServerConfig,
+				IncludeDomains: !conf.SkipDomainResource,
+			},
+			UnderlayDialer:  underlayDialer,
+			TLSKeyLogWriter: nil,
+		})
+	default:
+		_ = underlayDialer.Close()
+		return nil, fmt.Errorf("不支持的 VPN 类型: %s", conf.Protocol)
+	}
 
 	log.Printf("VPN protocol: %s", conf.Protocol)
 	e.emitProgress("认证中", "正在验证账号并登录 VPN 服务器…")
@@ -166,7 +181,7 @@ func Start(opts Options) (*Engine, error) {
 	e.emitProgress("建立隧道", "认证已通过，正在创建 VPN 网络栈…")
 
 	// The GUI always uses the gVisor L3 stack (upstream default).
-	vpnStack, err := gvisor.NewStack(vpnClient)
+	vpnStack, err := gvisor.NewOwnedStack(vpnClient, func() bool { return e.ctx.Err() != nil })
 	if err != nil {
 		vpnClient.Close()
 		_ = underlayDialer.Close()
@@ -233,7 +248,7 @@ func Start(opts Options) (*Engine, error) {
 	vpnStack.SetupFatalHandler(e.handleTunnelFatal)
 	e.goWithRecovery("gvisor stack Run", func() { vpnStack.Run() })
 	if conf.TUNMode {
-		ingress, err := startTUN(&e.router, policy, e.emitProgress)
+		ingress, err := startTUNSlot(&e.router, policy, e.emitProgress, opts.TUNSlot)
 		if err != nil {
 			return nil, fmt.Errorf("TUN 启动失败: %w", err)
 		}
@@ -247,10 +262,18 @@ func Start(opts Options) (*Engine, error) {
 	vpnResolver := &e.router
 	useRemoteDNS := policy.useRemoteDNS
 	if conf.SocksBind != "" {
-		e.goWithRecovery("SOCKS5 server", func() { service.ServeSocks5(conf.SocksBind, vpnDialer, vpnResolver, conf.SocksUser, conf.SocksPasswd) })
+		listener, err := service.StartSocks5(conf.SocksBind, vpnDialer, vpnResolver, conf.SocksUser, conf.SocksPasswd)
+		if err != nil {
+			return nil, fmt.Errorf("SOCKS5 端口不可用: %w", err)
+		}
+		e.registerTerminal("CloseSocks5", func(context.Context) error { return listener.Close() })
 	}
 	if conf.HTTPBind != "" {
-		e.goWithRecovery("HTTP proxy server", func() { service.ServeHTTP(conf.HTTPBind, vpnDialer) })
+		listener, err := service.StartHTTP(conf.HTTPBind, vpnDialer)
+		if err != nil {
+			return nil, fmt.Errorf("HTTP 端口不可用: %w", err)
+		}
+		e.registerTerminal("CloseHTTP", func(context.Context) error { return listener.Close() })
 	}
 
 	for _, portForwarding := range conf.PortForwardingList {
@@ -414,13 +437,25 @@ func (e *Engine) handleTunnelFatal(cause error) {
 func (e *Engine) execTerminal() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	for _, err := range lifecycle.ExecTerminalFunc(ctx) {
-		log.Printf("Shutdown ZJU-Connect failed: %s", err)
+	e.terminalMu.Lock()
+	if e.terminalClosed {
+		e.terminalMu.Unlock()
+		return
+	}
+	e.terminalClosed = true
+	funcs := append([]lifecycle.TerminalFunc(nil), e.terminals...)
+	e.terminalMu.Unlock()
+	for _, f := range funcs {
+		if err := f(ctx); err != nil {
+			log.Printf("VPN cleanup failed: %v", err)
+		}
 	}
 }
 
 func (e *Engine) registerTerminal(name string, f lifecycle.TerminalFunc) {
-	lifecycle.RegisterTerminalFunc(name, f)
+	e.terminalMu.Lock()
+	defer e.terminalMu.Unlock()
+	e.terminals = append(e.terminals, f)
 }
 
 func (e *Engine) emitProgress(stage, message string) {
@@ -435,44 +470,6 @@ func (e *Engine) emitStatus(phase, message string) {
 func (e *Engine) emitStatusFull(s Status) {
 	if e.opts.OnStatus != nil {
 		e.opts.OnStatus(s)
-	}
-}
-
-// startLogCapture redirects the engine log (upstream zju-connect logs
-// through the standard library logger) into an OnLog callback so the GUI
-// can show the same stream it used to scrape from the subprocess stdout,
-// and — when Options.LogFile is set — tees every line into a persistent
-// file so a crash leaves an activity trail behind.
-func (e *Engine) startLogCapture() {
-	var writers []io.Writer
-
-	if e.opts.OnLog != nil {
-		pr, pw := io.Pipe()
-		e.logClose = pw
-		writers = append(writers, pw)
-		go func() {
-			scanner := bufio.NewScanner(pr)
-			scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-			for scanner.Scan() {
-				e.opts.OnLog(scanner.Text())
-			}
-		}()
-	}
-
-	if e.opts.LogFile != "" {
-		if w, err := newRotatingWriter(e.opts.LogFile, engineLogLimit); err == nil {
-			e.logWriter = w
-			writers = append(writers, w)
-		}
-	}
-
-	if len(writers) > 0 {
-		if len(writers) == 1 {
-			stdlog.SetOutput(writers[0])
-		} else {
-			stdlog.SetOutput(io.MultiWriter(writers...))
-		}
-		stdlog.Printf("=== engine session started %s ===", time.Now().Format(time.RFC3339))
 	}
 }
 
@@ -560,22 +557,6 @@ func (w *rotatingWriter) Close() error {
 	err := w.file.Close()
 	w.file = nil
 	return err
-}
-
-func (e *Engine) stopLogCapture() {
-	// Closing the writer ends the scanner loop above. Service goroutines
-	// that log during teardown will have their lines dropped silently by
-	// stdlog (it ignores write errors) — acceptable once the GUI has
-	// stopped listening.
-	if e.logClose != nil {
-		_ = e.logClose.Close()
-		e.logClose = nil
-	}
-	if e.logWriter != nil {
-		stdlog.Printf("=== engine session ended %s ===", time.Now().Format(time.RFC3339))
-		_ = e.logWriter.Close()
-		e.logWriter = nil
-	}
 }
 
 // goWithRecovery runs fn in a goroutine that logs (instead of silently
