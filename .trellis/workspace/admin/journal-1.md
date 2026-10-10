@@ -259,3 +259,30 @@ Actual diagnostic result is AUTH code 2; no verified semantic mapping. Observed 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 10: 多VPN托盘独立操作与v3交付
+<!-- trellis-session: v=2 fp=6d8f757457dc75b1 -->
+
+**Date**: 2026-10-11
+**Task**: 多VPN托盘独立操作与v3交付
+**Branch**: `codex/univpn-windows-core`
+
+### Summary
+
+托盘改为全部VPN状态汇总及每配置子菜单，已连接勾选不依赖工作台选择；连接/重试/取消/断开捕获profile ID，仅查看详情切换选择。全部断开和退出复用既有清理，图标数据加锁并在所属线程销毁窗口，UTF16长名称不拆emoji。取消根据本次启动上下文识别，失败显示MessageDialog，操作记入日志。6项新增回归覆盖原生隐藏菜单结构、状态启禁、空配置、Unicode、选择/顺序改变后独立停止、未知ID与取消后校验错误。根Go test/vet/race和Wails Windows生产构建通过，无真实认证或原生桌面点击。交付workspace-v3 20695040字节，Compress=false，SHA256 204E636CDE286C3F00E275673170213245D085A020C3634787383E309F6A467C。TopSAP长期实际测试任务保留。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `90dfb50` | 托盘汇总全部VPN状态并绑定独立配置操作 |
+| `34c5a10` | 实现逐条VPN托盘菜单并同步提示更新与退出 |
+| `471a300` | 验证原生多VPN托盘菜单与固定ID会话隔离 |
+| `82225f4` | 按本次连接上下文识别托盘取消避免误报失败 |
+| `835fe0a` | 覆盖托盘空配置与取消后配置校验错误 |
+| `14f1b6b` | 记录多VPN托盘验收与v3未压缩交付 |
+
+### Status
+
+[OK] **Completed**
