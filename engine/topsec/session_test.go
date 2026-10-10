@@ -24,13 +24,13 @@ import (
 )
 
 type gateway struct {
-	server                              *httptest.Server
-	roots                               *x509.CertPool
-	reject, noResources, stall, corrupt bool
-	logins, logouts                     atomic.Int32
-	mu                                  sync.Mutex
-	conns                               []net.Conn
-	wg                                  sync.WaitGroup
+	server                                          *httptest.Server
+	roots                                           *x509.CertPool
+	reject, noResources, stall, corrupt, invalidVIP bool
+	logins, logouts                                 atomic.Int32
+	mu                                              sync.Mutex
+	conns                                           []net.Conn
+	wg                                              sync.WaitGroup
 }
 
 func newGateway(t *testing.T) *gateway {
@@ -97,7 +97,11 @@ func newGateway(t *testing.T) *gateway {
 				fmt.Fprint(w, `{"Ret":0}`)
 				return
 			}
-			fmt.Fprint(w, `{"Ret":0,"net_param":{"vip_v4":"10.91.0.9","dns1_v4":"0.0.0.0","dns2_v4":"0.0.0.0"},"res_list":[{"module":"na","protocol":"ip","ip":"198.51.100.0","mask":"255.255.255.0","port":"","domain":""}]}`)
+			if g.invalidVIP {
+				fmt.Fprint(w, `{"Ret":0,"net_param":{"vip_v4":"0.0.0.0"},"res_list":[]}`)
+				return
+			}
+			fmt.Fprint(w, `{"Ret":0,"net_param":{"vip_v4":"10.91.0.9","dns1_v4":"198.51.100.53","dns2_v4":"0.0.0.0"},"res_list":[{"module":"na","protocol":"ip","ip":"198.51.100.0","mask":"255.255.255.0","port":"","domain":""}]}`)
 		case "/vone/login/logout":
 			g.logouts.Add(1)
 			fmt.Fprint(w, `{"Ret":0}`)
@@ -194,7 +198,7 @@ func TestSessionIPv4AndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b.Close()
-	if a.IP().String() != "10.91.0.9" || len(a.Routes()) != 1 || a.Routes()[0].String() != "198.51.100.0/24" || len(a.DNSServers()) != 0 {
+	if a.IP().String() != "10.91.0.9" || len(a.Routes()) != 1 || a.Routes()[0].String() != "198.51.100.0/24" || len(a.DNSServers()) != 1 || a.DNSServers()[0] != "198.51.100.53" {
 		t.Fatal("incorrect session configuration")
 	}
 	for _, protocol := range []byte{6, 17} {
@@ -353,5 +357,17 @@ func TestCertificateOptInStillRejectsDifferentDataKey(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("data connection leaked")
+	}
+}
+
+func TestInvalidFullConfigVIPDoesNotUseLoginAddress(t *testing.T) {
+	g := newGateway(t)
+	g.invalidVIP = true
+	session, err := dial(context.Background(), g.options(), "tOn2cYFE+wqTmNHkz2AA7g==")
+	if session != nil || err == nil || !strings.Contains(err.Error(), "完整配置中的虚拟 IPv4 地址无效") {
+		t.Fatal("invalid complete configuration must not reuse the login address", err)
+	}
+	if g.logins.Load() != 1 || g.logouts.Load() != 1 || len(g.conns) != 0 {
+		t.Fatal("configuration failure must revoke authentication before opening the data channel")
 	}
 }
