@@ -286,3 +286,28 @@ Actual diagnostic result is AUTH code 2; no verified semantic mapping. Observed 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 11: 修复多VPN连接列表详情同步
+<!-- trellis-session: v=2 fp=03a98ba25b2bbb45 -->
+
+**Date**: 2026-10-11
+**Task**: 修复多VPN连接列表详情同步
+**Branch**: `codex/univpn-windows-core`
+
+### Summary
+
+复现并修复左侧连接列表切换不完整问题：点击网关地址、状态、整行空白和名称均选择对应 profile；独立连接/断开按钮只执行自己的动作。renderConnections 复用按 profile ID 的行节点，状态和计时刷新不再 replaceChildren/重写按钮，并保留筛选时键盘焦点。脱敏预览确认两条运行连接交替选择时右侧名称、虚拟 IP、内网 DNS、SOCKS5、HTTP 与授权资源正确，未连接/错误配置清空旧 IP/DNS，日志归属和连接按钮隔离；预览无控制台错误。根 test/vet/race、Node 语法/资源过滤和 Wails 未压缩构建通过。交付 workspace-v4 20695552字节，SHA256 8F0FE78754989EC427853D6804B0DECDC0E2A06C8583E3AEFF6609CCF74AABB5；未操作真实VPN。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a52a79c` | 修复整行选择并在状态刷新时保留连接行节点 |
+| `6116068` | 保留筛选刷新时连接行键盘焦点 |
+| `800ce7d` | 构建多VPN连接列表详情同步修复包 |
+| `6bb9ca1` | 记录连接详情同步修复与v4交付包 |
+
+### Status
+
+[OK] **Completed**
