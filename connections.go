@@ -277,7 +277,7 @@ func (a *App) stopConnectionReason(id, reason string) string {
 		<-done
 		return "OK"
 	}
-	log.Printf("[VPN pid=%d profile=%q] stop requested reason=%s state=%s uptime=%s", os.Getpid(), id, reason, c.status.State, time.Since(c.started).Round(time.Second))
+	log.Printf("[VPN pid=%d profile=%q] stop requested reason=%s state=%s uptime_seconds=%d", os.Getpid(), id, reason, c.status.State, c.status.Duration)
 	c.stopping = true
 	c.stopDone = make(chan struct{})
 	c.cancel()

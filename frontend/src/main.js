@@ -872,7 +872,9 @@ async function refreshProfileLogs() {
  try {
   const lines = await window.go.main.App.GetProfileLogs(id);
   if (request !== logRequest || id !== activeProfile?.id) return;
+  const followLatest = output.scrollHeight-output.scrollTop-output.clientHeight < 24;
   output.textContent = lines.length ? lines.join('\n') : '暂无当前配置的运行记录。连接新版程序后，阶段、停止原因和收发统计会记录在这里。';
+  if (followLatest) output.scrollTop = output.scrollHeight;
  } catch (err) {
   if (request === logRequest && id === activeProfile?.id) output.textContent = `读取记录失败：${err}`;
  } finally { if (request === logRequest) refresh.disabled = false; }
