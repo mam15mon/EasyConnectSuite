@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,4 +57,22 @@ func TestSharedLogSurvivesAnotherEngineStopping(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestLifecycleAndCleanupCausePersistWithConnectionIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "engine.log")
+	e := &Engine{id: 19, opts: Options{ConnectionID: "synthetic-profile", LogFile: path}}
+	e.startLogCapture()
+	e.emitStatusFull(Status{Phase: PhaseReconnecting, Message: "network timeout"})
+	e.registerTerminal("CloseSynthetic", func(context.Context) error { return fmt.Errorf("synthetic cleanup refusal") })
+	e.Stop()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{`engine=19 profile="synthetic-profile"`, "phase=reconnecting", `message="network timeout"`, "shutdown reason=stop_requested", "cleanup complete step=CloseSynthetic", "cause=synthetic cleanup refusal", "phase=disconnected"} {
+		if !strings.Contains(string(data), marker) {
+			t.Fatal("missing durable lifecycle diagnostic", marker)
+		}
+	}
 }

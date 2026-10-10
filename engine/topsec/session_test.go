@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	stdlog "log"
 	"math/big"
 	"net"
 	"net/http"
@@ -369,5 +370,53 @@ func TestInvalidFullConfigVIPDoesNotUseLoginAddress(t *testing.T) {
 	}
 	if g.logins.Load() != 1 || g.logouts.Load() != 1 || len(g.conns) != 0 {
 		t.Fatal("configuration failure must revoke authentication before opening the data channel")
+	}
+}
+
+type trafficLogWriter struct{ lines chan string }
+
+func (w trafficLogWriter) Write(p []byte) (int, error) { w.lines <- string(p); return len(p), nil }
+func TestTrafficSamplesShowIdleAndActivityAndStopOnCancel(t *testing.T) {
+	writer := trafficLogWriter{lines: make(chan string, 4)}
+	original := stdlog.Writer()
+	stdlog.SetOutput(writer)
+	defer stdlog.SetOutput(original)
+	s := &Session{id: 7, connectionID: "synthetic-profile", startedAt: time.Now().Add(-65 * time.Second)}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ticks := make(chan time.Time)
+	done := make(chan struct{})
+	go func() { s.monitorTraffic(ctx, ticks); close(done) }()
+	sample := func() string {
+		t.Helper()
+		ticks <- time.Now()
+		select {
+		case line := <-writer.lines:
+			return line
+		case <-time.After(time.Second):
+			t.Fatal("sampling stalled")
+			return ""
+		}
+	}
+	idle := sample()
+	if !strings.Contains(idle, `profile="synthetic-profile"`) || !strings.Contains(idle, "rx_delta=0 tx_delta=0 last_rx_age=never last_tx_age=never") {
+		t.Fatal("idle sample must not claim a failure", idle)
+	}
+	s.rxBytes.Store(44)
+	s.txBytes.Store(60)
+	s.lastRX.Store(time.Now().UnixNano())
+	s.lastTX.Store(time.Now().UnixNano())
+	active := sample()
+	if !strings.Contains(active, "rx_bytes=44 tx_bytes=60 rx_delta=44 tx_delta=60") || strings.Contains(active, "last_rx_age=never") {
+		t.Fatal("activity sample missing", active)
+	}
+	if line := sample(); !strings.Contains(line, "rx_delta=0 tx_delta=0") {
+		t.Fatal("sample repeated old traffic", line)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sampler leaked after session cancellation")
 	}
 }
