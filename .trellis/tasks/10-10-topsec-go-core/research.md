@@ -32,3 +32,15 @@ tshark and dumpcap are already installed and on PATH. dumpcap -D successfully en
 5. Implement and test against those vectors, then integrate existing lifecycle/TUN/proxy surfaces and validate authorized live behavior.
 
 An encrypted packet trace alone does not establish a complete protocol. If no plaintext diagnostics or packet semantics are available, report the exact missing evidence instead of inventing a transport or shipping a nonworking protocol selector.
+
+## Follow-up: authentication and capture preflight
+
+User confirms no graphic CAPTCHA; password authentication needs no SMS or browser step. Do not add CAPTCHA UI or OCR to the initial scope.
+
+The unelevated dumpcap WLAN preflight uses filter `less 0`, duration one second, and a temporary file outside the repository. It exits successfully with zero packets, confirming capture permission without collecting any network traffic; the temporary file was removed. Thus capture need not elevate Codex or change the official installation.
+
+At the follow-up check there are no official-client remote TCP connections; the only observed vendor UDP endpoint is a local service listener. No target is guessed from older connection snapshots or unrelated VPN profiles. User was asked to connect the official TopSAP and keep it connected so gateway targeting can be derived from its process-owned sockets.
+
+Compiled na_client string markers include `before add private header, enc data len:%d` and `private header len:%d, send msg len:%d`; this establishes a private framing lead but not the header structure, command IDs or algorithm. Native strings contain OpenSSL symbols. The SDK's presence of `nss_keylog_int` does not prove application-level key export is enabled. [OpenSSL callback documentation](https://docs.openssl.org/1.1.1/man3/SSL_CTX_set_keylog_callback/) describes an application-installed callback; setting an environment variable alone is not established for this SDK. No key material or process-memory dump was collected.
+
+Next concrete dependency: an active user-created official connection, then a bounded capture of only its gateway. Research remains incomplete until authentication/resource replies and private data framing are independently verified.
