@@ -43,3 +43,7 @@ Successful mock configuration requests must assert TYPE=all. TYPE=phone must ret
 ## Wrong vs correct
 
 Wrong: infer byte field semantics or hardware choice from one successful capture, then test against an encoder reusing that assumption. Correct: corroborate native call boundaries, add independent vectors and compare current native/Go outputs with only match status exposed. A private local overlay caught last-MAC and unbounded-registry differences; leave those regression contracts explicit. The product does not consult the native service used by that research check.
+
+## Complete configuration owns the active virtual address
+
+TYPE=all can assign a different net_param.vip_v4 from user_pswd. The native na_client.exe ProcessLoginServerAckPacket_NEW (0x52d820, VIP parse at 0x52e7af..0x52e820) configures the network stack from the complete config. Use that response's IPv4 and DNS before creating the data stack; reject missing, unspecified or non-IPv4 current addresses without reverting to the login address. Synthetic gateways must use differing login/config VIP and reject obsolete-source packets. Actual fix4 restored receive traffic and user-confirmed SSH access on the observed gateway.
