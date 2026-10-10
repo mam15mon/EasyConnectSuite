@@ -7,7 +7,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"runtime/debug"
