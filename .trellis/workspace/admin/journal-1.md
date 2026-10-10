@@ -74,3 +74,27 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 3: UniVPN 忽略证书开关与未压缩 EXE
+<!-- trellis-session: v=2 fp=6add90b740cd4e95 -->
+
+**Date**: 2026-10-10
+**Task**: UniVPN 忽略证书开关与未压缩 EXE
+**Branch**: `codex/univpn-windows-core`
+
+### Summary
+
+按用户明确要求增加默认关闭的 UniVPN 每配置证书校验忽略开关。保留双 TLS 通道公钥一致性检查，无自动兜底。默认拒绝不受信任证书、显式允许登录、身份不匹配拒绝、配置持久化与独立传递测试通过；根模块 race/vet 和 Wails/Vite 构建通过。按最新要求未运行 UPX，交付 EasyConnectGUI-multi-vpn-cert.exe，20,516,864 字节。真实网关登录未验证。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `df22f80` | feat: add explicit per profile UniVPN certificate verification bypass |
+| `95aef5b` | test: cover opt in certificate skip, secure defaults and channel identity |
+| `ef71fa7` | build: regenerate certificate option bindings and desktop frontend |
+
+### Status
+
+[OK] **Completed**
