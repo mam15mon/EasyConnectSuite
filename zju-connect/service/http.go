@@ -182,12 +182,12 @@ func relayHTTPConnect(dst net.Conn, src io.Reader, host, direction string, done 
 
 func (p *httpProxy) registerTunnel(tunnel *httpTunnel) bool {
 	p.tunnelsMu.Lock()
+	defer p.tunnelsMu.Unlock()
 	if p.closed {
 		return false
 	}
 	p.tunnels[tunnel] = struct{}{}
 	return true
-	p.tunnelsMu.Unlock()
 }
 
 func (p *httpProxy) unregisterTunnel(tunnel *httpTunnel) {
