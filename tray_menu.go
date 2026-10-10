@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"unicode/utf16"
+
+	"EasyConnectSuite/engine"
 )
 
 type trayAction struct {
@@ -115,16 +117,22 @@ func trayLifecycleAction(s VPNStatus) (string, trayAction) {
 	return "连接此 VPN", action
 }
 
-func (a *App) executeTrayAction(action trayAction) string {
+func (a *App) executeTrayAction(action trayAction) (string, bool) {
 	log.Printf("[VPN pid=%d profile=%q] tray action=%s", os.Getpid(), action.profileID, action.kind)
 	switch action.kind {
 	case "connect":
-		return a.StartProfileVPN(action.profileID)
+		var cancelled bool
+		result := a.startConnectionID(action.profileID, func(opts engine.Options) (vpnEngine, error) {
+			eng, err := engine.Start(opts)
+			cancelled = opts.Context.Err() != nil
+			return eng, err
+		})
+		return result, cancelled
 	case "disconnect":
-		return a.StopProfileVPN(action.profileID)
+		return a.StopProfileVPN(action.profileID), false
 	case "disconnect_all":
-		return a.StopAllVPN()
+		return a.StopAllVPN(), false
 	default:
-		return "未知托盘操作"
+		return "未知托盘操作", false
 	}
 }

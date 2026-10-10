@@ -238,15 +238,9 @@ func showTrayMenu(app *App, hwnd uintptr, pt POINT) {
 				}
 			} else {
 				go func() {
-					result := app.executeTrayAction(action)
-					if result != "OK" {
-						app.mu.Lock()
-						c := app.connections[action.profileID]
-						cancelled := c != nil && c.ctx.Err() != nil && c.status.State != "error"
-						app.mu.Unlock()
-						if !cancelled && app.ctx != nil {
-							_, _ = wailsruntime.MessageDialog(app.ctx, wailsruntime.MessageDialogOptions{Type: wailsruntime.ErrorDialog, Title: "VPN 操作失败", Message: result})
-						}
+					result, cancelled := app.executeTrayAction(action)
+					if result != "OK" && !cancelled && app.ctx != nil {
+						_, _ = wailsruntime.MessageDialog(app.ctx, wailsruntime.MessageDialogOptions{Type: wailsruntime.ErrorDialog, Title: "VPN 操作失败", Message: result})
 					}
 				}()
 			}

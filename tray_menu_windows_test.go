@@ -121,19 +121,19 @@ func TestTraySnapshotActionSurvivesSelectionAndProfileReorder(t *testing.T) {
 	a.mu.Lock()
 	a.appConfig.Profiles[0], a.appConfig.Profiles[1] = a.appConfig.Profiles[1], a.appConfig.Profiles[0]
 	a.mu.Unlock()
-	if got := a.executeTrayAction(actions[2000]); got != "OK" {
+	if got, _ := a.executeTrayAction(actions[2000]); got != "OK" {
 		t.Fatal(got)
 	}
 	if !engines["a"].stopped.Load() || engines["b"].stopped.Load() || a.GetActiveProfile().ID != "b" {
 		t.Fatal("tray operation crossed profiles or changed selection")
 	}
-	if got := a.executeTrayAction(trayAction{kind: "connect", profileID: "deleted"}); got != "服务器配置不存在" {
+	if got, cancelled := a.executeTrayAction(trayAction{kind: "connect", profileID: "deleted"}); got != "服务器配置不存在" || cancelled {
 		t.Fatal(got)
 	}
-	if got := a.executeTrayAction(trayAction{kind: "disconnect", profileID: "deleted"}); got != "Not running" || engines["b"].stopped.Load() {
+	if got, _ := a.executeTrayAction(trayAction{kind: "disconnect", profileID: "deleted"}); got != "Not running" || engines["b"].stopped.Load() {
 		t.Fatal("missing target fell back to selected connection")
 	}
-	if got := a.executeTrayAction(trayAction{kind: "disconnect_all"}); got != "OK" || !engines["b"].stopped.Load() {
+	if got, _ := a.executeTrayAction(trayAction{kind: "disconnect_all"}); got != "OK" || !engines["b"].stopped.Load() {
 		t.Fatal("disconnect all retained a session")
 	}
 }
