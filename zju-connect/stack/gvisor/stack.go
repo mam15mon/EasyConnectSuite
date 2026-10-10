@@ -438,12 +438,13 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 			log.Printf("Re-login succeeded but L3 handshake failed (%d/%d): %v", s.reloginFailures, maxReloginAttempts, err)
 			continue
 		}
+		s.endpoint.connMu.Lock()
 		if s.reconnectStopped() {
+			s.endpoint.connMu.Unlock()
 			safeCloseL3(newConn)
 			return false
 		}
 
-		s.endpoint.connMu.Lock()
 		oldConn := s.endpoint.l3Conn
 		s.endpoint.l3Conn = newConn
 		s.endpoint.connMu.Unlock()
