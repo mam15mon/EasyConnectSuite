@@ -445,6 +445,16 @@ func (a *App) handleEngineStatus(s engine.Status) {
 }
 
 func (a *App) syncTrayTooltipLocked() {
+	if a.anyRunningLocked() {
+		count := 0
+		for _, c := range a.connections {
+			if c.status.Running {
+				count++
+			}
+		}
+		UpdateTrayTooltip(fmt.Sprintf("VPN 客户端\n%d 条连接运行中", count))
+		return
+	}
 	var tip string
 	if a.status.Running {
 		if a.status.State == "connected" {

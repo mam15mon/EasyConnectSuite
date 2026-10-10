@@ -55,6 +55,9 @@ func (a *App) setTUNMode(enabled, elevated bool, launch func(string) error) (boo
 		if a.appConfig.Profiles[i].ID != a.appConfig.ActiveProfileID {
 			continue
 		}
+		if enabled && !elevated && a.anyRunningLocked() {
+			return false, errors.New("切换管理员权限前，请先断开所有 VPN")
+		}
 		previous := a.appConfig.Profiles[i].TUNMode
 		a.appConfig.Profiles[i].TUNMode = enabled
 		if err := a.saveConfigFile(); err != nil {
