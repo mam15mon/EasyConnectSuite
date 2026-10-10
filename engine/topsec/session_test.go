@@ -83,8 +83,15 @@ func newGateway(t *testing.T) *gateway {
 			fmt.Fprint(w, `{"Ret":0,"user_param":{"topafasfasfassession_id":"synthetic-session","netacc":"on","alg":"standard","protocal":"standard","compress":"off","change_pswd":"on"},"net_param":{"vip_v4":"10.91.0.2","dns1_v4":"0.0.0.0","dns2_v4":"0.0.0.0"}}`)
 		case "/vone/login/get_config_info":
 			cookie, err := r.Cookie("topafasfasfassession_id")
-			if err != nil || cookie.Value != "synthetic-session" || !r.Form.Has("HASH") || r.Form.Get("HASH") != "" || r.Form.Get("TYPE") != "phone" {
+			if err != nil || cookie.Value != "synthetic-session" || !r.Form.Has("HASH") || r.Form.Get("HASH") != "" {
 				t.Error("configuration request lost identity/cache semantics")
+			}
+			if r.Form.Get("TYPE") == "phone" {
+				fmt.Fprint(w, `{"Ret":0,"phone":"","mail":""}`)
+				return
+			}
+			if r.Form.Get("TYPE") != "all" {
+				t.Error("full configuration must request TYPE=all")
 			}
 			if g.noResources {
 				fmt.Fprint(w, `{"Ret":0}`)
