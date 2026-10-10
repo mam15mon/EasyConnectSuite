@@ -460,8 +460,9 @@ function updateStatusUI(status) {
         ? 'VPN 已连接；TUN 和本地代理均已关闭'
         : 'VPN 通道工作正常，流量经本地代理端口直接转发';
   } else if (status.state === 'connecting') {
-    btnLabel.innerText = status.stage + '…';
-    btnToggle.disabled = true;
+    const reconnecting = status.stage === '重连中';
+    btnLabel.innerText = reconnecting ? '停止重连' : status.stage + '…';
+    btnToggle.disabled = !reconnecting;
     stateNote.innerText = status.message;
   } else if (status.state === 'error') {
     btnLabel.innerText = '重新建立';
