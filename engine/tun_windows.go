@@ -36,53 +36,62 @@ const tunDNS = "198.19.128.2"
 const nrptTag = "EasyConnectSuite resource TUN"
 
 type tunIngress struct {
-	mu          sync.RWMutex
-	device      stun.Tun
-	stack       stun.Stack
-	router      *policyRouter
-	policy      *connectionPolicy
-	routes      *routeManager
-	backend     *windowsRoutes
-	bindings    map[netip.Addr][]client.DomainResource
-	ctx         context.Context
-	cancel      context.CancelFunc
-	closeOnce   sync.Once
-	closeErr    error
-	closed      bool
-	connections sync.Map
+	name, dns, prefix string
+	mu                sync.RWMutex
+	device            stun.Tun
+	stack             stun.Stack
+	router            *policyRouter
+	policy            *connectionPolicy
+	routes            *routeManager
+	backend           *windowsRoutes
+	bindings          map[netip.Addr][]client.DomainResource
+	ctx               context.Context
+	cancel            context.CancelFunc
+	closeOnce         sync.Once
+	closeErr          error
+	closed            bool
+	connections       sync.Map
 }
 
 // sing-tun already embeds Wintun. The ingress converts TCP/UDP flows into
 // calls to our existing VPN dialer, so gVisor reconnect and IP updates remain
 // shared with SOCKS5. It never changes the system's default route.
-func startTUN(router *policyRouter, policy *connectionPolicy, progress func(string, string)) (_ *tunIngress, err error) {
+func startTUN(router *policyRouter, policy *connectionPolicy, progress func(string, string)) (*tunIngress, error) {
+	return startTUNSlot(router, policy, progress, 0)
+}
+
+func startTUNSlot(router *policyRouter, policy *connectionPolicy, progress func(string, string), slot int) (_ *tunIngress, err error) {
+	name, prefixText, dnsIP, tag, err := tunIdentity(slot)
+	if err != nil {
+		return nil, err
+	}
 	if !windows.GetCurrentProcessToken().IsElevated() {
 		return nil, fmt.Errorf("请以管理员身份运行 EasyConnectGUI 后启用 TUN")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	t := &tunIngress{router: router, policy: policy, bindings: make(map[netip.Addr][]client.DomainResource), ctx: ctx, cancel: cancel}
+	t := &tunIngress{name: name, dns: dnsIP, prefix: prefixText, router: router, policy: policy, bindings: make(map[netip.Addr][]client.DomainResource), ctx: ctx, cancel: cancel}
 	defer func() {
 		if err != nil {
 			_ = t.Close()
 		}
 	}()
 	progress("创建 TUN", "正在创建 TUN 虚拟网卡…")
-	prefix := netip.MustParsePrefix(tunPrefix)
-	t.device, err = stun.New(stun.Options{Name: tunName, Inet4Address: []netip.Prefix{prefix}, MTU: 1400, AutoRoute: false, StrictRoute: false, Logger: tunLogger{}})
+	prefix := netip.MustParsePrefix(prefixText)
+	t.device, err = stun.New(stun.Options{Name: name, Inet4Address: []netip.Prefix{prefix}, MTU: 1400, AutoRoute: false, StrictRoute: false, Logger: tunLogger{}})
 	if err != nil {
 		return nil, err
 	}
-	iface, err := net.InterfaceByName(tunName)
+	iface, err := net.InterfaceByName(name)
 	if err != nil {
 		return nil, err
 	}
-	t.backend = &windowsRoutes{index: iface.Index}
+	t.backend = &windowsRoutes{index: iface.Index, tag: tag, dns: dnsIP}
 	t.routes = newRouteManager(t.backend)
 	progress("配置网卡", "正在配置 TUN 网卡和接口优先级…")
 	if err = t.backend.configure(); err != nil {
 		return nil, err
 	}
-	t.stack, err = stun.NewStack("system", stun.StackOptions{Context: ctx, Tun: t.device, Name: tunName, MTU: 1400, Inet4Address: []netip.Prefix{prefix}, UDPTimeout: 60, Handler: t, Logger: tunLogger{}})
+	t.stack, err = stun.NewStack("system", stun.StackOptions{Context: ctx, Tun: t.device, Name: name, MTU: 1400, Inet4Address: []netip.Prefix{prefix}, UDPTimeout: 60, Handler: t, Logger: tunLogger{}})
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +103,7 @@ func startTUN(router *policyRouter, policy *connectionPolicy, progress func(stri
 	if err = t.update(policy, names, progress); err != nil {
 		return nil, err
 	}
-	log.Printf("TUN ready: %s; route metric 0, interface metric 0; DNS %s", tunName, tunDNS)
+	log.Printf("TUN ready: %s; route metric 0, interface metric 0; DNS %s", name, dnsIP)
 	return t, nil
 }
 
@@ -109,11 +118,16 @@ func (t *tunIngress) update(policy *connectionPolicy, names []string, progress f
 	}
 	// A /32 for our virtual DNS beats broad Clash/aTrust routes, without
 	// changing the specificity of any server resource route.
-	prefixes = append(prefixes, tunDNS+"/32")
+	prefixes = append(prefixes, t.dnsAddress()+"/32")
 	for _, prefix := range prefixes {
 		if prefix == "0.0.0.0/0" {
 			return fmt.Errorf("服务器下发了默认路由；资源 TUN 不接管全局默认路由")
 		}
+	}
+	tunPolicies.Lock()
+	defer tunPolicies.Unlock()
+	if err := checkTUNConflicts(t, prefixes, names); err != nil {
+		return err
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -134,6 +148,7 @@ func (t *tunIngress) update(policy *connectionPolicy, names []string, progress f
 	}
 	t.bindings = make(map[netip.Addr][]client.DomainResource)
 	t.policy = policy
+	tunPolicies.claims[t] = tunClaim{prefixes: prefixes, names: names}
 	log.Printf("TUN DNS namespaces: %s", strings.Join(names, ", "))
 	return nil
 }
@@ -142,6 +157,12 @@ func (t *tunIngress) update(policy *connectionPolicy, names []string, progress f
 // tunnel is installed. DNS queries cannot complete inside the relogin callback.
 func (t *tunIngress) RefreshDNS(policy *connectionPolicy) error {
 	names := discoverDNSNamespaces(t.ctx, policy)
+	tunPolicies.Lock()
+	defer tunPolicies.Unlock()
+	claim := tunPolicies.claims[t]
+	if err := checkTUNConflicts(t, claim.prefixes, names); err != nil {
+		return err
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed || t.policy != policy {
@@ -150,12 +171,16 @@ func (t *tunIngress) RefreshDNS(policy *connectionPolicy) error {
 	if err := t.backend.setDNS(names); err != nil {
 		return err
 	}
+	tunPolicies.claims[t] = tunClaim{prefixes: claim.prefixes, names: names}
 	log.Printf("TUN DNS namespaces: %s", strings.Join(names, ", "))
 	return nil
 }
 
 func (t *tunIngress) Close() error {
 	t.closeOnce.Do(func() {
+		tunPolicies.Lock()
+		defer tunPolicies.Unlock()
+		defer delete(tunPolicies.claims, t)
 		t.mu.Lock()
 		t.closed = true
 		t.mu.Unlock()
@@ -211,7 +236,7 @@ func (t *tunIngress) NewConnection(ctx context.Context, conn net.Conn, metadata 
 		return net.ErrClosed
 	}
 	defer t.connections.Delete(conn)
-	if metadata.Destination.Addr.String() == tunDNS && metadata.Destination.Port == 53 {
+	if metadata.Destination.Addr.String() == t.dnsAddress() && metadata.Destination.Port == 53 {
 		return t.serveTCPDNS(conn)
 	}
 	upstream, err := t.dial(ctx, "tcp", metadata.Destination)
@@ -238,7 +263,7 @@ func (t *tunIngress) NewPacketConnection(ctx context.Context, conn N.PacketConn,
 		return net.ErrClosed
 	}
 	defer t.connections.Delete(conn)
-	if metadata.Destination.Addr.String() == tunDNS && metadata.Destination.Port == 53 {
+	if metadata.Destination.Addr.String() == t.dnsAddress() && metadata.Destination.Port == 53 {
 		return t.serveUDPDNS(conn)
 	}
 	upstream, err := t.dial(ctx, "udp", metadata.Destination)
@@ -423,7 +448,10 @@ func (tunLogger) Error(args ...any) { log.Println(args...) }
 func (tunLogger) Fatal(args ...any) { log.Println(args...) }
 func (tunLogger) Panic(args ...any) { log.Println(args...) }
 
-type windowsRoutes struct{ index int }
+type windowsRoutes struct {
+	index    int
+	tag, dns string
+}
 
 // Values travel as JSON on stdin; the script is constant and no profile text
 // is interpolated into PowerShell source. All changes name our interface.
@@ -452,12 +480,12 @@ func (w *windowsRoutes) run(payload any) (routeResult, error) {
 }
 
 func (w *windowsRoutes) configure() error {
-	_, err := w.run(map[string]any{"action": "configure", "index": w.index, "tag": nrptTag})
+	_, err := w.run(map[string]any{"action": "configure", "index": w.index, "tag": w.dnsTag()})
 	return err
 }
 func (w *windowsRoutes) setDNS(names []string) error {
 	sort.Strings(names)
-	_, err := w.run(map[string]any{"action": "dns", "names": names, "server": tunDNS, "tag": nrptTag})
+	_, err := w.run(map[string]any{"action": "dns", "names": names, "server": w.dnsAddress(), "tag": w.dnsTag()})
 	return err
 }
 
@@ -479,10 +507,16 @@ $added = @(); $removed = @(); $failure = ''; $pending = $false
 try {
   switch ($p.action) {
     'cleanup' {
-      $rules = @(Get-DnsClientNrptRule | Where-Object { $_.Comment -eq $p.tag })
-      $routes = @(foreach ($adapter in @(Get-NetAdapter -IncludeHidden | Where-Object { $_.Name -eq $p.name })) {
+      $rules = @(Get-DnsClientNrptRule | Where-Object { $_.Comment -eq $p.tag -or $_.Comment -match '^EasyConnectSuite resource TUN #[0-9]+$' })
+      $routes = @(foreach ($adapter in @(Get-NetAdapter -IncludeHidden | Where-Object { $_.Name -eq $p.name -or $_.Name -match '^EasyConnect Suite #[0-9]+$' })) {
         $addresses = @(Get-NetIPAddress | Where-Object { $_.InterfaceIndex -eq $adapter.InterfaceIndex -and $_.AddressFamily -eq 'IPv4' })
-        if (@($addresses | Where-Object { $_.IPAddress -eq $p.address }).Count -gt 0) {
+        $expected = $p.address
+        if ($adapter.Name -match '^EasyConnect Suite #([0-9]+)$') {
+          $slot = [int]$Matches[1]
+          if ($slot -lt 1 -or $slot -gt 63) { continue }
+          $expected = '198.19.128.' + ($slot * 4 + 1)
+        }
+        if (@($addresses | Where-Object { $_.IPAddress -eq $expected }).Count -gt 0) {
           Get-NetRoute -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -PolicyStore ActiveStore |
             Where-Object { $_.Protocol -eq 'NetMgmt' -and $_.RouteMetric -eq 0 -and $_.NextHop -eq '0.0.0.0' -and $_.DestinationPrefix -ne '0.0.0.0/0' }
         }
