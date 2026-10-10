@@ -14,6 +14,10 @@ export function GetAppConfig() {
   return window['go']['main']['App']['GetAppConfig']();
 }
 
+export function GetConnections() {
+  return window['go']['main']['App']['GetConnections']();
+}
+
 export function GetInterfaces() {
   return window['go']['main']['App']['GetInterfaces']();
 }
@@ -42,8 +46,20 @@ export function SetTUNMode(arg1) {
   return window['go']['main']['App']['SetTUNMode'](arg1);
 }
 
+export function StartProfileVPN(arg1) {
+  return window['go']['main']['App']['StartProfileVPN'](arg1);
+}
+
 export function StartVPN() {
   return window['go']['main']['App']['StartVPN']();
+}
+
+export function StopAllVPN() {
+  return window['go']['main']['App']['StopAllVPN']();
+}
+
+export function StopProfileVPN(arg1) {
+  return window['go']['main']['App']['StopProfileVPN'](arg1);
 }
 
 export function StopVPN() {
