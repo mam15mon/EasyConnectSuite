@@ -12,6 +12,8 @@ Profile.insecureSkipVerify defaults to false. The user requested optional certif
 
 connections.go owns sessions by profile ID. Selecting a profile changes displayed status/resources only. Wails StartProfileVPN/StopProfileVPN use explicit IDs; StopAllVPN and shutdown stop every session. Never replace an explicit missing ID with the selected profile. Each engine gets its own context, cleanup callbacks, listeners and TUN slot. GUI-owned EasyConnect/gVisor paths must not execute process-global CLI terminal hooks.
 
+Tray menus use a locked snapshot of all connection statuses, with a tray-only stopping marker. Store profile IDs in the command map when the menu is built; do not resolve the action through current selection or a later profile-array index. Connect/disconnect actions preserve selection; only details calls SetActiveProfile and emits profile-switched. Count connected separately from connecting/reconnecting/stopping/error. Cancellation classification comes from this startup's context before startConnectionID cancels a failed connection, not from whichever session now occupies the profile ID. The icon data is protected by trayIconMu; shutdown posts the destroy/quit message to the owning tray thread. Tooltip text fits 127 UTF-16 units plus NUL without splitting a surrogate pair. Native menu regression tests may create/query/destroy menus without showing them or accessing real accounts.
+
 Current profiles include password and TOTP fields in saved JSON; this is not an OS credential vault. Do not copy real profiles, credentials or APPDATA logs into tasks or Git. The root .gitignore excludes vpn_profiles.json, captures and logs.
 
 SetProxyEnabled and SetTUNEnabled illustrate restoring the previous in-memory value when configuration saving fails.

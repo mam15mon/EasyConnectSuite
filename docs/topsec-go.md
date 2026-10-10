@@ -7,7 +7,7 @@ TopSAP 标准模式现已接入同一 Windows EXE。协议核心在 `engine/tops
 ## 使用测试版
 
 1. 在官方 TopSAP 中断开连接，并从托盘退出旧版 EasyConnect Suite，避免账号会话和程序单实例冲突。
-2. 启动 `build/bin/EasyConnectGUI-multi-vpn-workspace-v2.exe`。当前双栏界面与稳定性日志说明见 [multi-vpn-workspace.md](multi-vpn-workspace.md)。
+2. 启动 `build/bin/EasyConnectGUI-multi-vpn-workspace-v3.exe`。当前双栏界面、托盘与稳定性日志说明见 [multi-vpn-workspace.md](multi-vpn-workspace.md)。
 3. 新建配置，选择「天融信 TopSAP（标准模式）」，填写原网关地址、实际端口、账号和密码。本轮网关使用自定义端口，请按官方配置填写。
 4. 如果网关证书名称或证书链不受信任，可按用户要求手动开启「忽略服务器证书校验」。默认关闭，仅作用于当前配置；开启后无法验证网关身份。认证与数据通道仍须使用相同公钥。
 5. 连接后检查资源列表和内网访问。TUN 使用服务器返回的 IPv4 前缀，并保留该配置的本地 SOCKS5/HTTP 代理；其他配置可继续单独连接、断开。
@@ -36,11 +36,11 @@ TopSAP 标准模式现已接入同一 Windows EXE。协议核心在 `engine/tops
 | 证书策略 | 默认不发送凭据给不受信任证书；手动忽略可连接；公钥不一致仍拒绝 |
 | 三协议管理 | 模拟 EasyConnect/UniVPN/TopSAP 并发，停止 TopSAP 保留另外两条会话及独立端口/槽位 |
 | Go 检查 | 根模块 `go test ./...`、`go vet ./...`、`go test -race ./...` 通过 |
-| Windows 交付包 | workspace-v2 前端与 windows/amd64 生产构建通过，Compress=false；文件 20,685,312 字节 |
+| Windows 交付包 | workspace-v3 前端与 windows/amd64 生产构建通过，Compress=false；文件 20,695,040 字节 |
 | 实际 Go EXE | 用户确认 fix4 登录和内网访问成功，日志出现双向数据；新版长期稳定性、真实 UDP 及系统 TUN 共存仍待验证 |
 
-构建命令：`wails build -m -nosyncgomod -trimpath -o EasyConnectGUI-multi-vpn-workspace-v2.exe`。本次不使用 UPX。
+构建命令：`wails build -m -nosyncgomod -trimpath -o EasyConnectGUI-multi-vpn-workspace-v3.exe`。本次不使用 UPX。
 
-交付文件 SHA-256：`4F11AC1174AB978DAEF77F34E865CE782B5F704A4343E19C50190F9D1895E83C`。
+交付文件 SHA-256：`204E636CDE286C3F00E275673170213245D085A020C3634787383E309F6A467C`。
 
 日志位置：`%APPDATA%/EasyConnectVPN/logs/engine.log`，8 MiB 轮转并保留 `.old`。TopSAP 行包含 PID、配置 ID、进程内会话编号、认证/完整配置/数据 TLS/隧道 ACK 阶段、HTTP 状态和耗时、Ret、资源数量；首次收发、每分钟收发累计/增量与最后活动时间、关闭字节统计可确认隧道是否有实际数据。失败阶段及注销结果同样落盘。密码、用户名、S_CODE、cookie、会话令牌和数据包内容不写入日志。
