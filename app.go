@@ -145,11 +145,17 @@ func (a *App) saveConfigFile() error {
 // startup is called when the app starts
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.mu.Lock()
+	a.starting = true
+	a.mu.Unlock()
+	a.handleEngineStatus(engine.Status{Phase: engine.PhaseConnecting, Stage: "恢复网络配置", Message: "正在检查并清理上次遗留的 TUN 配置…"})
 	if restarting, err := a.cleanupTUNOnStartup(); restarting {
 		runtime.Quit(ctx)
 		return
 	} else if err != nil {
 		a.handleEngineStatus(engine.Status{Phase: engine.PhaseError, Message: err.Error()})
+	} else {
+		a.handleEngineStatus(engine.Status{Phase: engine.PhaseDisconnected, Message: "网络配置检查完成"})
 	}
 
 	// Start Windows system tray
@@ -176,6 +182,9 @@ func (a *App) startup(ctx context.Context) {
 			}
 		}
 	}()
+	a.mu.Lock()
+	a.starting = false
+	a.mu.Unlock()
 }
 
 // shutdown cleans up resources

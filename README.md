@@ -58,6 +58,6 @@ upx -t build/bin/EasyConnectGUI-upx.exe
 
 ## Windows TUN 模式
 
-GUI 支持按服务器资源分流的 IPv4 TCP/UDP TUN，同时保留本地 SOCKS5/HTTP 代理。相同前缀使用较低 metric，不改变其他客户端更具体路由的优先级。域名解析使用限定到 VPN 资源的 Windows NRPT；重登录会更新资源，断开会清理本程序创建的路由和 DNS 规则。
+GUI 支持按服务器资源分流的 IPv4 TCP/UDP TUN，同时保留本地 SOCKS5/HTTP 代理。相同前缀使用较低 metric，不改变其他客户端更具体路由的优先级。域名解析使用限定到 VPN 资源的 Windows NRPT；重登录会更新资源，正常断开会清理本程序创建的路由和 DNS 规则。强制结束后的残留会在下次启动时检查和清理，发现残留且权限不足时请求管理员授权。
 
 配置、共存及验证方法见 [Windows TUN 模式](docs/windows-tun.md)。
