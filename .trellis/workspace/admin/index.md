@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
-- **Last Active**: 2026-10-10
+- **Total Sessions**: 8
+- **Last Active**: 2026-10-11
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~204 | Active |
+| `journal-1.md` | ~234 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-10-11 | 修复 TopSAP 资源请求并补齐诊断日志 | `75c104d`, `4060e7f`, `3bc80fd`, `b6350a4`, `3a0c647` | `codex/univpn-windows-core` |
 | 7 | 2026-10-10 | 修复 TopSAP 改密权限误判 | `a65d322`, `e59960e` | `codex/univpn-windows-core` |
 | 6 | 2026-10-10 | TopSAP Go 协议接入与未压缩测试版 | `760f782`, `412247b`, `69c3d10`, `811c1d5` | `codex/univpn-windows-core` |
 | 5 | 2026-10-10 | UniVPN MAC 报文对齐与认证日志 | `c0b3414`, `68780e4`, `e47d38c`, `3f60862`, `63e87ae` | `codex/univpn-windows-core` |

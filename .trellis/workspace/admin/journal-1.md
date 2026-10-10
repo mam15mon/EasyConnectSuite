@@ -202,3 +202,33 @@ Actual diagnostic result is AUTH code 2; no verified semantic mapping. Observed 
 ### Next Steps
 
 - 用户退出旧版并使用 topsec-fix1.exe 重新连接，核查真实登录及内网访问
+
+
+## Session 8: 修复 TopSAP 资源请求并补齐诊断日志
+<!-- trellis-session: v=2 fp=5f290a7709233045 -->
+
+**Date**: 2026-10-11
+**Task**: 修复 TopSAP 资源请求并补齐诊断日志
+**Branch**: `codex/univpn-windows-core`
+
+### Summary
+
+用户 fix1 认证成功后缺少资源；对照官方成功样本和原生请求构造发现 TYPE=phone 仅取联系信息，改为 TYPE=all。补齐会话编号、HTTP/Ret/资源、数据TLS/ACK、首包和清理日志，并验证成功、拒绝和缺失资源时落盘且无凭据令牌。全量 test/vet/race 与未压缩 fix2 打包通过。实际网关资源返回及内网访问待用户验证。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `75c104d` | test: 复现 TopSAP 联系信息响应缺少完整资源的问题 |
+| `4060e7f` | fix: 按原生逻辑请求 TopSAP 完整配置并记录认证资源阶段 |
+| `3bc80fd` | feat: 补齐 TopSAP 分阶段结果失败原因和隧道清理日志 |
+| `b6350a4` | test: 验证 TopSAP 完整配置请求及脱敏阶段日志落盘 |
+| `3a0c647` | test: 验证缺失资源错误和注销记录持久化且不泄露凭据 |
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户使用 topsec-fix2.exe 重连后，直接查看 engine.log 确认完整资源和隧道建立
