@@ -196,7 +196,7 @@ func (g *mockGateway) control(conn net.Conn) {
 	token := bytes.Repeat([]byte{0x5a}, 32)
 	reply, _ := appendTLV(make([]byte, 8), 3, token)
 	if g.reject {
-		reply[3] = 1
+		binary.BigEndian.PutUint32(reply[:4], 0x01020304)
 	}
 	if err := g.send(conn, 1, reply); err != nil || g.reject {
 		return
@@ -302,6 +302,10 @@ func TestRejectedPasswordStopsBeforeDataConnection(t *testing.T) {
 	s, err := Dial(context.Background(), g.options())
 	if s != nil || !errors.Is(err, ErrLoginRejected) || g.accepted.Load() != 1 {
 		t.Fatalf("session=%v error=%v connections=%d", s, err, g.accepted.Load())
+	}
+	var rejection *AuthenticationError
+	if !errors.As(err, &rejection) || rejection.Code != 0x01020304 {
+		t.Fatal("authentication result code lost", err)
 	}
 }
 

@@ -14,8 +14,19 @@ import (
 	"strings"
 )
 
-var ErrLoginRejected = errors.New("UniVPN 服务器拒绝账号或密码")
+var ErrLoginRejected = errors.New("UniVPN 服务器拒绝认证")
 var errProtocol = errors.New("无效的 UniVPN 协议数据")
+
+// AuthenticationError retains the gateway's status without guessing its meaning.
+type AuthenticationError struct {
+	Code uint32
+}
+
+func (e *AuthenticationError) Error() string {
+	return fmt.Sprintf("%s（返回码 %d / 0x%08X）；该结果不等同于密码错误，请核对网关认证策略及客户端协议兼容性", ErrLoginRejected, e.Code, e.Code)
+}
+
+func (e *AuthenticationError) Unwrap() error { return ErrLoginRejected }
 
 var magic = [5]byte{0xc1, 0x92, 0xa4, 0xd6, 1}
 
@@ -80,8 +91,8 @@ func parseToken(body []byte) ([32]byte, error) {
 	if len(body) < 8 {
 		return token, errProtocol
 	}
-	if binary.BigEndian.Uint32(body[:4]) != 0 {
-		return token, ErrLoginRejected
+	if code := binary.BigEndian.Uint32(body[:4]); code != 0 {
+		return token, &AuthenticationError{Code: code}
 	}
 	found := false
 	err := parseTLVs(body[8:], func(kind uint16, value []byte) error {

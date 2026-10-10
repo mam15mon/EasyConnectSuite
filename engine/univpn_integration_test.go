@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"EasyConnectSuite/engine/univpn"
+
 	"github.com/mythologyli/zju-connect/client/easyconnect"
 	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/stack/gvisor"
@@ -315,8 +317,13 @@ func TestUniVPNAdapterGVisorTCPAndUDP(t *testing.T) {
 }
 func TestUniVPNAdapterAuthenticationRefusalIsTerminal(t *testing.T) {
 	c := integrationClient(t, true)
-	if err := c.Setup(); !errors.Is(err, easyconnect.ErrLoginRejected) {
+	err := c.Setup()
+	if !errors.Is(err, easyconnect.ErrLoginRejected) || !errors.Is(err, univpn.ErrLoginRejected) {
 		t.Fatalf("lost terminal authentication error: %v", err)
+	}
+	var rejection *univpn.AuthenticationError
+	if !errors.As(err, &rejection) || rejection.Code != 1 {
+		t.Fatal("adapter lost gateway result", err)
 	}
 }
 

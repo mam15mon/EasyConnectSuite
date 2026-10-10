@@ -54,7 +54,7 @@ func (c *uniVPNClient) Setup() error {
 	s, err := univpn.Dial(c.ctx, c.options)
 	if err != nil {
 		if errors.Is(err, univpn.ErrLoginRejected) {
-			return fmt.Errorf("%w: %v", easyconnect.ErrLoginRejected, err)
+			return fmt.Errorf("%w: %w", easyconnect.ErrLoginRejected, err)
 		}
 		return err
 	}
