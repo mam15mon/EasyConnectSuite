@@ -106,6 +106,9 @@ func launchTUNAdministrator(configPath string) error {
 	if err != nil {
 		return err
 	}
+	windows.NewLazySystemDLL("user32.dll").NewProc("MessageBoxW").Call(0,
+		uintptr(unsafe.Pointer(windows.StringToUTF16Ptr("接下来将申请管理员权限，用于配置或清理 TUN 网络。\n\n授权后，当前窗口会关闭并自动重新打开，服务器配置会保留。\n取消授权则保留当前窗口。"))),
+		uintptr(unsafe.Pointer(windows.StringToUTF16Ptr("即将切换管理员权限"))), 0x10040) // MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND
 	parameters := windows.ComposeCommandLine([]string{"--tun-restart", strconv.Itoa(os.Getpid()), configPath})
 	info := shellExecuteInfo{
 		Mask:       0x100 | 0x400, // SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI
