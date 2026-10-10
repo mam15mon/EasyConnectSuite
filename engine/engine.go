@@ -55,6 +55,7 @@ type ResourceEntry struct {
 }
 
 type Options struct {
+	ConnectionID       string
 	Config             configs.Config
 	Context            context.Context
 	Domain             string
@@ -71,7 +72,10 @@ type Options struct {
 	LogFile string
 }
 
+var nextEngineID atomic.Uint64
+
 type Engine struct {
+	id   uint64
 	conf configs.Config
 	opts Options
 
@@ -93,14 +97,15 @@ type Engine struct {
 // Start performs the whole login + service bring-up synchronously (the
 // same sequence upstream main.go runs) and returns a running engine.
 // A returned error means login/setup failed and nothing is left running.
-func Start(opts Options) (*Engine, error) {
+func Start(opts Options) (_ *Engine, err error) {
 	conf := opts.Config
 
 	if conf.ServerAddress == "" || conf.Username == "" {
 		return nil, fmt.Errorf("服务器地址或用户名为空")
 	}
 
-	e := &Engine{conf: conf, opts: opts}
+	e := &Engine{id: nextEngineID.Add(1), conf: conf, opts: opts}
+	startedAt := time.Now()
 
 	ctx := opts.Context
 	if ctx == nil {
@@ -109,9 +114,11 @@ func Start(opts Options) (*Engine, error) {
 	e.ctx, e.cancel = context.WithCancel(ctx)
 	e.registerTerminal("CancelEngine", func(context.Context) error { e.cancel(); return nil })
 	e.startLogCapture()
+	e.logf("start gateway=%s:%d tun=%t slot=%d socks=%q http=%q keepalive_disabled=%t underlay=%q", conf.ServerAddress, conf.ServerPort, conf.TUNMode, opts.TUNSlot, conf.SocksBind, conf.HTTPBind, conf.DisableKeepAlive, conf.BindInterface)
 	started := false
 	defer func() {
 		if !started {
+			e.logf("startup failed elapsed=%s canceled=%t cause=%v", time.Since(startedAt).Round(time.Millisecond), e.ctx.Err() != nil, err)
 			e.execTerminal()
 			e.stopLogCapture()
 		}
@@ -134,7 +141,9 @@ func Start(opts Options) (*Engine, error) {
 	var vpnClient managedClient
 	switch conf.Protocol {
 	case "topsec":
-		vpnClient = newTopSAPClient(e.ctx, conf, opts.InsecureSkipVerify, underlayDialer)
+		c := newTopSAPClient(e.ctx, conf, opts.InsecureSkipVerify, underlayDialer)
+		c.options.ConnectionID = opts.ConnectionID
+		vpnClient = c
 	case "univpn":
 		vpnClient = newUniVPNClient(e.ctx, conf, opts.Domain, opts.InsecureSkipVerify, underlayDialer)
 	case "easyconnect":
@@ -164,7 +173,7 @@ func Start(opts Options) (*Engine, error) {
 
 	stopWatch := context.AfterFunc(e.ctx, vpnClient.Close)
 	e.registerTerminal("StopClientWatch", func(context.Context) error { stopWatch(); return nil })
-	log.Printf("VPN protocol: %s", conf.Protocol)
+	e.logf("VPN protocol: %s", conf.Protocol)
 	e.emitProgress("认证中", "正在验证账号并登录 VPN 服务器…")
 
 	if err := vpnClient.Setup(); err != nil {
@@ -173,7 +182,7 @@ func Start(opts Options) (*Engine, error) {
 		return nil, fmt.Errorf("VPN 登录失败: %w", err)
 	}
 
-	log.Printf("VPN client started")
+	e.logf("VPN client started")
 	e.registerTerminal("CloseVPNClient", func(ctx context.Context) error {
 		vpnClient.Close()
 		return nil
@@ -206,6 +215,7 @@ func Start(opts Options) (*Engine, error) {
 		}
 		return nil
 	})
+	e.logf("network stack=%p resources=%d", vpnStack, len(policy.entries))
 	vpnStack.SetupIPPool(policy.resolver.IPPool)
 	vpnStack.SetupRelogin(func() error {
 		e.emitStatus(PhaseReconnecting, "连接中断，正在自动重新登录...")
@@ -228,6 +238,7 @@ func Start(opts Options) (*Engine, error) {
 			previous.resolver.Close()
 		}
 		e.dnsName = next.dnsName
+		e.logf("reconnect resources updated entries=%d", len(next.entries))
 		if e.opts.OnResources != nil {
 			e.opts.OnResources(next.entries)
 		}
@@ -239,7 +250,7 @@ func Start(opts Options) (*Engine, error) {
 		if ingress := e.tun.Load(); ingress != nil {
 			e.goWithRecovery("TUN DNS zone refresh", func() {
 				if err := ingress.RefreshDNS(policy); err != nil {
-					log.Printf("TUN DNS zone refresh failed: %v", err)
+					e.logf("TUN DNS zone refresh failed: %v", err)
 				}
 			})
 		}
@@ -293,13 +304,13 @@ func Start(opts Options) (*Engine, error) {
 				service.ServeUDPForwarding(vpnStack, pf.BindAddress, pf.RemoteAddress)
 			})
 		default:
-			log.Printf("Port forwarding: unknown network type %s. Aborting", portForwarding.NetworkType)
+			e.logf("Port forwarding: unknown network type %s. Aborting", portForwarding.NetworkType)
 		}
 	}
 
 	if !conf.DisableKeepAlive {
 		if conf.KeepAliveURL == "" && !useRemoteDNS {
-			log.Println("Keep alive is disabled because remote DNS is disabled, and no KeepAliveURL is provided")
+			e.logf("keepalive disabled reason=no_remote_dns_and_no_target")
 		} else {
 			keepAliveCtx, keepAliveCancel := context.WithCancel(context.Background())
 			e.registerTerminal("CloseKeepAlive", func(ctx context.Context) error {
@@ -325,6 +336,7 @@ func Start(opts Options) (*Engine, error) {
 	}
 	e.running.Store(true)
 	e.emitStatusFull(Status{Phase: PhaseConnected, Message: "VPN 已连接", ClientIP: clientIP, DNS: e.dnsName})
+	e.logf("startup complete elapsed=%s", time.Since(startedAt).Round(time.Millisecond))
 	started = true
 	return e, nil
 }
@@ -416,7 +428,7 @@ func formatProtocol(protocol string) string {
 func (e *Engine) Stop() {
 	e.stopOnce.Do(func() {
 		e.running.Store(false)
-		log.Println("Shutdown ZJU-Connect ......")
+		e.logf("shutdown reason=stop_requested")
 		e.execTerminal()
 		e.emitStatus(PhaseDisconnected, "VPN 已断开")
 		e.stopLogCapture()
@@ -433,7 +445,7 @@ func (e *Engine) handleTunnelFatal(cause error) {
 	e.goWithRecovery("fatal shutdown", func() {
 		e.stopOnce.Do(func() {
 			e.running.Store(false)
-			log.Printf("Tunnel unrecoverable: %v; shutting down", cause)
+			e.logf("shutdown reason=tunnel_unrecoverable cause=%v", cause)
 			e.execTerminal()
 			e.emitStatus(PhaseError, fmt.Sprintf("连接已断开且自动重连失败: %v", cause))
 			e.stopLogCapture()
@@ -454,12 +466,20 @@ func (e *Engine) execTerminal() {
 	e.terminalMu.Unlock()
 	for _, f := range funcs {
 		if err := f(ctx); err != nil {
-			log.Printf("VPN cleanup failed: %v", err)
+			e.logf("VPN cleanup failed: %v", err)
 		}
 	}
 }
 
 func (e *Engine) registerTerminal(name string, f lifecycle.TerminalFunc) {
+	cleanup := f
+	f = func(ctx context.Context) error {
+		started := time.Now()
+		e.logf("cleanup start step=%s", name)
+		err := cleanup(ctx)
+		e.logf("cleanup complete step=%s elapsed=%s cause=%v", name, time.Since(started).Round(time.Millisecond), err)
+		return err
+	}
 	e.terminalMu.Lock()
 	if !e.terminalClosed {
 		e.terminals = append(e.terminals, f)
@@ -471,12 +491,16 @@ func (e *Engine) registerTerminal(name string, f lifecycle.TerminalFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := f(ctx); err != nil {
-		log.Printf("Late cleanup %s failed: %v", name, err)
+		e.logf("Late cleanup %s failed: %v", name, err)
 	}
 }
 
+func (e *Engine) logf(format string, args ...any) {
+	log.Printf("[VPN pid=%d engine=%d profile=%q protocol=%s] %s", os.Getpid(), e.id, e.opts.ConnectionID, e.conf.Protocol, fmt.Sprintf(format, args...))
+}
+
 func (e *Engine) emitProgress(stage, message string) {
-	log.Printf("VPN startup [%s]: %s", stage, message)
+	e.logf("VPN startup [%s]: %s", stage, message)
 	e.emitStatusFull(Status{Phase: PhaseConnecting, Stage: stage, Message: message})
 }
 
@@ -485,6 +509,7 @@ func (e *Engine) emitStatus(phase, message string) {
 }
 
 func (e *Engine) emitStatusFull(s Status) {
+	e.logf("status phase=%s stage=%q message=%q", s.Phase, s.Stage, s.Message)
 	if e.opts.OnStatus != nil {
 		e.opts.OnStatus(s)
 	}
@@ -492,7 +517,7 @@ func (e *Engine) emitStatusFull(s Status) {
 
 // engineLogLimit caps engine.log; one .old generation is kept, so the log
 // directory holds at most ~2x this size forever.
-const engineLogLimit = 1 * 1024 * 1024
+const engineLogLimit = 8 * 1024 * 1024
 
 // rotatingWriter is a size-capped file writer: when the current file
 // reaches limit bytes it is renamed to path+".old" (single generation,
@@ -583,7 +608,7 @@ func (e *Engine) goWithRecovery(name string, fn func()) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("engine goroutine %q panicked: %v\n%s", name, r, debug.Stack())
+				e.logf("engine goroutine %q panicked: %v\n%s", name, r, debug.Stack())
 			}
 		}()
 		fn()

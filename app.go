@@ -211,7 +211,7 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.tickerCancel != nil {
 		a.tickerCancel()
 	}
-	_ = a.StopAllVPN()
+	_ = a.stopAllConnections("app_shutdown")
 }
 
 // GetAppConfig returns all profiles and active ID

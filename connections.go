@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -233,7 +234,7 @@ func (a *App) startConnectionID(id string, start func(engine.Options) (vpnEngine
 		a.mu.Unlock()
 		return err.Error()
 	}
-	opts := engine.Options{Config: a.buildEngineConfig(p), Context: ctx, Domain: p.Domain, InsecureSkipVerify: p.InsecureSkipVerify, TUNSlot: slot, LogFile: filepath.Join(logDir, "engine.log"),
+	opts := engine.Options{ConnectionID: p.ID, Config: a.buildEngineConfig(p), Context: ctx, Domain: p.Domain, InsecureSkipVerify: p.InsecureSkipVerify, TUNSlot: slot, LogFile: filepath.Join(logDir, "engine.log"),
 		OnStatus: func(s engine.Status) { a.connectionStatus(p.ID, c, s) }, OnResources: func(rows []engine.ResourceEntry) { a.connectionResources(p.ID, c, rows) }}
 	a.mu.Unlock()
 	eng, err := start(opts)
@@ -260,6 +261,10 @@ func (a *App) startConnectionID(id string, start func(engine.Options) (vpnEngine
 	return "OK"
 }
 func (a *App) stopConnection(id string) string {
+	return a.stopConnectionReason(id, "user_disconnect")
+}
+
+func (a *App) stopConnectionReason(id, reason string) string {
 	a.mu.Lock()
 	c := a.connections[id]
 	if c == nil {
@@ -272,6 +277,7 @@ func (a *App) stopConnection(id string) string {
 		<-done
 		return "OK"
 	}
+	log.Printf("[VPN pid=%d profile=%q] stop requested reason=%s state=%s uptime=%s", os.Getpid(), id, reason, c.status.State, time.Since(c.started).Round(time.Second))
 	c.stopping = true
 	c.stopDone = make(chan struct{})
 	c.cancel()
@@ -300,6 +306,10 @@ func (a *App) StopVPN() string {
 	return a.stopConnection(id)
 }
 func (a *App) StopAllVPN() string {
+	return a.stopAllConnections("user_disconnect_all")
+}
+
+func (a *App) stopAllConnections(reason string) string {
 	a.mu.Lock()
 	ids := make([]string, 0, len(a.connections))
 	for id := range a.connections {
@@ -307,7 +317,7 @@ func (a *App) StopAllVPN() string {
 	}
 	a.mu.Unlock()
 	for _, id := range ids {
-		a.stopConnection(id)
+		a.stopConnectionReason(id, reason)
 	}
 	return "OK"
 }
