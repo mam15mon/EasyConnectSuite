@@ -175,11 +175,17 @@ func (t *tunIngress) RefreshDNS(policy *connectionPolicy) error {
 func (t *tunIngress) Close() error {
 	t.closeOnce.Do(func() {
 		tunPolicies.Lock()
-		defer tunPolicies.Unlock()
-		defer delete(tunPolicies.claims, t)
 		t.mu.Lock()
 		t.closed = true
 		t.mu.Unlock()
+		tunPolicies.Unlock()
+		// Keep resource claims until teardown completes, but let pending DNS
+		// handlers observe closed before waiting for the stack to stop.
+		defer func() {
+			tunPolicies.Lock()
+			delete(tunPolicies.claims, t)
+			tunPolicies.Unlock()
+		}()
 		t.cancel()
 		t.connections.Range(func(key, _ any) bool { _ = key.(io.Closer).Close(); return true })
 		if t.backend != nil {
