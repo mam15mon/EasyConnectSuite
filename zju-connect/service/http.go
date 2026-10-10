@@ -55,6 +55,7 @@ type httpProxy struct {
 	client      *http.Client
 	tunnelsMu   sync.Mutex
 	tunnels     map[*httpTunnel]struct{}
+	closed      bool
 }
 
 func newHTTPProxy(dialer ProxyDialer) *httpProxy {
@@ -142,10 +143,12 @@ func (p *httpProxy) handleConnect(w http.ResponseWriter, req *http.Request) {
 	}
 
 	tunnel := &httpTunnel{client: clientConn, target: targetConn}
-	p.registerTunnel(tunnel)
-	defer p.unregisterTunnel(tunnel)
 	defer clientConn.Close()
 	defer targetConn.Close()
+	if !p.registerTunnel(tunnel) {
+		return
+	}
+	defer p.unregisterTunnel(tunnel)
 
 	if _, err := buffered.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
 		return
@@ -177,9 +180,13 @@ func relayHTTPConnect(dst net.Conn, src io.Reader, host, direction string, done 
 	done <- struct{}{}
 }
 
-func (p *httpProxy) registerTunnel(tunnel *httpTunnel) {
+func (p *httpProxy) registerTunnel(tunnel *httpTunnel) bool {
 	p.tunnelsMu.Lock()
+	if p.closed {
+		return false
+	}
 	p.tunnels[tunnel] = struct{}{}
+	return true
 	p.tunnelsMu.Unlock()
 }
 
@@ -191,6 +198,7 @@ func (p *httpProxy) unregisterTunnel(tunnel *httpTunnel) {
 
 func (p *httpProxy) closeTunnels() {
 	p.tunnelsMu.Lock()
+	p.closed = true
 	tunnels := make([]*httpTunnel, 0, len(p.tunnels))
 	for tunnel := range p.tunnels {
 		tunnels = append(tunnels, tunnel)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/log"
@@ -31,10 +32,11 @@ func StartSocks5(bindAddr string, dialer ProxyDialer, resolver ProxyResolver, us
 		socks5.WithLogger(socks5.NewLogger(log.NewLogger("[SOCKS5] "))),
 	)
 
-	listener, err := net.Listen("tcp", bindAddr)
+	raw, err := net.Listen("tcp", bindAddr)
 	if err != nil {
 		return nil, err
 	}
+	listener := &ownedSocksListener{Listener: raw, conns: make(map[*ownedSocksConn]bool)}
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, net.ErrClosed) {
 			log.Printf("SOCKS5 server failed: %v", err)
@@ -50,4 +52,56 @@ func ServeSocks5(bindAddr string, dialer ProxyDialer, resolver ProxyResolver, us
 		return
 	}
 	hook_func.RegisterTerminalFunc("CloseSocks5Listener", func(context.Context) error { return listener.Close() })
+}
+
+// Own accepted SOCKS connections as well as the listening socket.
+type ownedSocksListener struct {
+	net.Listener
+	mu     sync.Mutex
+	closed bool
+	conns  map[*ownedSocksConn]bool
+}
+type ownedSocksConn struct {
+	net.Conn
+	owner *ownedSocksListener
+}
+
+func (l *ownedSocksListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		c.Close()
+		return nil, net.ErrClosed
+	}
+	owned := &ownedSocksConn{Conn: c, owner: l}
+	l.conns[owned] = true
+	return owned, nil
+}
+func (l *ownedSocksListener) Close() error {
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		return nil
+	}
+	l.closed = true
+	conns := make([]*ownedSocksConn, 0, len(l.conns))
+	for c := range l.conns {
+		conns = append(conns, c)
+	}
+	l.mu.Unlock()
+	err := l.Listener.Close()
+	for _, c := range conns {
+		c.Close()
+	}
+	return err
+}
+func (c *ownedSocksConn) Close() error {
+	c.owner.mu.Lock()
+	delete(c.owner.conns, c)
+	c.owner.mu.Unlock()
+	return c.Conn.Close()
 }
