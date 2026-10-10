@@ -146,3 +146,32 @@ Actual diagnostic result is AUTH code 2; no verified semantic mapping. Observed 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 6: TopSAP Go 协议接入与未压缩测试版
+<!-- trellis-session: v=2 fp=5091b69c3fe0e07a -->
+
+**Date**: 2026-10-10
+**Task**: TopSAP Go 协议接入与未压缩测试版
+**Branch**: `codex/univpn-windows-core`
+
+### Summary
+
+完成 TopSAP 标准模式 Go 认证、资源和 IPv4 数据通道，接入三协议会话管理。真实样本解析及当前原生设备标识对照通过；模拟 TCP/UDP、证书、拒绝、取消、并发隔离、Go test/vet/race 和最终未压缩 Wails 构建通过。交付包 20633088 字节；实际 Go 网关登录及系统 TUN 共存待用户验证，任务保持进行中。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `760f782` | 实现 TopSAP Go 认证资源与 IPv4 TLS 数据通道 |
+| `412247b` | 接入 TopSAP 多会话引擎与 GUI 协议选择 |
+| `69c3d10` | 对齐 TopSAP 原生设备查询的跨网卡缓冲区字节数 |
+| `811c1d5` | build: 更新包含 TopSAP 证书选项的前端资源 |
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户使用新版 EXE 验证真实 TopSAP 登录、内网访问及系统 TUN 共存
