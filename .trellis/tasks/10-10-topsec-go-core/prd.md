@@ -2,18 +2,37 @@
 
 ## Goal
 
-调查本机 TopSAP 3.6.6.18.64.1 的认证与传输协议，目标为同一 EXE 的独立 Go 引擎及多 VPN 并发。
+将天融信 TopSAP 接入现有桌面客户端：协议核心使用 Go，在同一 EXE 内运行，能与 EasyConnect、UniVPN 同时连接。
+
+## Confirmed facts
+
+- 本机安装 TopSAP 3.6.6.18.64.1；用户确认无短信、浏览器认证。图形验证码是否需要尚待确认。
+- 用户询问无可移植协议时能否从抓包和客户端分析开始自行编写；当前工作包含这条研究路径。
+- 现有引擎已支持独立上下文、代理端口、TUN 槽位和按服务器资源分流；UniVPN 的认证 MAC 修正已由用户真实连接确认。
+- 已检查的 GitHub 项目是官方客户端自动化或容器化，未提供可直接移植的完整 TopSAP 网络协议。具体来源和代码边界见 research.md。
 
 ## Requirements
 
-- TBD
+- R1：根据已验证的认证与数据通道报文实现 TopSAP Go 核心，保留原有配置兼容性；不将调用官方客户端包装成 Go 协议实现。
+- R2：接入既有多会话生命周期、IPv4 TCP/UDP TUN 和本地 SOCKS5/HTTP；只应用可验证的服务器资源、路由及 DNS 信息。
+- R3：明确区分认证拒绝与临时网络故障；第一次明确拒绝即停止，不添加自动猜协议、域、验证码或认证变体的兜底。
+- R4：真实凭据、会话令牌、客户端私有日志及抓包留在本机且不进 Git；报告只记录脱敏元数据。真实认证由用户在官方客户端操作取样，避免后台反复登录。
+- R5：完成后交付不经 UPX 压缩的 EXE，分别报告协议样例、模拟测试、Windows 构建与真实网关验证。
 
 ## Acceptance Criteria
 
-- [ ] TBD
+- [ ] 独立报文样例验证认证字段、结果、会话、资源、隧道分帧和心跳；样例不得含真实身份或令牌。
+- [ ] 本地模拟网关覆盖成功、拒绝、损坏报文、取消和断线；IPv4 TCP/UDP 可通过现有网络栈往返。
+- [ ] 新协议与现有两种协议并发时，逐条停止及路由/DNS 清理不影响其他连接。
+- [ ] Go 测试、vet、前端构建与未压缩 Windows EXE 构建通过，源引用和许可记录完整。
+- [ ] 用户授权的实际网关登录及内网访问通过后，才标记真实兼容性成功。
 
-## Notes
+## Blocking evidence and questions
 
-- Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
-- Lightweight tasks can remain PRD-only.
-- For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
+- 图形验证码是否需要；国密、客户端证书和设备策略是否由实际网关要求，不能由产品支持列表推断。
+- 需取得一段可分析的认证及隧道建连样本。目前只有客户端静态接口线索，无完整明文报文和可验证的隧道结构。
+- 普通 TLS 抓包不能直接还原明文；是否有可用客户端日志或 TLS 会话密钥导出需要验证。
+
+## Out of scope
+
+不切换到另一厂商协议，不用官方客户端/Docker 代替 Go 核心，不自动重试认证或 OCR 猜验证码，不推测 DNS 资源，不声称未验证的固件兼容。
