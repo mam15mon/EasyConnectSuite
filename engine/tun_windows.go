@@ -481,7 +481,7 @@ try {
     'cleanup' {
       $rules = @(Get-DnsClientNrptRule | Where-Object { $_.Comment -eq $p.tag })
       $routes = @(foreach ($adapter in @(Get-NetAdapter -IncludeHidden | Where-Object { $_.Name -eq $p.name })) {
-        $addresses = @(Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4)
+        $addresses = @(Get-NetIPAddress | Where-Object { $_.InterfaceIndex -eq $adapter.InterfaceIndex -and $_.AddressFamily -eq 'IPv4' })
         if (@($addresses | Where-Object { $_.IPAddress -eq $p.address }).Count -gt 0) {
           Get-NetRoute -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -PolicyStore ActiveStore |
             Where-Object { $_.Protocol -eq 'NetMgmt' -and $_.RouteMetric -eq 0 -and $_.NextHop -eq '0.0.0.0' -and $_.DestinationPrefix -ne '0.0.0.0/0' }

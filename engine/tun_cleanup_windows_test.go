@@ -27,11 +27,11 @@ function Get-NetAdapter {
   }
 }
 function Get-NetIPAddress {
-  param($InterfaceIndex, $AddressFamily)
-  if ($InterfaceIndex -ne 42 -or $AddressFamily -ne 'IPv4') { throw 'queried another interface' }
+  [pscustomobject]@{ IPAddress = '198.19.128.1'; InterfaceIndex = 43; AddressFamily = 'IPv4' }
+  if ($p.scenario -eq 'no-address') { return }
   $address = '198.19.128.1'
   if ($p.scenario -eq 'wrong-address') { $address = '192.0.2.1' }
-  [pscustomobject]@{ IPAddress = $address }
+  [pscustomobject]@{ IPAddress = $address; InterfaceIndex = 42; AddressFamily = 'IPv4' }
 }
 function Get-NetRoute {
   param($InterfaceIndex, $AddressFamily, $PolicyStore)
@@ -73,6 +73,7 @@ func TestStaleTUNCleanupScopeAndProbe(t *testing.T) {
 		{"residue", true, true, 0, 0, 0, false},
 		{"residue", false, true, 1, 1, 1, false},
 		{"dns-only", false, true, 1, 0, 1, false},
+		{"no-address", false, true, 1, 0, 1, false},
 		{"wrong-address", false, false, 0, 0, 0, false},
 		{"failure", false, true, 0, 0, 0, true},
 	} {
