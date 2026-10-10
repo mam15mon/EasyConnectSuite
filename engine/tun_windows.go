@@ -491,7 +491,7 @@ try {
       if ($pending -and -not $p.probe) {
         foreach ($rule in $rules) { Remove-DnsClientNrptRule -Name $rule.Name -Force }
         foreach ($route in $routes) {
-          $route | Remove-NetRoute -Confirm:$false
+          $route | Remove-NetRoute -PolicyStore ActiveStore -Confirm:$false
           $removed += $route.DestinationPrefix
         }
         Clear-DnsClientCache

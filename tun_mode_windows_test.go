@@ -23,6 +23,52 @@ func tunModeTestApp(t *testing.T) *App {
 	}
 }
 
+func TestStaleTUNRecoveryElevationAndErrors(t *testing.T) {
+	for _, test := range []struct {
+		name                      string
+		elevated, pending, launch bool
+		cleanupError, launchError error
+	}{
+		{name: "clean"},
+		{name: "needs administrator", pending: true, launch: true},
+		{name: "already elevated", elevated: true, pending: true},
+		{name: "cleanup failed", elevated: true, pending: true, cleanupError: errors.New("cleanup failed")},
+		{name: "probe failed", cleanupError: errors.New("probe failed")},
+		{name: "cancelled elevation", pending: true, launch: true, launchError: errors.New("cancelled")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			app := tunModeTestApp(t)
+			launched := false
+			restarting, err := app.recoverStaleTUN(test.elevated, func(probe bool) (bool, error) {
+				if probe == test.elevated {
+					t.Fatal("wrong cleanup privilege mode")
+				}
+				return test.pending, test.cleanupError
+			}, func(path string) error {
+				launched = true
+				if path != app.configPath {
+					t.Fatal("lost config path")
+				}
+				return test.launchError
+			})
+			wantRestart := test.launch && test.launchError == nil
+			if launched != test.launch || restarting != wantRestart || app.restarting != wantRestart {
+				t.Fatalf("launch=%v restart=%v app.restarting=%v", launched, restarting, app.restarting)
+			}
+			wantErr := test.cleanupError
+			if wantErr == nil {
+				wantErr = test.launchError
+			}
+			if !errors.Is(err, wantErr) {
+				t.Fatalf("error=%v, want %v", err, wantErr)
+			}
+			if app.appConfig.ActiveProfileID != "second" || app.appConfig.Profiles[1].TUNMode {
+				t.Fatal("cleanup changed VPN configuration")
+			}
+		})
+	}
+}
+
 func readTUNTestConfig(t *testing.T, app *App) AppConfig {
 	t.Helper()
 	data, err := os.ReadFile(app.configPath)
