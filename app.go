@@ -19,24 +19,25 @@ import (
 
 // Profile represents a single VPN configuration
 type Profile struct {
-	ID               string `json:"id"`
-	Protocol         string `json:"protocol"`
-	Domain           string `json:"domain"`
-	SocksPort        int    `json:"socksPort"`
-	HTTPPort         int    `json:"httpPort"`
-	Name             string `json:"name"`
-	Server           string `json:"server"`
-	Port             int    `json:"port"`
-	Username         string `json:"username"`
-	Password         string `json:"password"`
-	Enable2FA        bool   `json:"enable2FA"`
-	TotpSecret       string `json:"totpSecret"`
-	BindInterface    string `json:"bindInterface"`
-	TUNMode          bool   `json:"tunMode"`
-	DisableProxy     bool   `json:"disableProxy"`
-	DisableZjuConfig bool   `json:"disableZjuConfig"`
-	DisableKeepAlive bool   `json:"disableKeepAlive"`
-	KeepAliveURL     string `json:"keepAliveUrl"`
+	ID                 string `json:"id"`
+	Protocol           string `json:"protocol"`
+	Domain             string `json:"domain"`
+	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
+	SocksPort          int    `json:"socksPort"`
+	HTTPPort           int    `json:"httpPort"`
+	Name               string `json:"name"`
+	Server             string `json:"server"`
+	Port               int    `json:"port"`
+	Username           string `json:"username"`
+	Password           string `json:"password"`
+	Enable2FA          bool   `json:"enable2FA"`
+	TotpSecret         string `json:"totpSecret"`
+	BindInterface      string `json:"bindInterface"`
+	TUNMode            bool   `json:"tunMode"`
+	DisableProxy       bool   `json:"disableProxy"`
+	DisableZjuConfig   bool   `json:"disableZjuConfig"`
+	DisableKeepAlive   bool   `json:"disableKeepAlive"`
+	KeepAliveURL       string `json:"keepAliveUrl"`
 }
 
 // AppConfig stores all profiles and active selection

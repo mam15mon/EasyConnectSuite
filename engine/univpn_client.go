@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -32,12 +33,17 @@ type uniVPNClient struct {
 	updateIP func(net.IP) error
 }
 
-func newUniVPNClient(ctx context.Context, conf configs.Config, domain string, underlay client.UnderlayDialer) *uniVPNClient {
+func newUniVPNClient(ctx context.Context, conf configs.Config, domain string, insecureSkipVerify bool, underlay client.UnderlayDialer) *uniVPNClient {
 	ctx, cancel := context.WithCancel(ctx)
-	return &uniVPNClient{ctx: ctx, cancel: cancel, options: univpn.Options{
+	c := &uniVPNClient{ctx: ctx, cancel: cancel, options: univpn.Options{
 		Server: net.JoinHostPort(conf.ServerAddress, strconv.Itoa(conf.ServerPort)), Domain: domain,
 		Username: conf.Username, Password: conf.Password, DialContext: underlay.DialContext,
 	}}
+	if insecureSkipVerify {
+		// Explicit per-profile opt-in. Dial still binds both channels to one key.
+		c.options.TLSConfig = &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}
+	}
+	return c
 }
 func (c *uniVPNClient) Setup() error {
 	c.mu.Lock()

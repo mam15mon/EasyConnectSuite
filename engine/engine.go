@@ -55,10 +55,11 @@ type ResourceEntry struct {
 }
 
 type Options struct {
-	Config  configs.Config
-	Context context.Context
-	Domain  string
-	TUNSlot int
+	Config             configs.Config
+	Context            context.Context
+	Domain             string
+	InsecureSkipVerify bool
+	TUNSlot            int
 
 	// OnLog receives every log line produced by the engine.
 	OnLog func(line string)
@@ -133,7 +134,7 @@ func Start(opts Options) (*Engine, error) {
 	var vpnClient managedClient
 	switch conf.Protocol {
 	case "univpn":
-		vpnClient = newUniVPNClient(e.ctx, conf, opts.Domain, underlayDialer)
+		vpnClient = newUniVPNClient(e.ctx, conf, opts.Domain, opts.InsecureSkipVerify, underlayDialer)
 	case "easyconnect":
 		vpnClient = easyconnectclient.NewClient(easyconnectclient.Options{
 			OwnedLifecycle: true,

@@ -246,6 +246,13 @@ app.innerHTML = `
           <input class="form-input" id="form-domain" placeholder="网关配置的认证域" />
           <small>当前支持账号密码与 IPv4；内网域名需系统已有 DNS 配置。</small>
         </div>
+        <div id="form-cert-container" hidden>
+          <label class="toggle-row">
+            <input type="checkbox" id="form-insecure-skip-verify" />
+            <span>忽略服务器证书校验（不安全）</span>
+          </label>
+          <small>仅对当前 UniVPN 配置生效；开启后无法验证网关身份，账号密码可能被冒充的网关获取。</small>
+        </div>
         <div class="form-group">
           <label class="form-label">节点名称（备注）</label>
           <input type="text" class="form-input" id="form-name" placeholder="例如：公司生产环境、学校内网" />
@@ -387,6 +394,7 @@ const modalTitle = document.getElementById('modal-title');
 const formId = document.getElementById('form-id');
 const formProtocol = document.getElementById('form-protocol');
 const formDomain = document.getElementById('form-domain');
+const formInsecureSkipVerify = document.getElementById('form-insecure-skip-verify');
 const formSocksPort = document.getElementById('form-socks-port');
 const formHTTPPort = document.getElementById('form-http-port');
 const formName = document.getElementById('form-name');
@@ -563,6 +571,7 @@ function openEditModal(profile) {
   formPort.value = profile ? profile.port : 443;
   formUsername.value = profile ? profile.username : '';
   formPassword.value = profile ? profile.password : '';
+  formInsecureSkipVerify.checked = !!profile?.insecureSkipVerify;
   formEnable2FA.checked = profile ? !!profile.enable2FA : false;
   formTotp.value = (profile && profile.totpSecret) ? profile.totpSecret : '';
   formTotpContainer.style.display = formEnable2FA.checked ? 'block' : 'none';
@@ -622,6 +631,7 @@ document.getElementById('btn-modal-save').addEventListener('click', async () => 
     id: formId.value.trim(),
     protocol: formProtocol.value,
     domain: formProtocol.value === "univpn" ? formDomain.value.trim() : "",
+    insecureSkipVerify: formProtocol.value === "univpn" && formInsecureSkipVerify.checked,
     socksPort: Number(formSocksPort.value) || 0,
     httpPort: Number(formHTTPPort.value) || 0,
     name: formName.value.trim() || '未命名配置',
@@ -892,6 +902,7 @@ if (document.readyState === 'loading') {
 function updateProtocolFields() {
   const uni = formProtocol.value === 'univpn';
   document.getElementById('form-domain-container').hidden = !uni;
+  document.getElementById('form-cert-container').hidden = !uni;
   for (const input of [formEnable2FA, formEnableKeepAlive, formDisableKeepAlive]) {
     input.closest('.toggle-row').style.display = uni ? 'none' : '';
   }

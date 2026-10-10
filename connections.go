@@ -229,7 +229,7 @@ func (a *App) startConnectionID(id string, start func(engine.Options) (vpnEngine
 		a.mu.Unlock()
 		return err.Error()
 	}
-	opts := engine.Options{Config: a.buildEngineConfig(p), Context: ctx, Domain: p.Domain, TUNSlot: slot, LogFile: filepath.Join(logDir, "engine.log"),
+	opts := engine.Options{Config: a.buildEngineConfig(p), Context: ctx, Domain: p.Domain, InsecureSkipVerify: p.InsecureSkipVerify, TUNSlot: slot, LogFile: filepath.Join(logDir, "engine.log"),
 		OnStatus: func(s engine.Status) { a.connectionStatus(p.ID, c, s) }, OnResources: func(rows []engine.ResourceEntry) { a.connectionResources(p.ID, c, rows) }}
 	a.mu.Unlock()
 	eng, err := start(opts)
