@@ -1,12 +1,11 @@
 # Execution plan
 
-- [x] Install Trellis and bootstrap project specs.
-- [x] Inspect and pin the UniVPN source and native build scripts.
-- [ ] Install required MSYS2 MINGW64 packages.
-- [ ] Verify official OpenConnect archive SHA-256 and apply all four patches.
-- [ ] Build the Windows core and stage native dependencies.
-- [ ] Run CLI startup/protocol checks and meaningful local protocol tests.
-- [ ] Record evidence, failure fixes and remaining compatibility limits.
-- [ ] Verify Trellis state and commit the report.
-
-Live gateway testing is a subsequent gate, requiring the actual client version, authentication mode and an authorized gateway. Do not use existing EasyConnect credentials against a UniVPN endpoint.
+- [x] Install Trellis and populate project specs.
+- [x] Pin and inspect protocol/C reference source.
+- [x] Verify OpenConnect archive and correct patch application.
+- [x] Run native codec and upstream Python tests; record Windows C build failure.
+- [x] Implement Go framing, authentication fields and address/route parsing.
+- [ ] Implement dual-TLS session, heartbeats and IPv4 packet transport.
+- [ ] Test against local TLS mock gateways and malformed input.
+- [ ] Run Go tests, Windows compilation and vet.
+- [ ] Record evidence and keep live gateway/GUI integration pending.

@@ -1,18 +1,16 @@
-# UniVPN Windows core validation
+# UniVPN Go protocol core
 
 ## Requirement
-The user approved investigating Huawei/Leagsoft UniVPN as the next backend for a unified VPN client and requested installing Mindfold Trellis to support the work.
-
-## Scope
-Validate the independent experimental OpenConnect-based UniVPN engine on Windows before wiring it into the existing desktop. Preserve current EasyConnect behavior.
+The user approved Huawei/Leagsoft UniVPN as the next backend, installed Mindfold Trellis, and steered the implementation toward Go rather than bundling the C/OpenConnect engine. Authentication currently uses username and password.
 
 ## Acceptance
-- Official Trellis CLI and Codex project integration work; concrete project specs replace empty templates.
-- A pinned UniVPN patch source and pinned upstream OpenConnect archive are used, with archive SHA-256 verification.
-- The Windows core builds, starts and lists the experimental UniVPN protocol.
-- Local protocol tests distinguish authentication refusal, frame handling and transport from actual gateway interoperability.
-- Record reproducible commands, source revisions, dependencies and limitations.
-- Live compatibility requires the user's client version, authentication method and an authorized test gateway; do not claim it without evidence.
+- Trellis CLI, Codex project files, concrete specs and task context work.
+- Implement the observed password/dual-TLS IPv4 subset in Go using the existing protocol documentation as reference.
+- Validate fragmented framing, authentication refusal, assigned IP/routes, matching TLS identities, packet round trips, cancellation and control-channel failure against local TLS fixtures.
+- Windows Go compilation, package tests and vet pass.
+- Record protocol source revision, license, evidence and unsupported features.
+- Do not claim live gateway compatibility or GUI support until separately verified.
 
 ## Constraints
-No new fallback mechanisms. No credentials in commands, logs, task documents or Git. No GUI support claims before backend verification.
+No protocol fallback. No insecure automatic TLS downgrade. No credentials in logs/Git.
+Preserve the existing EasyConnect backend. GUI integration and real gateway tests are subsequent gates; the user's gateway and exact version are not yet available.
