@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	goruntime "runtime"
+	"strings"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -22,6 +24,7 @@ const (
 	WM_POWERBROADCAST = 0x0218
 	WM_USER           = 0x0400
 	WM_TRAYICON       = WM_USER + 101
+	WM_TRAYQUIT       = WM_USER + 102
 	WM_LBUTTONUP      = 0x0202
 	WM_RBUTTONUP      = 0x0205
 	WM_LBUTTONDBLCLK  = 0x0203
@@ -56,6 +59,7 @@ var (
 	procDestroyMenu         = user32.NewProc("DestroyMenu")
 	procGetCursorPos        = user32.NewProc("GetCursorPos")
 	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
+	procPostMessageW        = user32.NewProc("PostMessageW")
 
 	procShell_NotifyIconW = shell32.NewProc("Shell_NotifyIconW")
 	procExtractIconExW    = shell32.NewProc("ExtractIconExW")
@@ -113,9 +117,16 @@ var (
 	globalTrayApp  *App
 	globalTrayHwnd uintptr
 	globalNID      NOTIFYICONDATA
+	trayIconMu     sync.Mutex
+	trayClosed     bool
 )
 
 func trayWndProc(hwnd uintptr, msg uint32, wParam uintptr, lParam uintptr) uintptr {
+	if msg == WM_TRAYQUIT {
+		procDestroyWindow.Call(hwnd)
+		procPostQuitMessage.Call(0)
+		return 0
+	}
 	if msg == WM_POWERBROADCAST && globalTrayApp != nil {
 		if globalTrayApp.logPowerEvent(wParam) {
 			return 1
@@ -146,9 +157,112 @@ func trayWndProc(hwnd uintptr, msg uint32, wParam uintptr, lParam uintptr) uintp
 	return ret
 }
 
+func appendTrayMenu(menu, flags, id uintptr, text string) {
+	// Ampersands in profile names are text, not native menu accelerators.
+	ptr, _ := syscall.UTF16PtrFromString(strings.ReplaceAll(text, "&", "&&"))
+	procAppendMenuW.Call(menu, flags, id, uintptr(unsafe.Pointer(ptr)))
+}
+
+func showTrayMenu(app *App, hwnd uintptr, pt POINT) {
+	statuses := app.trayStatuses()
+	menu, _, _ := procCreatePopupMenu.Call()
+	defer procDestroyMenu.Call(menu)
+	appendTrayMenu(menu, MF_GRAYED, 0, traySummary(statuses))
+	appendTrayMenu(menu, MF_STRING, 1003, "打开 VPN 工作台")
+	procAppendMenuW.Call(menu, MF_SEPARATOR, 0, 0)
+	actions := make(map[uintptr]trayAction, len(statuses)*2)
+	var running bool
+	for i, s := range statuses {
+		submenu, _, _ := procCreatePopupMenu.Call()
+		protocol := s.Protocol
+		switch protocol {
+		case "easyconnect":
+			protocol = "EasyConnect"
+		case "univpn":
+			protocol = "UniVPN"
+		case "topsec":
+			protocol = "TopSAP"
+		}
+		flags := uintptr(MF_POPUP)
+		if s.Running && s.State == "connected" {
+			flags |= MF_CHECKED
+		}
+		appendTrayMenu(menu, flags, submenu, fmt.Sprintf("%s · %s · %s", s.ActiveProfile, protocol, trayState(s)))
+		label, action := trayLifecycleAction(s)
+		id := uintptr(2000 + i*2)
+		actions[id] = action
+		flags = MF_STRING
+		if s.State == "stopping" {
+			flags |= MF_GRAYED
+		}
+		appendTrayMenu(submenu, flags, id, label)
+		actions[id+1] = trayAction{kind: "details", profileID: s.ProfileID}
+		appendTrayMenu(submenu, MF_STRING, id+1, "查看详情")
+		running = running || s.Running
+	}
+	if len(statuses) == 0 {
+		appendTrayMenu(menu, MF_GRAYED, 0, "暂无 VPN 配置，请打开工作台添加")
+	}
+	procAppendMenuW.Call(menu, MF_SEPARATOR, 0, 0)
+	flags := uintptr(MF_STRING)
+	if !running {
+		flags |= MF_GRAYED
+	}
+	appendTrayMenu(menu, flags, 1002, "断开全部 VPN")
+	appendTrayMenu(menu, MF_STRING, 1004, "退出程序（断开全部）")
+	cmd, _, _ := procTrackPopupMenu.Call(menu, TPM_RIGHTBUTTON|TPM_RETURNCMD, uintptr(pt.X), uintptr(pt.Y), 0, hwnd, 0)
+	switch cmd {
+	case 1003:
+		showTrayWorkspace(app)
+	case 1004:
+		go func() {
+			app.shutdown(app.ctx)
+			if app.ctx != nil {
+				wailsruntime.Quit(app.ctx)
+			}
+		}()
+	case 1002:
+		go app.executeTrayAction(trayAction{kind: "disconnect_all"})
+	default:
+		if action, ok := actions[cmd]; ok {
+			if action.kind == "details" {
+				if app.SetActiveProfile(action.profileID) {
+					if app.ctx != nil {
+						wailsruntime.EventsEmit(app.ctx, "profile-switched", action.profileID)
+					}
+					showTrayWorkspace(app)
+				}
+			} else {
+				go func() {
+					result := app.executeTrayAction(action)
+					if result != "OK" {
+						app.mu.Lock()
+						c := app.connections[action.profileID]
+						cancelled := c != nil && c.ctx.Err() != nil && c.status.State != "error"
+						app.mu.Unlock()
+						if !cancelled && app.ctx != nil {
+							_, _ = wailsruntime.MessageDialog(app.ctx, wailsruntime.MessageDialogOptions{Type: wailsruntime.ErrorDialog, Title: "VPN 操作失败", Message: result})
+						}
+					}
+				}()
+			}
+		}
+	}
+}
+
+func showTrayWorkspace(app *App) {
+	if app.ctx != nil {
+		wailsruntime.WindowShow(app.ctx)
+		wailsruntime.WindowUnminimise(app.ctx)
+	}
+}
+
 // StartTray initializes Windows system tray icon
 func StartTray(app *App, ctx context.Context) {
 	globalTrayApp = app
+	trayIconMu.Lock()
+	trayClosed = false
+	trayIconMu.Unlock()
 
 	go func() {
 		goruntime.LockOSThread()
@@ -174,7 +288,6 @@ func StartTray(app *App, ctx context.Context) {
 			0, 0, 0, 0,
 			0, 0, hInstance, 0,
 		)
-		globalTrayHwnd = hwnd
 
 		// Extract custom high-resolution icon from the compiled executable
 		exePath, _ := os.Executable()
@@ -195,6 +308,14 @@ func StartTray(app *App, ctx context.Context) {
 			hIcon, _, _ = procLoadIconW.Call(0, uintptr(IDI_APPLICATION))
 		}
 
+		tip := trayTooltip(app.trayStatuses())
+		trayIconMu.Lock()
+		if trayClosed {
+			trayIconMu.Unlock()
+			procDestroyWindow.Call(hwnd)
+			return
+		}
+		globalTrayHwnd = hwnd
 		globalNID = NOTIFYICONDATA{
 			cbSize:           uint32(unsafe.Sizeof(NOTIFYICONDATA{})),
 			hWnd:             hwnd,
@@ -202,17 +323,11 @@ func StartTray(app *App, ctx context.Context) {
 			uFlags:           NIF_MESSAGE | NIF_ICON | NIF_TIP,
 			uCallbackMessage: WM_TRAYICON,
 			hIcon:            hIcon,
-		}
-
-		tipStr := "EasyConnect VPN (未连接)"
-		tipRunes := []rune(tipStr)
-		for i, r := range tipRunes {
-			if i < 127 {
-				globalNID.szTip[i] = uint16(r)
-			}
+			szTip:            trayTooltipBuffer(tip),
 		}
 
 		procShell_NotifyIconW.Call(NIM_ADD, uintptr(unsafe.Pointer(&globalNID)))
+		trayIconMu.Unlock()
 
 		var msg MSG
 		for {
@@ -224,24 +339,18 @@ func StartTray(app *App, ctx context.Context) {
 			procDispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
 		}
 
-		procShell_NotifyIconW.Call(NIM_DELETE, uintptr(unsafe.Pointer(&globalNID)))
+		RemoveTrayIcon()
 	}()
 }
 
 // UpdateTrayTooltip modifies the tooltip string dynamically
 func UpdateTrayTooltip(tip string) {
+	trayIconMu.Lock()
+	defer trayIconMu.Unlock()
 	if globalTrayHwnd == 0 || globalNID.hWnd == 0 {
 		return
 	}
-	for i := range globalNID.szTip {
-		globalNID.szTip[i] = 0
-	}
-	tipRunes := []rune(tip)
-	for i, r := range tipRunes {
-		if i < 127 {
-			globalNID.szTip[i] = uint16(r)
-		}
-	}
+	globalNID.szTip = trayTooltipBuffer(tip)
 	globalNID.uFlags = NIF_TIP
 	procShell_NotifyIconW.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&globalNID)))
 	globalNID.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
@@ -249,13 +358,15 @@ func UpdateTrayTooltip(tip string) {
 
 // RemoveTrayIcon removes the icon from system tray
 func RemoveTrayIcon() {
+	trayIconMu.Lock()
+	defer trayIconMu.Unlock()
+	trayClosed = true
 	if globalNID.hWnd != 0 {
 		procShell_NotifyIconW.Call(NIM_DELETE, uintptr(unsafe.Pointer(&globalNID)))
 		globalNID.hWnd = 0
 	}
 	if globalTrayHwnd != 0 {
-		procDestroyWindow.Call(globalTrayHwnd)
-		procPostQuitMessage.Call(0)
+		procPostMessageW.Call(globalTrayHwnd, WM_TRAYQUIT, 0, 0)
 		globalTrayHwnd = 0
 	}
 }
