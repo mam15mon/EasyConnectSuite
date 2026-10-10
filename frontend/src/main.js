@@ -7,43 +7,51 @@ const app = document.querySelector('#app');
 
 app.innerHTML = `
   <header class="top">
-    <div class="brand"><span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6z"/><path d="m8 12 3 3 5-6"/></svg></span><div><span class="brand-name">VPN 工作台</span><span class="brand-caption">EasyConnect Suite</span></div></div>
+    <div class="brand"><span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6z"/><path d="m8 12 3 3 5-6"/></svg></span><span class="brand-name">VPN 工作台</span><span class="brand-caption">EasyConnect Suite</span></div>
     <div class="top-status" aria-live="polite"><span class="summary-online"><i></i><strong id="global-connected">0</strong> 已连接</span><span id="global-pending">0 连接中</span><span id="global-errors" hidden></span></div>
-    <button class="btn-solid" id="btn-new-profile">＋ 新建 VPN</button>
   </header>
   <main class="workspace">
-    <section class="connections-panel" aria-labelledby="connections-heading">
-      <div class="section-head"><div><h1 id="connections-heading">全部连接 <span id="profile-count" class="panel-count-badge">0</span></h1><p>各条 VPN 独立运行，点击名称查看详情。</p></div><div class="overview-actions"><div class="view-filters" aria-label="连接筛选"><button class="active" data-connection-filter="all" aria-pressed="true">全部</button><button data-connection-filter="running" aria-pressed="false">运行中</button></div><button class="btn-plain danger" id="btn-stop-all" disabled>断开全部</button></div></div>
-      <div class="connection-columns" aria-hidden="true"><span>连接名称 / 网关</span><span>状态 / 时长</span><span>访问方式</span><span>操作</span></div>
+    <aside class="connections-panel" aria-labelledby="connections-heading">
+      <div class="section-head"><h1 id="connections-heading">我的连接 <span id="profile-count" class="panel-count-badge">0</span></h1><button class="add-connection" id="btn-new-profile" aria-label="新建 VPN" title="新建 VPN">＋</button></div>
+      <div class="view-filters" aria-label="连接筛选"><button class="active" data-connection-filter="all" aria-pressed="true">全部</button><button data-connection-filter="running" aria-pressed="false">运行中</button></div>
       <div class="connection-list" id="connection-list" aria-label="VPN 连接列表"></div>
-    </section>
-    <div class="detail-deck">
-      <section class="detail-panel" aria-labelledby="detail-name">
-        <div class="detail-heading"><div><span class="section-label">当前查看</span><h2 id="detail-name">选择一条 VPN</h2><span id="detail-gateway" class="subtle"></span></div><span class="connection-state" id="state-word">未连接</span></div>
-        <select class="profile-select" id="profile-select" aria-label="切换查看的 VPN"></select>
-        <p class="state-note" id="state-note">添加配置后即可连接。</p>
-        <div class="detail-actions"><button class="master-switch" id="btn-toggle"><span id="btn-label">连接</span></button><button class="btn-plain" id="btn-edit-profile">编辑配置</button><button class="btn-plain danger" id="btn-del-profile">删除</button></div>
-        <div class="detail-duration"><span>连接时长</span><span id="uptime-display">00:00:00</span></div>
-        <div class="mode-controls">
-          <label class="tun-mode-control" id="tun-mode-note" title="开启时需要管理员授权"><div><span class="tun-mode-title">TUN 分流</span><small>按授权资源接管系统流量</small></div><input type="checkbox" id="tun-mode-toggle" role="switch" aria-label="TUN 分流" disabled /></label>
-          <label class="tun-mode-control" id="proxy-mode-note"><div><span class="tun-mode-title">本地代理</span><small>SOCKS5 / HTTP 代理端口</small></div><input type="checkbox" id="proxy-mode-toggle" role="switch" aria-label="本地代理" disabled /></label>
-        </div>
-
-      </section>
-      <section class="resources-panel" aria-labelledby="resources-heading">
-        <div class="resource-heading"><div><h2 id="resources-heading">授权资源 <span class="panel-count-badge" id="route-count"></span></h2><p id="resource-owner">当前连接的内网 IP 与域名</p></div><button class="btn-plain" id="btn-refresh-resources" title="刷新当前连接的资源视图">刷新</button></div>
-        <div class="telemetry-grid">
-          <button class="telemetry-item" id="item-client-ip" title="复制虚拟 IP"><span class="telemetry-label">虚拟 IP</span><span class="telemetry-val pending" id="client-ip-val">—</span></button>
-          <button class="telemetry-item" id="item-dns" title="复制内网 DNS"><span class="telemetry-label">内网 DNS</span><span class="telemetry-val pending" id="dns-val">—</span></button>
-          <button class="telemetry-item" id="item-socks" title="复制 SOCKS5 地址"><span class="telemetry-label">SOCKS5</span><span class="telemetry-val" id="socks-port-val">—</span></button>
-          <button class="telemetry-item" id="item-http" title="复制 HTTP 代理地址"><span class="telemetry-label">HTTP 代理</span><span class="telemetry-val" id="http-port-val">—</span></button>
-        </div>
-        <div class="routes-search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input class="routes-filter" id="routes-filter" type="search" placeholder="筛选 IP、域名或端口" aria-label="筛选当前 VPN 资源" /></div>
+      <div class="sidebar-footer"><button class="btn-plain danger" id="btn-stop-all" disabled>断开全部连接</button><button class="log-directory" id="log-path-hint" title="复制日志目录">日志目录</button><span id="preview-indicator" hidden>演示模式 · 模拟数据</span></div>
+    </aside>
+    <section class="detail-workspace" aria-labelledby="detail-name">
+      <div class="detail-header"><div><h2 id="detail-name">选择一条 VPN</h2><span id="detail-gateway" class="subtle"></span></div><div class="detail-actions"><button class="btn-plain" id="btn-edit-profile">编辑</button><button class="btn-icon danger" id="btn-del-profile" aria-label="删除当前配置" title="删除当前配置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg></button><button class="master-switch" id="btn-toggle"><span id="btn-label">连接</span></button></div></div>
+      <select class="profile-select" id="profile-select" aria-label="切换查看的 VPN" hidden></select>
+      <div class="status-strip"><span class="connection-state" id="state-word">未连接</span><span class="detail-duration">连接时长 <span id="uptime-display">00:00:00</span></span></div>
+      <p class="state-note" id="state-note">选择或新建配置后连接。</p>
+      <div class="telemetry-grid">
+        <button class="telemetry-item" id="item-client-ip" title="复制虚拟 IP"><span class="telemetry-label">虚拟 IP</span><span class="telemetry-val pending" id="client-ip-val">—</span></button>
+        <button class="telemetry-item" id="item-dns" title="复制内网 DNS"><span class="telemetry-label">内网 DNS</span><span class="telemetry-val pending" id="dns-val">—</span></button>
+        <button class="telemetry-item" id="item-socks" title="复制 SOCKS5 地址"><span class="telemetry-label">SOCKS5</span><span class="telemetry-val" id="socks-port-val">—</span></button>
+        <button class="telemetry-item" id="item-http" title="复制 HTTP 代理地址"><span class="telemetry-label">HTTP 代理</span><span class="telemetry-val" id="http-port-val">—</span></button>
+      </div>
+      <nav class="workspace-tabs" role="tablist" aria-label="连接详情">
+        <button role="tab" id="tab-resources" data-workspace-page="resources" aria-controls="page-resources" aria-selected="true">授权资源</button>
+        <button role="tab" id="tab-settings" data-workspace-page="settings" aria-controls="page-settings" aria-selected="false" tabindex="-1">连接设置</button>
+        <button role="tab" id="tab-logs" data-workspace-page="logs" aria-controls="page-logs" aria-selected="false" tabindex="-1">运行记录</button>
+      </nav>
+      <section class="workspace-page resources-panel" id="page-resources" role="tabpanel" aria-labelledby="tab-resources">
+        <div class="resource-heading"><span>服务器授权的访问范围 <span class="panel-count-badge" id="route-count"></span></span><button class="btn-plain" id="btn-refresh-resources" title="刷新当前连接的资源视图">刷新</button><p id="resource-owner" hidden></p></div>
+        <div class="routes-search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input class="routes-filter" id="routes-filter" type="search" placeholder="搜索 IP、域名或端口" aria-label="筛选当前 VPN 资源" /></div>
         <div class="route-table" id="route-table"><div class="route-empty">连接后显示服务器授权的资源。</div></div>
       </section>
-    </div>
+      <section class="workspace-page" id="page-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+        <p class="page-description">访问方式分别对当前配置生效，断开后可修改。</p>
+        <div class="mode-controls">
+          <label class="tun-mode-control" id="tun-mode-note" title="开启时需要管理员授权"><div><span class="tun-mode-title">TUN 分流</span><small>系统流量按服务器授权资源进入 VPN。首次开启会提示申请管理员权限。</small></div><input type="checkbox" id="tun-mode-toggle" role="switch" aria-label="TUN 分流" disabled /></label>
+          <label class="tun-mode-control" id="proxy-mode-note"><div><span class="tun-mode-title">本地代理</span><small>为当前 VPN 提供独立的 SOCKS5 和 HTTP 端口，可与 TUN 同时使用。</small></div><input type="checkbox" id="proxy-mode-toggle" role="switch" aria-label="本地代理" disabled /></label>
+        </div>
+      </section>
+      <section class="workspace-page logs-panel" id="page-logs" role="tabpanel" aria-labelledby="tab-logs" hidden>
+        <div class="resource-heading"><span>当前配置的最近 200 条记录</span><button class="btn-plain" id="btn-refresh-logs">刷新记录</button></div><p class="page-description">记录阶段、停止原因、重连与收发统计。完整日志保存在日志目录。</p>
+        <pre id="profile-log-output" class="profile-log-output" tabindex="0" aria-label="当前 VPN 运行日志">连接后显示运行记录。</pre>
+      </section>
+      <footer class="workspace-footer">关闭窗口后，连接继续在托盘运行。</footer>
+    </section>
   </main>
-  <footer class="hint-bar"><span id="preview-indicator" hidden>演示预览 · 使用模拟数据</span><span>关闭窗口后，各条连接继续在托盘运行。</span><button id="log-path-hint" title="复制日志目录">日志目录</button></footer>
   <!-- Profile 编辑弹窗 -->
   <div class="modal-overlay" id="modal-overlay">
     <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
