@@ -401,14 +401,25 @@ func (t *tunIngress) answerDNS(data []byte) ([]byte, error) {
 	}
 	if resources, ok := resolvedCtx.Value(resolve.ContextKeyDomainResource).([]client.DomainResource); ok && len(resources) > 0 {
 		address, _ := netip.AddrFromSlice(ip.To4())
+		tunPolicies.Lock()
 		t.mu.Lock()
 		if t.closed || t.policy != policy {
 			t.mu.Unlock()
+			tunPolicies.Unlock()
 			response.Rcode = dns.RcodeServerFailure
 			return response.Pack()
 		}
 		if !ipHasResourceRoute(policy.ips, ip) {
-			err = t.routes.add(address.String() + "/32")
+			prefix := address.String() + "/32"
+			err = checkTUNConflicts(t, []string{prefix}, nil)
+			if err == nil {
+				err = t.routes.add(prefix)
+			}
+			if err == nil && t.device != nil {
+				claim := tunPolicies.claims[t]
+				claim.prefixes = append(claim.prefixes, prefix)
+				tunPolicies.claims[t] = claim
+			}
 		}
 		if err == nil {
 			existing := t.bindings[address]
@@ -425,6 +436,7 @@ func (t *tunIngress) answerDNS(data []byte) ([]byte, error) {
 			t.bindings[address] = existing
 		}
 		t.mu.Unlock()
+		tunPolicies.Unlock()
 		if err != nil {
 			response.Rcode = dns.RcodeServerFailure
 			return response.Pack()

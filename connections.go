@@ -199,6 +199,8 @@ func (a *App) startConnection(start func(engine.Options) (vpnEngine, error)) str
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		delete(a.connections, p.ID)
 		cancel()
+		a.status = disconnectedStatus(p)
+		a.emitConnectionLocked(a.status, nil)
 		a.mu.Unlock()
 		return err.Error()
 	}

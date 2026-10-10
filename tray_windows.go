@@ -6,7 +6,6 @@ import (
 	"os"
 	goruntime "runtime"
 	"syscall"
-	"time"
 	"unsafe"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -91,21 +90,21 @@ type MSG struct {
 }
 
 type NOTIFYICONDATA struct {
-	cbSize           uint32
-	hWnd             uintptr
-	uID              uint32
-	uFlags           uint32
-	uCallbackMessage uint32
-	hIcon            uintptr
-	szTip            [128]uint16
-	dwState          uint32
-	dwStateMask      uint32
-	szInfo           [256]uint16
+	cbSize            uint32
+	hWnd              uintptr
+	uID               uint32
+	uFlags            uint32
+	uCallbackMessage  uint32
+	hIcon             uintptr
+	szTip             [128]uint16
+	dwState           uint32
+	dwStateMask       uint32
+	szInfo            [256]uint16
 	uTimeoutOrVersion uint32
-	szInfoTitle      [64]uint16
-	dwInfoFlags      uint32
-	guidItem         [16]byte
-	hBalloonIcon     uintptr
+	szInfoTitle       [64]uint16
+	dwInfoFlags       uint32
+	guidItem          [16]byte
+	hBalloonIcon      uintptr
 }
 
 var (
@@ -239,10 +238,6 @@ func trayWndProc(hwnd uintptr, msg uint32, wParam uintptr, lParam uintptr) uintp
 			case cmd >= 2000 && int(cmd-2000) < len(cfg.Profiles):
 				targetProfile := cfg.Profiles[cmd-2000]
 				go func() {
-					if globalTrayApp.GetStatus().Running {
-						globalTrayApp.StopVPN()
-						time.Sleep(300 * time.Millisecond)
-					}
 					globalTrayApp.SetActiveProfile(targetProfile.ID)
 					globalTrayApp.StartVPN()
 					if globalTrayApp.ctx != nil {
