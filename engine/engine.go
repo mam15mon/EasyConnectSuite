@@ -133,6 +133,8 @@ func Start(opts Options) (*Engine, error) {
 	// not importable from outside the module); the GUI passes nil.
 	var vpnClient managedClient
 	switch conf.Protocol {
+	case "topsec":
+		vpnClient = newTopSAPClient(e.ctx, conf, underlayDialer)
 	case "univpn":
 		vpnClient = newUniVPNClient(e.ctx, conf, opts.Domain, opts.InsecureSkipVerify, underlayDialer)
 	case "easyconnect":

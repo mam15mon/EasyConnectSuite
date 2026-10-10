@@ -255,11 +255,14 @@ func (a *App) SaveProfile(p Profile) (Profile, error) {
 	if p.Protocol == "" {
 		p.Protocol = "easyconnect"
 	}
-	if p.Protocol != "easyconnect" && p.Protocol != "univpn" {
+	if p.Protocol != "easyconnect" && p.Protocol != "univpn" && p.Protocol != "topsec" {
 		return Profile{}, fmt.Errorf("不支持的 VPN 类型")
 	}
 	if p.Protocol == "univpn" && p.Enable2FA {
 		return Profile{}, fmt.Errorf("UniVPN 当前仅支持账号密码认证")
+	}
+	if p.Protocol == "topsec" && p.Enable2FA {
+		return Profile{}, fmt.Errorf("TopSAP 当前仅支持账号密码认证")
 	}
 	if p.Port < 1 || p.Port > 65535 {
 		return Profile{}, fmt.Errorf("服务器端口必须为 1–65535")
@@ -414,6 +417,10 @@ func (a *App) buildEngineConfig(profile Profile) configs.Config {
 
 	if conf.Protocol == "univpn" {
 		conf.DisableRemoteDNS = true
+		conf.DisableZJUConfig = true
+		conf.DisableKeepAlive = true
+	}
+	if conf.Protocol == "topsec" {
 		conf.DisableZJUConfig = true
 		conf.DisableKeepAlive = true
 	}

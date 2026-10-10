@@ -183,6 +183,10 @@ func (a *App) startConnectionID(id string, start func(engine.Options) (vpnEngine
 		a.mu.Unlock()
 		return "UniVPN 当前仅支持账号密码认证"
 	}
+	if p.Protocol == "topsec" && p.Enable2FA {
+		a.mu.Unlock()
+		return "TopSAP 当前仅支持账号密码认证"
+	}
 	if previous := a.connections[p.ID]; previous != nil && (previous.status.Running || previous.stopping) {
 		a.mu.Unlock()
 		return "该配置正在连接或断开"

@@ -239,7 +239,7 @@ app.innerHTML = `
         <input type="hidden" id="form-id" />
         <div class="form-group">
           <label class="form-label" for="form-protocol">VPN 类型</label>
-          <select class="form-select" id="form-protocol"><option value="easyconnect">深信服 EasyConnect</option><option value="univpn">华为／联软 UniVPN</option></select>
+          <select class="form-select" id="form-protocol"><option value="easyconnect">深信服 EasyConnect</option><option value="univpn">华为／联软 UniVPN</option><option value="topsec">天融信 TopSAP（标准模式）</option></select>
         </div>
         <div class="form-group" id="form-domain-container" hidden>
           <label class="form-label" for="form-domain">UniVPN 认证域（留空使用服务器地址）</label>
@@ -901,13 +901,14 @@ if (document.readyState === 'loading') {
 
 function updateProtocolFields() {
   const uni = formProtocol.value === 'univpn';
+  const easy = formProtocol.value === 'easyconnect';
   document.getElementById('form-domain-container').hidden = !uni;
   document.getElementById('form-cert-container').hidden = !uni;
   for (const input of [formEnable2FA, formEnableKeepAlive, formDisableKeepAlive]) {
-    input.closest('.toggle-row').style.display = uni ? 'none' : '';
+    input.closest('.toggle-row').style.display = easy ? '' : 'none';
   }
-  formTotpContainer.style.display = !uni && formEnable2FA.checked ? 'block' : 'none';
-  formKeepAliveContainer.style.display = !uni && formEnableKeepAlive.checked ? 'block' : 'none';
+  formTotpContainer.style.display = easy && formEnable2FA.checked ? 'block' : 'none';
+  formKeepAliveContainer.style.display = easy && formEnableKeepAlive.checked ? 'block' : 'none';
 }
 formProtocol.addEventListener('change', updateProtocolFields);
 async function refreshConnections() {
@@ -922,7 +923,7 @@ function renderConnections() {
     button.className = 'connection-row';
     button.classList.toggle('selected', status.profileId === activeProfile?.id);
     const name = document.createElement('span');
-    name.textContent = `${status.activeProfile} · ${status.protocol === 'univpn' ? 'UniVPN' : '深信服'}`;
+    name.textContent = `${status.activeProfile} · ${{univpn:'UniVPN', topsec:'TopSAP', easyconnect:'深信服'}[status.protocol] || status.protocol}`;
     const state = document.createElement('span');
     state.className = `connection-state ${status.state}`;
     state.textContent = STATE_WORDS[status.state] || status.state;
