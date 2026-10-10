@@ -143,7 +143,11 @@ func (a *App) startVPN(start func(engine.Options) (*engine.Engine, error)) strin
 }
 func (a *App) startConnection(start func(engine.Options) (vpnEngine, error)) string {
 	a.mu.Lock()
-	if a.starting || a.restarting {
+	if a.restarting {
+		a.mu.Unlock()
+		return "正在以管理员身份重新启动"
+	}
+	if a.starting {
 		a.mu.Unlock()
 		return "正在初始化或重启，请稍候"
 	}

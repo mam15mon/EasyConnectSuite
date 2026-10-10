@@ -64,6 +64,7 @@ func main() {
 		app.configPath = restartConfig
 		app.initDefaultConfig()
 		app.loadConfigFile()
+		app.normalizeProfiles()
 	}
 
 	err = wails.Run(&options.App{

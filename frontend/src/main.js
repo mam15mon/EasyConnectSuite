@@ -17,7 +17,7 @@ app.innerHTML = `
       <div>
         <span class="brand-name">EasyConnect Suite</span>
       </div>
-      <span class="brand-badge">内置网关</span>
+      <span class="brand-badge">多 VPN</span>
     </div>
 
     <div class="top-status">
@@ -139,6 +139,7 @@ app.innerHTML = `
               <polyline points="6 9 12 15 18 9"/>
             </svg>
           </div>
+          <div class="connection-list" id="connection-list" aria-label="VPN 连接列表"></div>
           <div class="profile-actions-row">
             <button class="btn-chip" id="btn-new-profile">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -237,6 +238,15 @@ app.innerHTML = `
       <div class="modal-body">
         <input type="hidden" id="form-id" />
         <div class="form-group">
+          <label class="form-label" for="form-protocol">VPN 类型</label>
+          <select class="form-select" id="form-protocol"><option value="easyconnect">深信服 EasyConnect</option><option value="univpn">华为／联软 UniVPN</option></select>
+        </div>
+        <div class="form-group" id="form-domain-container" hidden>
+          <label class="form-label" for="form-domain">UniVPN 认证域（留空使用服务器地址）</label>
+          <input class="form-input" id="form-domain" placeholder="网关配置的认证域" />
+          <small>当前支持账号密码与 IPv4；内网域名需系统已有 DNS 配置。</small>
+        </div>
+        <div class="form-group">
           <label class="form-label">节点名称（备注）</label>
           <input type="text" class="form-input" id="form-name" placeholder="例如：公司生产环境、学校内网" />
         </div>
@@ -261,6 +271,10 @@ app.innerHTML = `
           </div>
         </div>
 
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="form-socks-port">本地 SOCKS5 端口</label><input class="form-input" id="form-socks-port" type="number" min="1" max="65535" placeholder="自动分配" /></div>
+          <div class="form-group"><label class="form-label" for="form-http-port">本地 HTTP 端口</label><input class="form-input" id="form-http-port" type="number" min="1" max="65535" placeholder="自动分配" /></div>
+        </div>
         <label class="toggle-row">
           <input type="checkbox" id="form-enable-2fa" />
           <span>二次认证（登录时自动提交 TOTP 动态码）</span>
@@ -371,6 +385,10 @@ document.getElementById('log-path-hint').addEventListener('click', () => {
 const modalOverlay = document.getElementById('modal-overlay');
 const modalTitle = document.getElementById('modal-title');
 const formId = document.getElementById('form-id');
+const formProtocol = document.getElementById('form-protocol');
+const formDomain = document.getElementById('form-domain');
+const formSocksPort = document.getElementById('form-socks-port');
+const formHTTPPort = document.getElementById('form-http-port');
 const formName = document.getElementById('form-name');
 const formServer = document.getElementById('form-server');
 const formPort = document.getElementById('form-port');
@@ -386,6 +404,7 @@ const formKeepAliveUrl = document.getElementById('form-keepalive-url');
 const formDisableKeepAlive = document.getElementById('form-disable-keepalive');
 
 let cachedProfiles = [];
+let connectionStatuses = [];
 let activeProfile = null;
 let modeSaving = false;
 let currentStatus = { running: false, state: 'disconnected' };
@@ -420,8 +439,8 @@ function updateInfoFields(status) {
   if (!status) return;
 
   const proxyDisabled = status.running ? status.disableProxy : activeProfile?.disableProxy;
-  socksPortVal.innerText = proxyDisabled ? '已关闭' : '127.0.0.1:1080';
-  httpPortVal.innerText = proxyDisabled ? '已关闭' : '127.0.0.1:1081';
+  socksPortVal.innerText = proxyDisabled ? '已关闭' : `127.0.0.1:${status.socksPort || activeProfile?.socksPort || 1080}`;
+  httpPortVal.innerText = proxyDisabled ? '已关闭' : `127.0.0.1:${status.httpPort || activeProfile?.httpPort || 1081}`;
   socksPortVal.classList.toggle('pending', !!proxyDisabled);
   httpPortVal.classList.toggle('pending', !!proxyDisabled);
 
@@ -443,7 +462,9 @@ function updateInfoFields(status) {
 }
 
 function updateStatusUI(status) {
+  if (status.profileId && status.profileId !== activeProfile?.id) return;
   currentStatus = status;
+  uptimeDisplay.innerText = formatSeconds(status.duration || 0);
   document.body.dataset.state = status.state;
   const word = status.state === 'connecting' ? status.stage : STATE_WORDS[status.state];
   stateWord.innerText = word;
@@ -461,8 +482,8 @@ function updateStatusUI(status) {
         : 'VPN 通道工作正常，流量经本地代理端口直接转发';
   } else if (status.state === 'connecting') {
     const reconnecting = status.stage === '重连中';
-    btnLabel.innerText = reconnecting ? '停止重连' : status.stage + '…';
-    btnToggle.disabled = !reconnecting;
+    btnLabel.innerText = reconnecting ? '停止重连' : '取消连接';
+    btnToggle.disabled = false;
     stateNote.innerText = status.message;
   } else if (status.state === 'error') {
     btnLabel.innerText = '重新建立';
@@ -511,24 +532,32 @@ async function refreshProfiles() {
   });
 
   activeProfile = cachedProfiles.find(p => p.id === appConfig.activeProfileId) || cachedProfiles[0];
-  if (!currentStatus.running) updateStatusUI(currentStatus);
+  await refreshConnections();
+  updateStatusUI(await window.go.main.App.GetStatus());
 }
 
 function updateProfileView(profile) {
   if (!profile) return;
   activeProfile = profile;
-  if (!currentStatus.running) updateStatusUI(currentStatus);
 }
 
 profileSelect.addEventListener('change', async (e) => {
   const id = e.target.value;
   await window.go.main.App.SetActiveProfile(id);
   updateProfileView(cachedProfiles.find(item => item.id === id));
+  updateStatusUI(await window.go.main.App.GetStatus());
+  refreshResources();
+  renderConnections();
 });
 
 function openEditModal(profile) {
+  if (profile && connectionStatuses.some(s => s.profileId === profile.id && s.running)) { showToast('请先断开该配置再编辑'); return; }
   modalTitle.innerText = profile ? '编辑服务器配置' : '新建服务器配置';
   formId.value = profile ? profile.id : '';
+  formProtocol.value = profile?.protocol || 'easyconnect';
+  formDomain.value = profile?.domain || '';
+  formSocksPort.value = profile?.socksPort || '';
+  formHTTPPort.value = profile?.httpPort || '';
   formName.value = profile ? profile.name : '新配置';
   formServer.value = profile ? profile.server : '';
   formPort.value = profile ? profile.port : 443;
@@ -556,6 +585,7 @@ function openEditModal(profile) {
     formNic.appendChild(opt);
   });
 
+  updateProtocolFields();
   modalOverlay.classList.add('show');
 }
 
@@ -578,7 +608,7 @@ document.getElementById('btn-del-profile').addEventListener('click', async () =>
     return;
   }
   if (confirm(`确定要删除配置「${activeProfile.name}」吗？`)) {
-    await window.go.main.App.DeleteProfile(activeProfile.id);
+    if (!await window.go.main.App.DeleteProfile(activeProfile.id)) { showToast('请先断开该配置再删除'); return; }
     showToast('配置已删除');
     await refreshProfiles();
   }
@@ -590,12 +620,16 @@ document.getElementById('btn-modal-cancel').addEventListener('click', closeModal
 document.getElementById('btn-modal-save').addEventListener('click', async () => {
   const p = {
     id: formId.value.trim(),
+    protocol: formProtocol.value,
+    domain: formProtocol.value === "univpn" ? formDomain.value.trim() : "",
+    socksPort: Number(formSocksPort.value) || 0,
+    httpPort: Number(formHTTPPort.value) || 0,
     name: formName.value.trim() || '未命名配置',
     server: formServer.value.trim(),
     port: parseInt(formPort.value) || 443,
     username: formUsername.value.trim(),
-    password: formPassword.value.trim(),
-    enable2FA: formEnable2FA.checked,
+    password: formPassword.value,
+    enable2FA: formProtocol.value === "easyconnect" && formEnable2FA.checked,
     totpSecret: formTotp.value.trim(),
     bindInterface: formNic.value,
     tunMode: !!cachedProfiles.find(profile => profile.id === formId.value.trim())?.tunMode,
@@ -610,7 +644,7 @@ document.getElementById('btn-modal-save').addEventListener('click', async () => 
     return;
   }
 
-  await window.go.main.App.SaveProfile(p);
+  try { await window.go.main.App.SaveProfile(p); } catch (err) { showToast(String(err)); return; }
   closeModal();
   showToast('配置已保存');
   await refreshProfiles();
@@ -676,8 +710,9 @@ btnToggle.addEventListener('click', async () => {
       }
     }
     updateStatusUI({ running: true, state: 'connecting', stage: '准备中', message: '正在准备连接…', tunMode: !!activeProfile?.tunMode, disableProxy: !!activeProfile?.disableProxy });
+    const connectingID = activeProfile?.id;
     const res = await window.go.main.App.StartVPN();
-    if (res !== 'OK') {
+    if (res !== 'OK' && connectingID === activeProfile?.id) {
       showToast('[连接失败] ' + res);
       updateStatusUI({ running: false, state: 'error', lastError: res });
     }
@@ -811,17 +846,20 @@ async function initApp() {
   if (window.runtime) {
     window.runtime.EventsOn('vpn-status', (status) => {
       updateStatusUI(status);
-      if (!status.running) refreshResources();
+      if (!status.running && status.profileId === activeProfile?.id) refreshResources();
     });
 
-    window.runtime.EventsOn('vpn-resources', (rows) => {
-      renderResources(rows);
+    window.runtime.EventsOn('vpn-resources', (payload) => {
+      if (payload.profileId === activeProfile?.id) renderResources(payload.entries);
     });
 
     window.runtime.EventsOn('status-tick', (status) => {
+      if (status.profileId !== activeProfile?.id) return;
       uptimeDisplay.innerText = formatSeconds(status.duration);
       updateInfoFields(status);
     });
+
+    window.runtime.EventsOn('vpn-connections', (statuses) => { connectionStatuses = statuses || []; renderConnections(); });
 
     window.runtime.EventsOn('profile-switched', async () => {
       await refreshProfiles();
@@ -847,4 +885,49 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initApp);
 } else {
   initApp();
+}
+
+function updateProtocolFields() {
+  const uni = formProtocol.value === 'univpn';
+  document.getElementById('form-domain-container').hidden = !uni;
+  for (const input of [formEnable2FA, formEnableKeepAlive, formDisableKeepAlive]) {
+    input.closest('.toggle-row').style.display = uni ? 'none' : '';
+  }
+  formTotpContainer.style.display = !uni && formEnable2FA.checked ? 'block' : 'none';
+  formKeepAliveContainer.style.display = !uni && formEnableKeepAlive.checked ? 'block' : 'none';
+}
+formProtocol.addEventListener('change', updateProtocolFields);
+async function refreshConnections() {
+  connectionStatuses = await window.go.main.App.GetConnections();
+  renderConnections();
+}
+function renderConnections() {
+  const list = document.getElementById('connection-list');
+  list.replaceChildren();
+  for (const status of connectionStatuses) {
+    const button = document.createElement('button');
+    button.className = 'connection-row';
+    button.classList.toggle('selected', status.profileId === activeProfile?.id);
+    const name = document.createElement('span');
+    name.textContent = `${status.activeProfile} · ${status.protocol === 'univpn' ? 'UniVPN' : '深信服'}`;
+    const state = document.createElement('span');
+    state.className = `connection-state ${status.state}`;
+    state.textContent = STATE_WORDS[status.state] || status.state;
+    button.append(name, state);
+    button.addEventListener('click', async () => {
+      await window.go.main.App.SetActiveProfile(status.profileId);
+      profileSelect.value = status.profileId;
+      updateProfileView(cachedProfiles.find(p => p.id === status.profileId));
+      updateStatusUI(await window.go.main.App.GetStatus());
+      refreshResources(); renderConnections();
+    });
+    list.appendChild(button);
+  }
+  const count = connectionStatuses.filter(s => s.running).length;
+  if (count) {
+    const stop = document.createElement('button');
+    stop.className = 'btn-chip danger'; stop.textContent = `断开全部（${count}）`;
+    stop.addEventListener('click', () => window.go.main.App.StopAllVPN());
+    list.appendChild(stop);
+  }
 }

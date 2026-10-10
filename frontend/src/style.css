@@ -1298,3 +1298,14 @@ body[data-state="error"] .master-switch {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
 }
+
+/* Per-profile connection state, matching the existing configuration card. */
+.connection-list { display: grid; gap: 6px; margin-top: 12px; max-height: 156px; overflow-y: auto; }
+.connection-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; padding: 8px 10px; background: var(--panel-inset); color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; font: inherit; font-size: 12px; }
+.connection-row > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.connection-row.selected { border-color: var(--border-focus); color: var(--text-primary); }
+.connection-state { flex-shrink: 0; font-size: 11px; }
+.connection-state.connected { color: var(--accent); }
+.connection-state.connecting { color: var(--amber); }
+.connection-state.error { color: var(--danger); }
+[hidden] { display: none !important; }
