@@ -388,7 +388,12 @@ async function refreshProfiles() {
     opt.textContent = p.name;
     profileSelect.appendChild(opt);
   }
+  const previousProfileId = activeProfile?.id;
   activeProfile = cachedProfiles.find(p => p.id === appConfig.activeProfileId) || cachedProfiles[0];
+  if (workspacePage === 'logs' && activeProfile?.id !== previousProfileId) {
+    document.getElementById('profile-log-output').textContent = '正在读取运行记录…';
+    refreshProfileLogs();
+  }
   profileSelect.value = activeProfile?.id || '';
   await refreshConnections();
   if (version !== selectionVersion) return;
