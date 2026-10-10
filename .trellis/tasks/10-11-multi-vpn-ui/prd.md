@@ -1,19 +1,13 @@
-# 多 VPN 浅色连接工作台
+# 多 VPN 浅色工作台
 
-## Goal
+用户确认 TopSAP fix2 已连接；内网访问、UDP 和系统 TUN 共存尚未由本条反馈确认。现要求将旧单连接中心界面重做为多连接工作台，选择简洁浅色。
 
-用户确认 TopSAP 已连接，要求重做支持多个 VPN 同时连接的 UI，选择简洁浅色。
+范围：frontend/src/main.js 的布局、各行操作与多连接状态同步，style.css 的视觉系统，必要的窗口尺寸/底色。沿用已导出的 Wails 接口和配置，不修改 VPN 协议、认证、路由或 DNS 行为。
 
-## Requirements
-
-- TBD
-
-## Acceptance Criteria
-
-- [ ] TBD
-
-## Notes
-
-- Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
-- Lightweight tasks can remain PRD-only.
-- For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
+验收：
+- [ ] 首页同时展示全部配置，协议、网关、状态、时长和连接操作清晰。
+- [ ] 每行操作使用固定 profileId；选中另一条不会断开，异步结果不能覆盖另一条的状态或资源。
+- [ ] 全局统计独立于当前查看对象；连接/重连/错误/断开均准确显示。
+- [ ] 选中详情保留 TUN/代理模式、地址复制、资源筛选刷新及配置增删改。
+- [ ] 浅色布局在默认窗口及最小尺寸可用，键盘焦点、空状态和长错误信息可读。
+- [ ] 使用明确标注的脱敏预览验证交互，不启动或断开用户真实连接；前端构建、Go 回归和未压缩 EXE 通过。
