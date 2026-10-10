@@ -226,3 +226,18 @@ func readFrame(r io.Reader) (uint32, []byte, error) {
 func validIPv4(b []byte) bool {
 	return len(b) >= 20 && b[0]>>4 == 4 && int(b[0]&15)*4 >= 20 && int(b[0]&15)*4 <= len(b) && int(binary.BigEndian.Uint16(b[2:])) == len(b)
 }
+
+// Only report the header checksum; never modify captured/sent packet bytes.
+func ipv4HeaderChecksumOK(b []byte) bool {
+	if !validIPv4(b) {
+		return false
+	}
+	var sum uint32
+	for i := 0; i < int(b[0]&15)*4; i += 2 {
+		sum += uint32(binary.BigEndian.Uint16(b[i:]))
+	}
+	for sum>>16 != 0 {
+		sum = sum&0xffff + sum>>16
+	}
+	return sum == 0xffff
+}

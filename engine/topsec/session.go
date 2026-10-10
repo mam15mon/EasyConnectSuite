@@ -149,6 +149,7 @@ func dial(ctx context.Context, opts Options, code string) (_ *Session, err error
 	if err = resources.check(); err != nil {
 		return nil, err
 	}
+	log.Printf("TopSAP [%d] config consistency token_present=%t token_matches_login=%t vip_present=%t vip_matches_login=%t", s.id, resources.User.Token != "", resources.User.Token == login.User.Token, resources.Net.IP != "", resources.Net.IP == login.Net.IP)
 	setStage("解析服务器资源")
 	s.routes, err = parseResources(resources)
 	if err != nil {
@@ -316,7 +317,7 @@ func (s *Session) Write(b []byte) (int, error) {
 		return 0, err
 	}
 	if s.txBytes.Add(uint64(len(b))) == uint64(len(b)) {
-		log.Printf("TopSAP [%d] first IPv4 packet sent bytes=%d", s.id, len(b))
+		log.Printf("TopSAP [%d] first IPv4 packet sent bytes=%d protocol=%d source_matches_vip=%t ip_checksum_ok=%t", s.id, len(b), b[9], bytes.Equal(b[12:16], s.ip.AsSlice()), ipv4HeaderChecksumOK(b))
 	}
 	return len(b), nil
 }
