@@ -98,3 +98,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 4: UniVPN 认证拒绝返回码诊断
+<!-- trellis-session: v=2 fp=678f8ee9645388aa -->
+
+**Date**: 2026-10-10
+**Task**: UniVPN 认证拒绝返回码诊断
+**Branch**: `codex/univpn-windows-core`
+
+### Summary
+
+用户确认官方 10781.16.0.0729 同账号可登录，设置无认证域。修正所有非零状态被误报密码错误的问题，保留十进制/十六进制返回码与typed cause，仍一次拒绝终止。根模块 race/vet 和未压缩 EXE 构建通过，交付 EasyConnectGUI-multi-vpn-authdiag.exe。读取私有配置仅输出匹配布尔与字段名，未主动登录。真实协议兼容性仍未解决，下一步需要用户用诊断版发起一次连接并提供返回码。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `90d360d` | fix: preserve UniVPN authentication status without assuming bad password |
+
+### Status
+
+[OK] **Completed**
