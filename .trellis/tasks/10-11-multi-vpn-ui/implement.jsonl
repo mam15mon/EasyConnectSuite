@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/index.md","reason":"多连接状态、配置和前端构建契约"}
+{"file":".trellis/spec/backend/configuration-guidelines.md","reason":"沿用显式 profileId 生命周期接口"}
