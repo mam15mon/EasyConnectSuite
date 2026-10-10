@@ -1,0 +1,283 @@
+package topsec
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/http/cookiejar"
+	"net/netip"
+	"net/url"
+	"strings"
+	"sync"
+	"time"
+)
+
+type Options struct {
+	Server, Username, Password string
+	TLSConfig                  *tls.Config
+	DialContext                func(context.Context, string, string) (net.Conn, error)
+}
+
+// Session reads and writes complete IPv4 packets. TCP and UDP are supplied by
+// the existing gVisor stack; this transport does not install routes or DNS.
+type Session struct {
+	conn            *tls.Conn
+	http            *http.Client
+	transport       *http.Transport
+	server          string
+	ip              netip.Addr
+	routes          []netip.Prefix
+	dns             []string
+	cancel          context.CancelFunc
+	stopWatch       func() bool
+	readMu, writeMu sync.Mutex
+	closeOnce       sync.Once
+}
+
+func Dial(ctx context.Context, opts Options) (*Session, error) {
+	code, err := localDeviceCode()
+	if err != nil {
+		return nil, err
+	}
+	return dial(ctx, opts, code)
+}
+
+// dial's explicit identity lets tests use synthetic hardware without persisting
+// a real machine identifier or exposing a product configuration override.
+func dial(ctx context.Context, opts Options, code string) (*Session, error) {
+	host, _, err := net.SplitHostPort(opts.Server)
+	if err != nil || host == "" || opts.Username == "" || opts.Password == "" || strings.ContainsRune(opts.Username+opts.Password, 0) {
+		return nil, errors.New("TopSAP 服务器、账号或密码配置无效")
+	}
+	setupCtx, stopSetup := context.WithTimeout(ctx, 30*time.Second)
+	defer stopSetup()
+	sessionCtx, cancel := context.WithCancel(ctx)
+	cfg := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
+	if opts.TLSConfig != nil {
+		cfg = opts.TLSConfig.Clone()
+		if cfg.ServerName == "" {
+			cfg.ServerName = host
+		}
+		if cfg.MinVersion < tls.VersionTLS12 {
+			cfg.MinVersion = tls.VersionTLS12
+		}
+	}
+	dialer := opts.DialContext
+	if dialer == nil {
+		dialer = (&net.Dialer{}).DialContext
+	}
+	transport := &http.Transport{Proxy: nil, DialContext: dialer, TLSClientConfig: cfg, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 15 * time.Second, MaxResponseHeaderBytes: 64 << 10, ForceAttemptHTTP2: false}
+	jar, _ := cookiejar.New(nil)
+	s := &Session{transport: transport, server: "https://" + opts.Server, cancel: cancel}
+	s.http = &http.Client{Transport: transport, Jar: jar, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return errors.New("TopSAP 浏览器重定向认证暂不支持")
+	}}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			cancel()
+			if s.conn != nil {
+				_ = s.conn.Close()
+			}
+			transport.CloseIdleConnections()
+		}
+	}()
+	var parameters authParameters
+	if _, err := s.post(setupCtx, "auth_param", nil, &parameters); err != nil {
+		return nil, err
+	}
+	if parameters.Password != "on" || parameters.AuthProtocol != "0" || parameters.DataProtocol != "0" || parameters.CheckClient == "on" || parameters.TwoWay == "on" {
+		return nil, errors.New("TopSAP 该网关的认证/国密/客户端安全检查模式暂不支持")
+	}
+	form := url.Values{"U": {base64.StdEncoding.EncodeToString([]byte(opts.Username))}, "P": {base64.StdEncoding.EncodeToString([]byte(opts.Password))}, "HASH": {""}, "S_CODE": {code}}
+	var login reply
+	key, err := s.post(setupCtx, "user_pswd", form, &login)
+	if err != nil {
+		return nil, err
+	}
+	if err = login.check(); err != nil {
+		return nil, err
+	}
+	if login.User.NetAccess != "on" || login.User.Algorithm != "standard" || login.User.Protocol != "standard" || login.User.Compress != "off" {
+		return nil, errors.New("TopSAP 数据隧道模式暂不支持")
+	}
+	if login.User.ChangePassword == "on" {
+		return nil, errors.New("TopSAP 网关要求先修改密码")
+	}
+	token := login.User.Token
+	if len(token) == 0 || len(token) >= 256 || strings.ContainsRune(token, 0) {
+		return nil, errProtocol
+	}
+	s.ip, err = netip.ParseAddr(login.Net.IP)
+	if err != nil || !s.ip.Is4() || s.ip.IsUnspecified() {
+		return nil, errProtocol
+	}
+	var resources reply
+	if _, err = s.post(setupCtx, "get_config_info", url.Values{"HASH": {""}, "TYPE": {"phone"}}, &resources); err != nil {
+		return nil, err
+	}
+	if err = resources.check(); err != nil {
+		return nil, err
+	}
+	s.routes, err = parseResources(resources)
+	if err != nil {
+		return nil, err
+	}
+	for _, text := range []string{login.Net.DNS1, login.Net.DNS2} {
+		if text == "" || text == "0.0.0.0" {
+			continue
+		}
+		addr, err := netip.ParseAddr(text)
+		if err != nil || !addr.Is4() {
+			return nil, errProtocol
+		}
+		s.dns = append(s.dns, addr.String())
+	}
+	raw, err := dialer(setupCtx, "tcp", opts.Server)
+	if err != nil {
+		return nil, err
+	}
+	s.conn = tls.Client(raw, cfg)
+	stopDial := context.AfterFunc(setupCtx, func() { _ = raw.Close() })
+	defer stopDial()
+	deadline, _ := setupCtx.Deadline()
+	if err = s.conn.SetDeadline(deadline); err != nil {
+		return nil, err
+	}
+	if err = s.conn.HandshakeContext(setupCtx); err != nil {
+		return nil, err
+	}
+	state := s.conn.ConnectionState()
+	if len(state.PeerCertificates) == 0 || len(key) == 0 || !bytes.Equal(key, state.PeerCertificates[0].RawSubjectPublicKeyInfo) {
+		return nil, errors.New("TopSAP 认证与数据通道公钥不一致")
+	}
+	if err = writeAll(s.conn, []byte(connectPrelude)); err != nil {
+		return nil, err
+	}
+	setup := make([]byte, 328)
+	setup[3] = 4
+	copy(setup[72:], token)
+	if err = writeAll(s.conn, frame(1, setup)); err != nil {
+		return nil, err
+	}
+	command, _, err := readFrame(s.conn)
+	if err != nil {
+		return nil, err
+	}
+	if command != 2 {
+		return nil, errProtocol
+	}
+	if err = writeAll(s.conn, frame(7, make([]byte, 8))); err != nil {
+		return nil, err
+	}
+	if err = s.conn.SetDeadline(time.Time{}); err != nil {
+		return nil, err
+	}
+	s.stopWatch = context.AfterFunc(sessionCtx, func() { _ = s.conn.Close(); transport.CloseIdleConnections() })
+	if err = setupCtx.Err(); err != nil {
+		return nil, err
+	}
+	succeeded = true
+	return s, nil
+}
+
+func (s *Session) post(ctx context.Context, path string, form url.Values, result any) ([]byte, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.server+"/vone/login/"+path, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("User-Agent", authAgent)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response, err := s.http.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode == 401 || response.StatusCode == 403 {
+		return nil, &AuthenticationError{Code: response.StatusCode}
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("TopSAP %s HTTP 状态 %d", path, response.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(response.Body, maxResponse+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxResponse {
+		return nil, errProtocol
+	}
+	if result != nil {
+		if err = decodeObject(data, result); err != nil {
+			return nil, err
+		}
+	}
+	if response.TLS == nil || len(response.TLS.PeerCertificates) == 0 {
+		return nil, errProtocol
+	}
+	return append([]byte(nil), response.TLS.PeerCertificates[0].RawSubjectPublicKeyInfo...), nil
+}
+func writeAll(w io.Writer, b []byte) error {
+	for len(b) != 0 {
+		n, err := w.Write(b)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+		b = b[n:]
+	}
+	return nil
+}
+func (s *Session) IP() netip.Addr         { return s.ip }
+func (s *Session) Routes() []netip.Prefix { return append([]netip.Prefix(nil), s.routes...) }
+func (s *Session) DNSServers() []string   { return append([]string(nil), s.dns...) }
+func (s *Session) Read(b []byte) (int, error) {
+	s.readMu.Lock()
+	defer s.readMu.Unlock()
+	command, body, err := readFrame(s.conn)
+	if err != nil {
+		return 0, err
+	}
+	if command != 15 {
+		return 0, errProtocol
+	}
+	if len(b) < len(body) {
+		return 0, io.ErrShortBuffer
+	}
+	return copy(b, body), nil
+}
+func (s *Session) Write(b []byte) (int, error) {
+	if !validIPv4(b) {
+		return 0, errProtocol
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if err := s.conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return 0, err
+	}
+	if err := writeAll(s.conn, frame(15, b)); err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}
+func (s *Session) Close() error {
+	s.closeOnce.Do(func() {
+		s.cancel()
+		if s.stopWatch != nil {
+			s.stopWatch()
+		}
+		_ = s.conn.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_, _ = s.post(ctx, "logout", nil, nil)
+		s.transport.CloseIdleConnections()
+	})
+	return nil
+}
