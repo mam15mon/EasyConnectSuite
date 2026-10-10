@@ -30,9 +30,9 @@ func TestTUNSlotsAreDistinctAndInsideReservedRange(t *testing.T) {
 	}
 }
 
-type tunCleanupCheck func() error
+type tunCleanupCheck struct{ check func() error }
 
-func (check tunCleanupCheck) Close() error { return check() }
+func (check *tunCleanupCheck) Close() error { return check.check() }
 
 func TestTUNCloseAllowsPendingHandlersBeforeReleasingClaims(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -41,7 +41,7 @@ func TestTUNCloseAllowsPendingHandlersBeforeReleasingClaims(t *testing.T) {
 	tunPolicies.claims[ingress] = tunClaim{prefixes: []string{"10.42.0.0/16"}}
 	tunPolicies.Unlock()
 	observed := make(chan bool, 1)
-	ingress.connections.Store(tunCleanupCheck(func() error {
+	ingress.connections.Store(&tunCleanupCheck{check: func() error {
 		tunPolicies.Lock()
 		_, reserved := tunPolicies.claims[ingress]
 		ingress.mu.RLock()
@@ -50,7 +50,7 @@ func TestTUNCloseAllowsPendingHandlersBeforeReleasingClaims(t *testing.T) {
 		tunPolicies.Unlock()
 		observed <- reserved && closed && ctx.Err() != nil
 		return nil
-	}), true)
+	}}, true)
 	done := make(chan error, 1)
 	go func() { done <- ingress.Close() }()
 	select {
