@@ -27,6 +27,7 @@ export namespace main {
 	    id: string;
 	    protocol: string;
 	    domain: string;
+	    insecureSkipVerify: boolean;
 	    socksPort: number;
 	    httpPort: number;
 	    name: string;
@@ -52,6 +53,7 @@ export namespace main {
 	        this.id = source["id"];
 	        this.protocol = source["protocol"];
 	        this.domain = source["domain"];
+	        this.insecureSkipVerify = source["insecureSkipVerify"];
 	        this.socksPort = source["socksPort"];
 	        this.httpPort = source["httpPort"];
 	        this.name = source["name"];
