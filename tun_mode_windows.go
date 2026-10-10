@@ -45,14 +45,31 @@ func (a *App) SetTUNMode(enabled bool) (bool, error) {
 	return restarting, err
 }
 
+// SetProfileTUNMode prepares the clicked connection without changing selection.
+func (a *App) SetProfileTUNMode(id string, enabled bool) (bool, error) {
+	restarting, err := a.setProfileTUNMode(id, enabled, windows.GetCurrentProcessToken().IsElevated(), launchTUNAdministrator)
+	if restarting {
+		wailsRuntime.Quit(a.ctx)
+	}
+	return restarting, err
+}
+
 func (a *App) setTUNMode(enabled, elevated bool, launch func(string) error) (bool, error) {
 	a.mu.Lock()
+	id := a.appConfig.ActiveProfileID
+	a.mu.Unlock()
+	return a.setProfileTUNMode(id, enabled, elevated, launch)
+}
+
+func (a *App) setProfileTUNMode(id string, enabled, elevated bool, launch func(string) error) (bool, error) {
+	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.starting || a.status.Running || a.restarting {
+	connection := a.connections[id]
+	if a.starting || a.restarting || (id == a.appConfig.ActiveProfileID && a.status.Running) || (connection != nil && (connection.status.Running || connection.stopping)) {
 		return false, errors.New("请先断开连接，再切换 TUN 模式")
 	}
 	for i := range a.appConfig.Profiles {
-		if a.appConfig.Profiles[i].ID != a.appConfig.ActiveProfileID {
+		if a.appConfig.Profiles[i].ID != id {
 			continue
 		}
 		if enabled && !elevated && a.anyRunningLocked() {
@@ -77,7 +94,7 @@ func (a *App) setTUNMode(enabled, elevated bool, launch func(string) error) (boo
 		a.restarting = true
 		return true, nil
 	}
-	return false, errors.New("请先选择服务器配置")
+	return false, errors.New("服务器配置不存在")
 }
 
 // SHELLEXECUTEINFOW layout from shellapi.h. NOASYNC waits for launch completion;
