@@ -7,7 +7,7 @@ TopSAP 标准模式现已接入同一 Windows EXE。协议核心在 `engine/tops
 ## 使用测试版
 
 1. 在官方 TopSAP 中断开连接，并从托盘退出旧版 EasyConnect Suite，避免账号会话和程序单实例冲突。
-2. 启动 `build/bin/EasyConnectGUI-multi-vpn-topsec.exe`。
+2. 启动 `build/bin/EasyConnectGUI-multi-vpn-topsec-fix1.exe`。
 3. 新建配置，选择「天融信 TopSAP（标准模式）」，填写原网关地址、实际端口、账号和密码。本轮网关使用自定义端口，请按官方配置填写。
 4. 如果网关证书名称或证书链不受信任，可按用户要求手动开启「忽略服务器证书校验」。默认关闭，仅作用于当前配置；开启后无法验证网关身份。认证与数据通道仍须使用相同公钥。
 5. 连接后检查资源列表和内网访问。TUN 使用服务器返回的 IPv4 前缀，并保留该配置的本地 SOCKS5/HTTP 代理；其他配置可继续单独连接、断开。
@@ -28,13 +28,14 @@ TopSAP 标准模式现已接入同一 Windows EXE。协议核心在 `engine/tops
 | 独立脱敏向量 | 认证编码、单/双网卡标识、ACK、IPv4 UDP、损坏和截断报文通过 |
 | 本机私有样本对照 | 设备字段与当前官方计算一致；真实认证参数、两条资源及 CONNECT 常量解析通过 |
 | 本地 TLS 模拟网关 | 成功、一次拒绝、缺失资源、取消、损坏帧、幂等注销和会话隔离通过 |
+| 改密权限回归 | 成功响应含 `change_pswd=on` 时继续获取资源和建立隧道；此字段是允许改密，不是强制改密 |
 | gVisor 集成 | 实际 TCP 握手及 TCP/UDP 应用数据往返通过；没有安装系统 TUN |
 | 证书策略 | 默认不发送凭据给不受信任证书；手动忽略可连接；公钥不一致仍拒绝 |
 | 三协议管理 | 模拟 EasyConnect/UniVPN/TopSAP 并发，停止 TopSAP 保留另外两条会话及独立端口/槽位 |
 | Go 检查 | 根模块 `go test ./...`、`go vet ./...`、`go test -race ./...` 通过 |
-| Windows 交付包 | 最终前端与 windows/amd64 生产构建通过，Compress=false；PE 无 UPX 节，文件 20,633,088 字节 |
+| Windows 交付包 | 修正版前端与 windows/amd64 生产构建通过，Compress=false；文件 20,632,576 字节 |
 | 实际新版 EXE | 仍待用户验证 Go 登录、内网访问及系统 TUN 共存；之前的真实成功连接由官方客户端完成 |
 
-构建命令：`wails build -m -nosyncgomod -trimpath -o EasyConnectGUI-multi-vpn-topsec.exe`。本次不使用 UPX。
+构建命令：`wails build -m -nosyncgomod -trimpath -o EasyConnectGUI-multi-vpn-topsec-fix1.exe`。本次不使用 UPX。
 
-交付文件 SHA-256：`28ECB1A2AFC5714391C9F218A7DD4019DBD71E893921EA43106C94AA6E7EB2A2`。
+交付文件 SHA-256：`3D0DEAC189A1E6DACB954D6CA6368A98A236B8F220D955BC3034010EA94FEE58`。
