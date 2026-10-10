@@ -19,6 +19,10 @@ func TestLiteralProtocolVectors(t *testing.T) {
 	if _, err := deviceCode([]byte{1}); err == nil {
 		t.Fatal("invalid MAC accepted")
 	}
+	code, err = deviceCode([]byte{2, 0xab, 0, 1, 2, 3}, []byte{10, 11, 12, 13, 14, 15})
+	if err != nil || code != "eHZsn25SmRjY9FIk9DHWjQ==" {
+		t.Fatal("multi-adapter identifier differs from independent vector", err)
+	}
 	want, _ := hex.DecodeString("000000000000000700000008000000010000000000000000")
 	if !bytes.Equal(frame(7, make([]byte, 8)), want) {
 		t.Fatal("incorrect initial command 7")

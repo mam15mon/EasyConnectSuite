@@ -31,12 +31,18 @@ const maxResponse = 4 << 20
 
 // The native NIC identifier uses three uppercase hex digits per byte.
 // MD5 here is a wire-format device identifier, not password protection.
-func deviceCode(mac []byte) (string, error) {
-	if len(mac) != 6 {
-		return "", errors.New("TopSAP 需要六字节物理网卡标识")
+func deviceCode(macs ...[]byte) (string, error) {
+	if len(macs) == 0 {
+		return "", errors.New("TopSAP 未找到已验证的物理 PCI 网卡标识")
 	}
-	text := fmt.Sprintf("%03X-%03X-%03X-%03X-%03X-%03X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
-	digest := md5.Sum([]byte(text))
+	var text strings.Builder
+	for _, mac := range macs {
+		if len(mac) != 6 {
+			return "", errors.New("TopSAP 需要六字节物理网卡标识")
+		}
+		fmt.Fprintf(&text, "%03X-%03X-%03X-%03X-%03X-%03X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
+	}
+	digest := md5.Sum([]byte(text.String()))
 	return base64.StdEncoding.EncodeToString(digest[:]), nil
 }
 

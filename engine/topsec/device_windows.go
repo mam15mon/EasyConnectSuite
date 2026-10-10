@@ -23,7 +23,7 @@ func localDeviceCode() (string, error) {
 	if err := windows.GetAdaptersInfo(adapter, &size); err != nil {
 		return "", err
 	}
-	var selected []byte
+	var selected [][]byte
 	for a := adapter; a != nil; a = a.Next {
 		name := string(bytes.TrimRight(a.AdapterName[:], "\x00"))
 		path := `SYSTEM\CurrentControlSet\Control\Network\{4D36E972-E325-11CE-BFC1-08002BE10318}\` + name + `\Connection`
@@ -34,11 +34,11 @@ func localDeviceCode() (string, error) {
 		pnp, _, err := key.GetStringValue("PnPInstanceId")
 		_ = key.Close()
 		if err == nil && strings.Contains(pnp, "PCI") && a.AddressLength == 6 {
-			selected = append([]byte(nil), a.Address[:6]...)
+			selected = append(selected, append([]byte(nil), a.Address[:6]...))
 		}
 	}
 	if selected == nil {
 		return "", errors.New("TopSAP 未找到已验证的物理 PCI 网卡标识")
 	}
-	return deviceCode(selected)
+	return deviceCode(selected...)
 }
