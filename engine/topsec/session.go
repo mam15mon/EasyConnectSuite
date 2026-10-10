@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -15,6 +16,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -27,6 +29,7 @@ type Options struct {
 // Session reads and writes complete IPv4 packets. TCP and UDP are supplied by
 // the existing gVisor stack; this transport does not install routes or DNS.
 type Session struct {
+	id              uint64
 	conn            *tls.Conn
 	http            *http.Client
 	transport       *http.Transport
@@ -40,6 +43,8 @@ type Session struct {
 	closeOnce       sync.Once
 }
 
+var nextSessionID atomic.Uint64
+
 func Dial(ctx context.Context, opts Options) (*Session, error) {
 	code, err := localDeviceCode()
 	if err != nil {
@@ -50,7 +55,7 @@ func Dial(ctx context.Context, opts Options) (*Session, error) {
 
 // dial's explicit identity lets tests use synthetic hardware without persisting
 // a real machine identifier or exposing a product configuration override.
-func dial(ctx context.Context, opts Options, code string) (*Session, error) {
+func dial(ctx context.Context, opts Options, code string) (_ *Session, err error) {
 	host, _, err := net.SplitHostPort(opts.Server)
 	if err != nil || host == "" || opts.Username == "" || opts.Password == "" || strings.ContainsRune(opts.Username+opts.Password, 0) {
 		return nil, errors.New("TopSAP 服务器、账号或密码配置无效")
@@ -74,7 +79,14 @@ func dial(ctx context.Context, opts Options, code string) (*Session, error) {
 	}
 	transport := &http.Transport{Proxy: nil, DialContext: dialer, TLSClientConfig: cfg, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 15 * time.Second, MaxResponseHeaderBytes: 64 << 10, ForceAttemptHTTP2: false}
 	jar, _ := cookiejar.New(nil)
-	s := &Session{transport: transport, server: "https://" + opts.Server, cancel: cancel}
+	s := &Session{id: nextSessionID.Add(1), transport: transport, server: "https://" + opts.Server, cancel: cancel}
+	stage := "获取认证参数"
+	setStage := func(name string) {
+		stage = name
+		log.Printf("TopSAP [%d] stage=%s", s.id, stage)
+	}
+	startedAt := time.Now()
+	log.Printf("TopSAP [%d] start gateway=%s certificate_verify=%t", s.id, opts.Server, !cfg.InsecureSkipVerify)
 	s.http = &http.Client{Transport: transport, Jar: jar, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
 		return errors.New("TopSAP 浏览器重定向认证暂不支持")
 	}}
@@ -82,6 +94,8 @@ func dial(ctx context.Context, opts Options, code string) (*Session, error) {
 	authenticated := false
 	defer func() {
 		if !succeeded {
+			err = fmt.Errorf("TopSAP %s: %w", stage, err)
+			log.Printf("TopSAP [%d] setup failed elapsed=%s: %v", s.id, time.Since(startedAt).Round(time.Millisecond), err)
 			cancel()
 			if s.conn != nil {
 				_ = s.conn.Close()
@@ -96,12 +110,14 @@ func dial(ctx context.Context, opts Options, code string) (*Session, error) {
 		}
 	}()
 	var parameters authParameters
+	setStage("获取认证参数")
 	if _, err := s.post(setupCtx, "auth_param", nil, &parameters); err != nil {
 		return nil, err
 	}
 	if parameters.Password != "on" || parameters.AuthProtocol != "0" || parameters.DataProtocol != "0" || parameters.CheckClient == "on" || parameters.TwoWay == "on" {
 		return nil, errors.New("TopSAP 该网关的认证/国密/客户端安全检查模式暂不支持")
 	}
+	setStage("账号密码认证")
 	form := url.Values{"U": {base64.StdEncoding.EncodeToString([]byte(opts.Username))}, "P": {base64.StdEncoding.EncodeToString([]byte(opts.Password))}, "HASH": {""}, "S_CODE": {code}}
 	var login reply
 	key, err := s.post(setupCtx, "user_pswd", form, &login)
@@ -112,6 +128,7 @@ func dial(ctx context.Context, opts Options, code string) (*Session, error) {
 		return nil, err
 	}
 	authenticated = true
+	log.Printf("TopSAP [%d] authentication accepted Ret=0", s.id)
 	if login.User.NetAccess != "on" || login.User.Algorithm != "standard" || login.User.Protocol != "standard" || login.User.Compress != "off" {
 		return nil, errors.New("TopSAP 数据隧道模式暂不支持")
 	}
@@ -124,12 +141,14 @@ func dial(ctx context.Context, opts Options, code string) (*Session, error) {
 		return nil, errProtocol
 	}
 	var resources reply
-	if _, err = s.post(setupCtx, "get_config_info", url.Values{"HASH": {""}, "TYPE": {"phone"}}, &resources); err != nil {
+	setStage("获取完整资源 TYPE=all")
+	if _, err = s.post(setupCtx, "get_config_info", url.Values{"HASH": {""}, "TYPE": {"all"}}, &resources); err != nil {
 		return nil, err
 	}
 	if err = resources.check(); err != nil {
 		return nil, err
 	}
+	setStage("解析服务器资源")
 	s.routes, err = parseResources(resources)
 	if err != nil {
 		return nil, err
