@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/configuration-guidelines.md","reason":"复用独立配置ID会话生命周期"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"托盘动作和停止原因日志契约"}

@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Go回归与Windows构建范围"}
+{"file":".trellis/spec/frontend/index.md","reason":"保留查看详情事件与界面选择契约"}
