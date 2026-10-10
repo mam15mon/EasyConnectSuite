@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/netip"
