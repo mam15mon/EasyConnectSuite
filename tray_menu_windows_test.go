@@ -133,8 +133,26 @@ func TestTraySnapshotActionSurvivesSelectionAndProfileReorder(t *testing.T) {
 	if got, _ := a.executeTrayAction(trayAction{kind: "disconnect", profileID: "deleted"}); got != "Not running" || engines["b"].stopped.Load() {
 		t.Fatal("missing target fell back to selected connection")
 	}
+	a.mu.Lock()
+	a.appConfig.Profiles[1].Username = ""
+	a.mu.Unlock()
+	if got, cancelled := a.executeTrayAction(trayAction{kind: "connect", profileID: "a"}); got != "配置不完整：服务器地址或用户名为空" || cancelled {
+		t.Fatal("validation failure was mistaken for cancellation of the previous session")
+	}
 	if got, _ := a.executeTrayAction(trayAction{kind: "disconnect_all"}); got != "OK" || !engines["b"].stopped.Load() {
 		t.Fatal("disconnect all retained a session")
+	}
+}
+
+func TestEmptyTrayMenuDisablesDisconnectAll(t *testing.T) {
+	menu, actions := buildTrayMenu(nil)
+	defer procDestroyMenu.Call(menu)
+	if len(actions) != 0 || nativeMenuText(menu, 3) != "暂无 VPN 配置，请打开工作台添加" {
+		t.Fatal("empty tray menu contains a profile action")
+	}
+	state, _, _ := user32.NewProc("GetMenuState").Call(menu, 1002, 0)
+	if state&MF_GRAYED == 0 {
+		t.Fatal("disconnect all is enabled without sessions")
 	}
 }
 
