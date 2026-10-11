@@ -4,8 +4,8 @@
   "title": "修复多 VPN 验收发现的状态归属问题",
   "description": "修复旧启动结果覆盖新会话、配置切换期间资源错配及日志目录失败回滚越界，并补全可重复回归验收。",
   "status": "planning",
-  "dev_type": null,
-  "scope": null,
+  "dev_type": "fullstack",
+  "scope": "multi-vpn-state-ownership",
   "package": null,
   "priority": "P2",
   "creator": "admin",
@@ -20,7 +20,15 @@
   "subtasks": [],
   "children": [],
   "parent": null,
-  "relatedFiles": [],
-  "notes": "",
+  "relatedFiles": [
+    "connections.go",
+    "connections_test.go",
+    "app.go",
+    "frontend/src/main.js",
+    "frontend/src/preview.mjs",
+    "frontend/wailsjs/go/main/App.js",
+    "frontend/wailsjs/go/main/App.d.ts"
+  ],
+  "notes": "规划文档已收敛；用户本轮请求仅编写修复计划。实施授权待后续确认，状态保持 planning。审查基线 c5f630e。",
   "meta": {}
 }
