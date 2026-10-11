@@ -25,9 +25,11 @@ import (
 )
 
 type Stack struct {
-	gvisorStack *stack.Stack
-	resolve     zcdns.LocalServer
-	ipPool      *ippool.IPPool[[]clientpkg.DomainResource]
+	logContext    string
+	stopRequested func() bool
+	gvisorStack   *stack.Stack
+	resolve       zcdns.LocalServer
+	ipPool        *ippool.IPPool[[]clientpkg.DomainResource]
 
 	endpoint *Endpoint
 	ipMu     sync.Mutex
@@ -144,7 +146,7 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (written int, terr
 					continue
 				}
 
-				if hook_func.IsTerminal() {
+				if ep.owner != nil && ep.owner.reconnectStopped() {
 					return list.Len(), nil
 				}
 
@@ -181,7 +183,12 @@ func joinPacketSlices(slices [][]byte) []byte {
 }
 
 func NewStack(client clientpkg.Client) (*Stack, error) {
-	s := &Stack{done: make(chan struct{})}
+	return NewOwnedStack(client, hook_func.IsTerminal)
+}
+
+// NewOwnedStack isolates shutdown from other embedded VPN connections.
+func NewOwnedStack(client clientpkg.Client, stopped func() bool) (*Stack, error) {
+	s := &Stack{done: make(chan struct{}), stopRequested: stopped}
 
 	s.gvisorStack = stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
@@ -317,7 +324,7 @@ func (s *Stack) reportFatal(cause error) {
 	if handler != nil {
 		handler(cause)
 	} else {
-		log.Printf("gVisor stack fatal error: %v", cause)
+		s.logf("gVisor stack fatal error: %v", cause)
 	}
 }
 
@@ -353,7 +360,7 @@ func (s *Stack) dropBrokenConn() {
 // is final (terminal shutdown or fatal already reported).
 func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 	if errors.Is(cause, easyconnect.ErrSangforShutdown) {
-		log.Printf("L3 tunnel: server returned SHUTDOWN (session terminated by server)")
+		s.logf("L3 tunnel: server returned SHUTDOWN (session terminated by server)")
 	}
 
 	s.reloginMu.Lock()
@@ -370,7 +377,7 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 			if handler != nil {
 				handler(fatalCause)
 			} else {
-				log.Printf("gVisor fatal: %v", fatalCause)
+				s.logf("gVisor fatal: %v", fatalCause)
 			}
 		}
 	}()
@@ -388,7 +395,7 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 	current := s.endpoint.l3Conn
 	s.endpoint.connMu.RUnlock()
 	if current != nil && broken != nil && current != broken {
-		log.Printf("L3 tunnel already rebuilt by another path, continuing")
+		s.logf("L3 tunnel already rebuilt by another path, continuing")
 		return true
 	}
 
@@ -416,31 +423,31 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 		}
 
 		s.lastReloginTime = time.Now()
-		log.Printf("L3 tunnel error: %v; re-login attempt %d/%d", cause, s.reloginFailures+1, maxReloginAttempts)
+		s.logf("L3 tunnel error: %v; re-login attempt %d/%d", cause, s.reloginFailures+1, maxReloginAttempts)
 
 		if err := s.callRelogin(); err != nil {
 			if errors.Is(err, easyconnect.ErrLoginRejected) {
 				fatalCause = fmt.Errorf("VPN 登录被拒绝，已停止自动重连: %w", err)
-				log.Printf("Re-login rejected, stopping: %v", err)
+				s.logf("Re-login rejected, stopping: %v", err)
 				return false
 			}
 			if isReconnectNetworkError(err) {
-				log.Printf("Network unavailable, waiting to reconnect: %v", err)
+				s.logf("Network unavailable, waiting to reconnect: %v", err)
 				continue
 			}
 			s.reloginFailures++
-			log.Printf("Re-login failed (%d/%d): %v", s.reloginFailures, maxReloginAttempts, err)
+			s.logf("Re-login failed (%d/%d): %v", s.reloginFailures, maxReloginAttempts, err)
 			continue
 		}
 
 		newConn, err := s.newL3ConnSafe()
 		if err != nil {
 			if isReconnectNetworkError(err) {
-				log.Printf("L3 network unavailable, waiting to reconnect: %v", err)
+				s.logf("L3 network unavailable, waiting to reconnect: %v", err)
 				continue
 			}
 			s.reloginFailures++
-			log.Printf("Re-login succeeded but L3 handshake failed (%d/%d): %v", s.reloginFailures, maxReloginAttempts, err)
+			s.logf("Re-login succeeded but L3 handshake failed (%d/%d): %v", s.reloginFailures, maxReloginAttempts, err)
 			continue
 		}
 		s.endpoint.connMu.Lock()
@@ -458,13 +465,13 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 
 		s.reloginFailures = 0
 		recovered = true
-		log.Printf("Re-login success, L3 tunnel rebuilt")
+		s.logf("Re-login success, L3 tunnel rebuilt")
 		return true
 	}
 }
 
 func (s *Stack) reconnectStopped() bool {
-	if hook_func.IsTerminal() {
+	if s.stopRequested != nil && s.stopRequested() {
 		return true
 	}
 	select {
@@ -491,7 +498,7 @@ func (s *Stack) callRelogin() (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("re-login panicked: %v", r)
-			log.Printf("Re-login panicked: %v\n%s", r, debug.Stack())
+			s.logf("Re-login panicked: %v\n%s", r, debug.Stack())
 		}
 	}()
 	return s.reloginFunc()
@@ -503,7 +510,7 @@ func (s *Stack) newL3ConnSafe() (conn io.ReadWriteCloser, err error) {
 		if r := recover(); r != nil {
 			conn = nil
 			err = fmt.Errorf("L3 handshake panicked: %v", r)
-			log.Printf("L3 handshake panicked: %v\n%s", r, debug.Stack())
+			s.logf("L3 handshake panicked: %v\n%s", r, debug.Stack())
 		}
 	}()
 	return s.endpoint.client.NewL3Conn()
@@ -516,13 +523,13 @@ func (s *Stack) newL3ConnSafe() (conn io.ReadWriteCloser, err error) {
 // exits silently.
 func (s *Stack) Run() {
 	for {
-		if hook_func.IsTerminal() {
+		if s.reconnectStopped() {
 			return
 		}
 
 		err := s.readLoopOnce()
 
-		if hook_func.IsTerminal() {
+		if s.reconnectStopped() {
 			return
 		}
 		if err == nil {
@@ -546,7 +553,7 @@ func (s *Stack) readLoopOnce() (cause error) {
 	defer func() {
 		if r := recover(); r != nil {
 			cause = fmt.Errorf("L3 read loop panicked: %v", r)
-			log.Printf("gVisor read loop recovered: %v\n%s", r, debug.Stack())
+			s.logf("gVisor read loop recovered: %v\n%s", r, debug.Stack())
 			s.dropBrokenConn()
 		}
 	}()
@@ -586,4 +593,10 @@ func makeInboundPacketBuffer(buf []byte, n int) *stack.PacketBuffer {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.MakeWithData(buf[:n]),
 	})
+}
+
+// SetLogContext must be called before running or dialing through this stack.
+func (s *Stack) SetLogContext(prefix string) { s.logContext = prefix }
+func (s *Stack) logf(format string, args ...any) {
+	log.Printf("%s%s", s.logContext, fmt.Sprintf(format, args...))
 }

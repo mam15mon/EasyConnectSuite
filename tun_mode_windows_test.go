@@ -104,6 +104,24 @@ func TestTUNModeElevationSavesSelectedProfileBeforeLaunch(t *testing.T) {
 	}
 }
 
+func TestProfileTUNModeUsesExplicitIDWithoutSwitchingSelection(t *testing.T) {
+	app := tunModeTestApp(t)
+	if _, err := app.setProfileTUNMode("first", true, true, func(string) error { t.Fatal("already elevated"); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	config := readTUNTestConfig(t, app)
+	if !config.Profiles[0].TUNMode || config.Profiles[1].TUNMode || config.ActiveProfileID != "second" {
+		t.Fatal("preparation modified another profile or selection")
+	}
+	app.connections = map[string]*vpnConnection{"first": {status: VPNStatus{Running: true}}}
+	if _, err := app.setProfileTUNMode("first", false, true, func(string) error { return nil }); err == nil {
+		t.Fatal("changed a running unselected connection")
+	}
+	if _, err := app.setProfileTUNMode("missing", true, true, func(string) error { return nil }); err == nil {
+		t.Fatal("missing ID substituted selected profile")
+	}
+}
+
 func TestTUNModeCancelledElevationRestoresMemoryAndDisk(t *testing.T) {
 	for _, previous := range []bool{false, true} {
 		t.Run(strconv.FormatBool(previous), func(t *testing.T) {

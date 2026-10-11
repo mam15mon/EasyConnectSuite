@@ -94,6 +94,9 @@ func loadPolicy(conf configs.Config, c client.Client, vpnStack stack.Stack) (*co
 	}
 	useRemote := !conf.DisableRemoteDNS
 	remote := conf.RemoteDNSServer
+	if !useRemote {
+		remote = ""
+	}
 	if useRemote && remote == "auto" {
 		var err error
 		remote, err = c.DNSServer()

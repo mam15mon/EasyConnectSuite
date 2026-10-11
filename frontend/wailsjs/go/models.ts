@@ -25,6 +25,11 @@ export namespace main {
 	
 	export class Profile {
 	    id: string;
+	    protocol: string;
+	    domain: string;
+	    insecureSkipVerify: boolean;
+	    socksPort: number;
+	    httpPort: number;
 	    name: string;
 	    server: string;
 	    port: number;
@@ -46,6 +51,11 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.protocol = source["protocol"];
+	        this.domain = source["domain"];
+	        this.insecureSkipVerify = source["insecureSkipVerify"];
+	        this.socksPort = source["socksPort"];
+	        this.httpPort = source["httpPort"];
 	        this.name = source["name"];
 	        this.server = source["server"];
 	        this.port = source["port"];
@@ -95,6 +105,8 @@ export namespace main {
 	}
 	
 	export class VPNStatus {
+	    profileId: string;
+	    protocol: string;
 	    running: boolean;
 	    stage: string;
 	    message: string;
@@ -115,6 +127,8 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.profileId = source["profileId"];
+	        this.protocol = source["protocol"];
 	        this.running = source["running"];
 	        this.stage = source["stage"];
 	        this.message = source["message"];

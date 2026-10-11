@@ -19,20 +19,25 @@ import (
 
 // Profile represents a single VPN configuration
 type Profile struct {
-	ID               string `json:"id"`
-	Name             string `json:"name"`
-	Server           string `json:"server"`
-	Port             int    `json:"port"`
-	Username         string `json:"username"`
-	Password         string `json:"password"`
-	Enable2FA        bool   `json:"enable2FA"`
-	TotpSecret       string `json:"totpSecret"`
-	BindInterface    string `json:"bindInterface"`
-	TUNMode          bool   `json:"tunMode"`
-	DisableProxy     bool   `json:"disableProxy"`
-	DisableZjuConfig bool   `json:"disableZjuConfig"`
-	DisableKeepAlive bool   `json:"disableKeepAlive"`
-	KeepAliveURL     string `json:"keepAliveUrl"`
+	ID                 string `json:"id"`
+	Protocol           string `json:"protocol"`
+	Domain             string `json:"domain"`
+	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
+	SocksPort          int    `json:"socksPort"`
+	HTTPPort           int    `json:"httpPort"`
+	Name               string `json:"name"`
+	Server             string `json:"server"`
+	Port               int    `json:"port"`
+	Username           string `json:"username"`
+	Password           string `json:"password"`
+	Enable2FA          bool   `json:"enable2FA"`
+	TotpSecret         string `json:"totpSecret"`
+	BindInterface      string `json:"bindInterface"`
+	TUNMode            bool   `json:"tunMode"`
+	DisableProxy       bool   `json:"disableProxy"`
+	DisableZjuConfig   bool   `json:"disableZjuConfig"`
+	DisableKeepAlive   bool   `json:"disableKeepAlive"`
+	KeepAliveURL       string `json:"keepAliveUrl"`
 }
 
 // AppConfig stores all profiles and active selection
@@ -43,6 +48,8 @@ type AppConfig struct {
 
 // VPNStatus contains current connection status
 type VPNStatus struct {
+	ProfileID     string `json:"profileId"`
+	Protocol      string `json:"protocol"`
 	Running       bool   `json:"running"`
 	Stage         string `json:"stage"`
 	Message       string `json:"message"`
@@ -65,9 +72,10 @@ type App struct {
 	mu           sync.Mutex
 	appConfig    AppConfig
 	status       VPNStatus
-	engine       *engine.Engine
+	connections  map[string]*vpnConnection
 	starting     bool
 	restarting   bool
+	shuttingDown bool
 	startTime    time.Time
 	tickerCancel context.CancelFunc
 	configPath   string
@@ -101,6 +109,8 @@ func NewApp() *App {
 
 	app.initDefaultConfig()
 	app.loadConfigFile()
+	app.normalizeProfiles()
+	app.selectConnectionLocked()
 	return app
 }
 
@@ -174,9 +184,14 @@ func (a *App) startup(ctx context.Context) {
 				return
 			case <-ticker.C:
 				a.mu.Lock()
-				if a.status.Running && !a.startTime.IsZero() {
-					a.status.Duration = int64(time.Since(a.startTime).Seconds())
-					runtime.EventsEmit(a.ctx, "status-tick", a.status)
+				for id, c := range a.connections {
+					if c.status.Running && !c.started.IsZero() {
+						c.status.Duration = int64(time.Since(c.started).Seconds())
+						if id == a.appConfig.ActiveProfileID {
+							a.status = c.status
+						}
+						runtime.EventsEmit(a.ctx, "status-tick", c.status)
+					}
 				}
 				a.mu.Unlock()
 			}
@@ -189,11 +204,14 @@ func (a *App) startup(ctx context.Context) {
 
 // shutdown cleans up resources
 func (a *App) shutdown(ctx context.Context) {
+	a.mu.Lock()
+	a.shuttingDown = true
+	a.mu.Unlock()
 	RemoveTrayIcon()
 	if a.tickerCancel != nil {
 		a.tickerCancel()
 	}
-	_ = a.StopVPN()
+	_ = a.stopAllConnections("app_shutdown")
 }
 
 // GetAppConfig returns all profiles and active ID
@@ -219,6 +237,7 @@ func (a *App) SetActiveProfile(id string) bool {
 	for _, p := range a.appConfig.Profiles {
 		if p.ID == id {
 			a.appConfig.ActiveProfileID = id
+			a.selectConnectionLocked()
 			_ = a.saveConfigFile()
 			return true
 		}
@@ -227,31 +246,54 @@ func (a *App) SetActiveProfile(id string) bool {
 }
 
 // SaveProfile creates or updates a profile
-func (a *App) SaveProfile(p Profile) Profile {
+func (a *App) SaveProfile(p Profile) (Profile, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-
-	if p.ID == "" {
-		p.ID = fmt.Sprintf("profile-%d", time.Now().UnixMilli())
-		a.appConfig.Profiles = append(a.appConfig.Profiles, p)
-		a.appConfig.ActiveProfileID = p.ID
-	} else {
-		found := false
-		for i, existing := range a.appConfig.Profiles {
-			if existing.ID == p.ID {
-				a.appConfig.Profiles[i] = p
-				found = true
-				break
-			}
-		}
-		if !found {
-			a.appConfig.Profiles = append(a.appConfig.Profiles, p)
-		}
-		a.appConfig.ActiveProfileID = p.ID
+	if c := a.connections[p.ID]; c != nil && (c.status.Running || c.stopping) {
+		return Profile{}, fmt.Errorf("请先断开该配置再编辑")
 	}
-
-	_ = a.saveConfigFile()
-	return p
+	if p.Protocol == "" {
+		p.Protocol = "easyconnect"
+	}
+	if p.Protocol != "easyconnect" && p.Protocol != "univpn" && p.Protocol != "topsec" {
+		return Profile{}, fmt.Errorf("不支持的 VPN 类型")
+	}
+	if p.Protocol == "univpn" && p.Enable2FA {
+		return Profile{}, fmt.Errorf("UniVPN 当前仅支持账号密码认证")
+	}
+	if p.Protocol == "topsec" && p.Enable2FA {
+		return Profile{}, fmt.Errorf("TopSAP 当前仅支持账号密码认证")
+	}
+	if p.Port < 1 || p.Port > 65535 {
+		return Profile{}, fmt.Errorf("服务器端口必须为 1–65535")
+	}
+	if p.ID == "" {
+		p.ID = fmt.Sprintf("profile-%d", time.Now().UnixNano())
+	}
+	a.assignProxyPorts(&p)
+	if p.SocksPort < 1 || p.SocksPort > 65535 || p.HTTPPort < 1 || p.HTTPPort > 65535 || p.SocksPort == p.HTTPPort {
+		return Profile{}, fmt.Errorf("请填写两个不同的有效代理端口")
+	}
+	previous := AppConfig{ActiveProfileID: a.appConfig.ActiveProfileID, Profiles: append([]Profile(nil), a.appConfig.Profiles...)}
+	found := false
+	for i, existing := range a.appConfig.Profiles {
+		if existing.ID == p.ID {
+			a.appConfig.Profiles[i] = p
+			found = true
+			break
+		}
+	}
+	if !found {
+		a.appConfig.Profiles = append(a.appConfig.Profiles, p)
+	}
+	a.appConfig.ActiveProfileID = p.ID
+	if err := a.saveConfigFile(); err != nil {
+		a.appConfig = previous
+		return Profile{}, err
+	}
+	delete(a.connections, p.ID)
+	a.selectConnectionLocked()
+	return p, nil
 }
 
 // DeleteProfile removes a profile by ID
@@ -259,6 +301,9 @@ func (a *App) DeleteProfile(id string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	if c := a.connections[id]; c != nil && (c.status.Running || c.stopping) {
+		return false
+	}
 	if len(a.appConfig.Profiles) <= 1 {
 		return false // Preserve at least one profile
 	}
@@ -275,6 +320,8 @@ func (a *App) DeleteProfile(id string) bool {
 		a.appConfig.ActiveProfileID = newProfiles[0].ID
 	}
 
+	delete(a.connections, id)
+	a.selectConnectionLocked()
 	_ = a.saveConfigFile()
 	return true
 }
@@ -326,99 +373,12 @@ func (a *App) GetInterfaces() []string {
 	return result
 }
 
-// StartVPN starts the in-process VPN engine using the active profile.
-// The login sequence runs synchronously (a few seconds); progress is
-// reported through vpn-status / vpn-log events.
-func (a *App) StartVPN() string {
-	a.mu.Lock()
-	if a.restarting {
-		a.mu.Unlock()
-		return "正在以管理员身份重新启动"
-	}
-	if a.engine != nil && a.engine.Running() {
-		a.mu.Unlock()
-		return "Already running"
-	}
-	if a.starting {
-		a.mu.Unlock()
-		return "正在启动中，请稍候..."
-	}
-
-	profile := a.getActiveProfileLocked()
-	if profile.Server == "" || profile.Username == "" {
-		a.mu.Unlock()
-		return "配置不完整：服务器地址或用户名为空"
-	}
-
-	a.starting = true
-	a.startTime = time.Now()
-	a.status = VPNStatus{
-		Running:       true,
-		State:         "connecting",
-		Stage:         "准备中",
-		Message:       "正在准备连接…",
-		ActiveProfile: profile.Name,
-		TUNMode:       profile.TUNMode,
-		DisableProxy:  profile.DisableProxy,
-		SocksPort:     "1080",
-		HTTPPort:      "1081",
-	}
-	a.syncTrayTooltipLocked()
-	if a.ctx != nil {
-		runtime.EventsEmit(a.ctx, "vpn-status", a.status)
-	}
-
-	logDir := ""
-	if appData := os.Getenv("APPDATA"); appData != "" {
-		logDir = filepath.Join(appData, "EasyConnectVPN", "logs")
-		_ = os.MkdirAll(logDir, 0755)
-	} else {
-		logDir = "."
-	}
-
-	opts := engine.Options{
-		Config:      a.buildEngineConfig(profile),
-		OnStatus:    a.handleEngineStatus,
-		OnResources: a.handleResources,
-		LogFile:     filepath.Join(logDir, "engine.log"),
-	}
-	a.mu.Unlock()
-
-	eng, err := engine.Start(opts)
-
-	a.mu.Lock()
-	a.starting = false
-	if err != nil {
-		a.engine = nil
-		a.startTime = time.Time{}
-		a.status.Running = false
-		a.status.State = "error"
-		a.status.Stage = ""
-		a.status.Message = err.Error()
-		a.status.LastError = err.Error()
-		a.syncTrayTooltipLocked()
-		if a.ctx != nil {
-			runtime.EventsEmit(a.ctx, "vpn-status", a.status)
-		}
-		a.mu.Unlock()
-		return err.Error()
-	}
-
-	a.engine = eng
-	a.resources = eng.Resources()
-	if a.ctx != nil {
-		// Push the resource list after it is actually stored: the
-		// "connected" vpn-status event fires mid-login, before this
-		// assignment, so a frontend fetch triggered by it races empty.
-		runtime.EventsEmit(a.ctx, "vpn-resources", a.resources)
-	}
-	a.mu.Unlock()
-	return "OK"
-}
-
 // buildEngineConfig maps a GUI profile onto the upstream engine config.
 func (a *App) buildEngineConfig(profile Profile) configs.Config {
 	conf := configs.Default()
+	if profile.Protocol != "" {
+		conf.Protocol = profile.Protocol
+	}
 
 	conf.ServerAddress = profile.Server
 	if profile.Port > 0 {
@@ -434,8 +394,15 @@ func (a *App) buildEngineConfig(profile Profile) configs.Config {
 	conf.AutoDetectInterface = profile.BindInterface == ""
 	conf.TUNMode = profile.TUNMode
 	conf.AddRoute = profile.TUNMode
-	conf.SocksBind = "127.0.0.1:1080"
-	conf.HTTPBind = "127.0.0.1:1081"
+	socks, http := profile.SocksPort, profile.HTTPPort
+	if socks == 0 {
+		socks = 1080
+	}
+	if http == 0 {
+		http = 1081
+	}
+	conf.SocksBind = net.JoinHostPort("127.0.0.1", fmt.Sprint(socks))
+	conf.HTTPBind = net.JoinHostPort("127.0.0.1", fmt.Sprint(http))
 	if profile.DisableProxy {
 		conf.SocksBind = ""
 		conf.HTTPBind = ""
@@ -448,16 +415,16 @@ func (a *App) buildEngineConfig(profile Profile) configs.Config {
 		conf.KeepAliveURL = url
 	}
 
-	return conf
-}
-
-func (a *App) handleResources(entries []engine.ResourceEntry) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.resources = append([]engine.ResourceEntry(nil), entries...)
-	if a.ctx != nil {
-		runtime.EventsEmit(a.ctx, "vpn-resources", a.resources)
+	if conf.Protocol == "univpn" {
+		conf.DisableRemoteDNS = true
+		conf.DisableZJUConfig = true
+		conf.DisableKeepAlive = true
 	}
+	if conf.Protocol == "topsec" {
+		conf.DisableZJUConfig = true
+		conf.DisableKeepAlive = true
+	}
+	return conf
 }
 
 // GetVPNResources returns the server-authorized resource list of the
@@ -475,47 +442,7 @@ func (a *App) handleEngineStatus(s engine.Status) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	a.status.Stage = s.Stage
-	a.status.Message = s.Message
-	switch s.Phase {
-	case engine.PhaseConnecting:
-		a.status.Running = true
-		a.status.State = "connecting"
-		a.status.LastError = ""
-
-	case engine.PhaseReconnecting:
-		a.status.Running = true
-		a.status.State = "connecting"
-		a.status.Stage = "重连中"
-		a.status.LastError = ""
-
-	case engine.PhaseConnected:
-		a.status.Running = true
-		a.status.State = "connected"
-		a.status.LastError = ""
-		if s.ClientIP != "" {
-			a.status.ClientIP = s.ClientIP
-		}
-		if s.DNS != "" {
-			a.status.DNS = s.DNS
-		}
-		if a.startTime.IsZero() {
-			a.startTime = time.Now()
-		}
-
-	case engine.PhaseDisconnected:
-		a.status.Running = false
-		a.status.State = "disconnected"
-		a.startTime = time.Time{}
-		a.resources = nil
-
-	case engine.PhaseError:
-		a.status.Running = false
-		a.status.State = "error"
-		a.status.LastError = s.Message
-		a.startTime = time.Time{}
-		a.resources = nil
-	}
+	applyEngineStatus(&a.status, &a.startTime, &a.resources, s)
 
 	a.syncTrayTooltipLocked()
 	if a.ctx != nil {
@@ -524,21 +451,7 @@ func (a *App) handleEngineStatus(s engine.Status) {
 }
 
 func (a *App) syncTrayTooltipLocked() {
-	var tip string
-	if a.status.Running {
-		if a.status.State == "connected" {
-			if a.status.ClientIP != "" {
-				tip = fmt.Sprintf("EasyConnect VPN\n已连接: %s\nIP: %s", a.status.ActiveProfile, a.status.ClientIP)
-			} else {
-				tip = fmt.Sprintf("EasyConnect VPN\n已连接: %s", a.status.ActiveProfile)
-			}
-		} else {
-			tip = fmt.Sprintf("EasyConnect VPN\n%s: %s", a.status.Stage, a.status.ActiveProfile)
-		}
-	} else {
-		tip = "EasyConnect VPN (未连接)"
-	}
-	UpdateTrayTooltip(tip)
+	UpdateTrayTooltip(trayTooltip(a.trayStatusesLocked()))
 }
 
 func (a *App) getActiveProfileLocked() Profile {
@@ -553,24 +466,47 @@ func (a *App) getActiveProfileLocked() Profile {
 	return Profile{}
 }
 
-// StopVPN stops the in-process VPN engine
-func (a *App) StopVPN() string {
-	a.mu.Lock()
-	eng := a.engine
-	a.mu.Unlock()
+func applyEngineStatus(status *VPNStatus, startTime *time.Time, resources *[]engine.ResourceEntry, s engine.Status) {
+	status.Stage = s.Stage
+	status.Message = s.Message
+	switch s.Phase {
+	case engine.PhaseConnecting:
+		status.Running = true
+		status.State = "connecting"
+		status.LastError = ""
 
-	if eng == nil || !eng.Running() {
-		a.mu.Lock()
-		a.status.Running = false
-		a.status.State = "disconnected"
-		a.startTime = time.Time{}
-		a.syncTrayTooltipLocked()
-		a.mu.Unlock()
-		return "Not running"
+	case engine.PhaseReconnecting:
+		status.Running = true
+		status.State = "connecting"
+		status.Stage = "重连中"
+		status.LastError = ""
+
+	case engine.PhaseConnected:
+		status.Running = true
+		status.State = "connected"
+		status.LastError = ""
+		if s.ClientIP != "" {
+			status.ClientIP = s.ClientIP
+		}
+		if s.DNS != "" {
+			status.DNS = s.DNS
+		}
+		if (*startTime).IsZero() {
+			(*startTime) = time.Now()
+		}
+
+	case engine.PhaseDisconnected:
+		status.Running = false
+		status.State = "disconnected"
+		(*startTime) = time.Time{}
+		(*resources) = nil
+
+	case engine.PhaseError:
+		status.Running = false
+		status.State = "error"
+		status.LastError = s.Message
+		(*startTime) = time.Time{}
+		(*resources) = nil
 	}
 
-	// Stop runs the teardown chain and emits PhaseDisconnected, which
-	// updates status + tray through handleEngineStatus.
-	eng.Stop()
-	return "OK"
 }

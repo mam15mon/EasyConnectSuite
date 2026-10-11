@@ -8,7 +8,9 @@
 2. 编辑配置，选择实际联网的出口网卡，例如 `WLAN`。自动选择也可使用，但多 VPN 同时运行时建议明确指定出口。
 3. 在主界面开启 TUN 模式。普通权限下先显示“即将切换管理员权限”提示，说明授权后窗口会关闭并自动重新打开、配置会保留，再弹出 Windows 管理员授权窗口；同意后程序关闭旧实例并以管理员身份重新打开，保留配置文件路径及当前节点。取消授权则保留原窗口和原模式。已是管理员时不重启。
 4. 点击“建立隧道”。保存的 TUN 配置在普通权限下连接时，也会先请求管理员授权重启；重开窗口后再次点击连接。
-5. Windows 中会出现 `EasyConnect Suite` 网卡，地址为 `198.19.128.1/30`。SOCKS5 `127.0.0.1:1080` 和 HTTP `127.0.0.1:1081` 继续可用。
+5. 第一槽位的网卡为 `EasyConnect Suite`，地址为 `198.19.128.1/30`；后续槽位使用 `EasyConnect Suite #N`、`198.19.128.(4N+1)/30`，对应 DNS 为 `198.19.128.(4N+2)`，最多 64 个独立槽位。各配置的 SOCKS5/HTTP 代理继续可用，端口以配置和界面显示为准。
+
+可以逐条连接多个配置，切换当前节点不会断开其他连接。已有连接时应先断开全部再切换管理员权限。程序内两条 TUN 的资源前缀完全相同，或 DNS 命名空间存在相同/父子关系时会明确报错；不同长度前缀保持最长匹配。需要访问重叠地址时，可通过各连接的本地代理明确选择 VPN。
 
 Wintun 由现有 sing-tun 依赖内嵌，本实现无需另外放置 `wintun.dll`。
 
@@ -21,14 +23,14 @@ Wintun 由现有 sing-tun 依赖内嵌，本实现无需另外放置 `wintun.dll
 - 仅导入 VPN 下发的 IPv4 资源范围，不自动加入整个 `10.0.0.0/8`，也不添加全局默认路由。
 - EasyConnect 网卡 metric 和资源路由 metric 都设为 `0`。相同前缀与 aTrust 的总 metric `1` 比较时，EasyConnect 优先。
 - 不同前缀仍遵循最长匹配。例如 EasyConnect 的 `/8` 不会覆盖 aTrust 的 `/16`。
-- 本程序虚拟地址放在 `198.19.128.0/17` 后半段：网卡及 DNS 使用 `198.19.128.0/30`，内部 Fake-IP 映射池使用 `198.19.192.0/18`，两者不重叠。Clash 的 Fake-IP 池应由用户设为前半段 `198.19.0.0/17`；aTrust 的 `198.18.0.0/16` 域名映射范围与本程序分开。
+- 本程序虚拟地址放在 `198.19.128.0/17` 后半段：多网卡及 DNS 使用 `198.19.128.0/24` 内各自的 `/30`，内部 Fake-IP 映射池使用 `198.19.192.0/18`，两者不重叠。Clash 的 Fake-IP 池应由用户设为前半段 `198.19.0.0/17`；aTrust 的 `198.18.0.0/16` 域名映射范围与本程序分开。
 - 不修改 aTrust 或 Clash 的网卡 metric、路由、DNS 配置。Clash 的 `10.0.0.0/8` 绕过保持原设置。
 - `198.19.128.0/17` 是本程序的地址分配范围，不会因此向 TUN 添加整段 `/17` 路由；实际业务仍按服务器资源分流。更换程序后需从托盘退出旧实例再运行新版、重新连接，原 DNS 规则会在正常断开时清理。
 - 如果另一个客户端在相同前缀上也使用总 metric `0`，两者可能打平；本版本不会自动修改其他客户端。
 
 ## 域名与 DNS
 
-连接时自动为 VPN 下发的所有域名与固定解析名称添加带有 `EasyConnectSuite resource TUN` 标记的 Windows NRPT 规则，指向虚拟 DNS `198.19.128.2`。DNS 通过 TUN 内部处理，无需占用本机的 `53` 端口。
+EasyConnect 连接时自动为 VPN 下发的所有域名与固定解析名称添加带有 `EasyConnectSuite resource TUN` 或 `EasyConnectSuite resource TUN #N` 标记的 Windows NRPT 规则，指向该槽位的虚拟 DNS。DNS 通过 TUN 内部处理，无需占用本机的 `53` 端口。UniVPN 当前只解析已验证的 IPv4 地址和路由，不推测其 DNS/域名资源，也不创建 UniVPN NRPT 规则。
 
 程序还通过该 VPN 的 DNS 查询资源域名的 SOA 记录，自动识别其所属 DNS 区域，将区域及其子域名交给当前 VPN 解析。例如服务器只下发 `asc.res.zb-chinatower.com`，但 VPN DNS 返回所属区域 `res.zb-chinatower.com`，则 `one.console.res.zb-chinatower.com` 也会自动使用同一 VPN DNS，无需手动填写或修改 hosts。区域信息仅用于选择 DNS，不会增加资源访问权限。未返回有效 SOA 时不扩展对应区域；查询错误记录到日志。
 
@@ -38,7 +40,7 @@ Wintun 由现有 sing-tun 依赖内嵌，本实现无需另外放置 `wintun.dll
 
 重登录后重新获取资源、替换路由与域名解析规则，在 L3 隧道重建完成后重新查询 DNS 区域。断开时关闭 TUN 和活动连接，撤销本程序创建的路由与标记规则。
 
-任务管理器强制结束进程时无法执行退出清理，NRPT 规则可能残留。程序下次启动时会先检查并清理残留，无需登录成功或开启 TUN。清理只删除本程序标记的 NRPT 规则，以及 `EasyConnect Suite` 网卡仍具有本程序地址 `198.19.128.1` 时，该网卡上 metric 为 `0`、无网关、协议为 `NetMgmt` 的 IPv4 非默认路由。
+任务管理器强制结束进程时无法执行退出清理，NRPT 规则可能残留。程序下次启动时会先检查并清理全部自有槽位的残留，无需登录成功或开启 TUN。清理只删除本程序的精确 NRPT 标记，以及自有网卡仍具有对应槽位预期地址时，该网卡上 metric 为 `0`、无网关、协议为 `NetMgmt` 的 IPv4 非默认路由。名称符合但地址不符的网卡不会清理。
 
 启动检查在单实例检查之后执行；检查期间不能建立 VPN 连接。普通权限下发现残留才显示切换提示、请求管理员授权并重新打开程序，保留配置路径和当前节点；已有管理员权限时直接清理。授权取消或清理失败会在界面显示错误。程序未重新启动前，残留规则不会由已结束的进程自动清理。
 
@@ -49,20 +51,20 @@ Wintun 由现有 sing-tun 依赖内嵌，本实现无需另外放置 `wintun.dll
 连接后在 PowerShell 中查看：
 
 ```powershell
-Get-NetIPInterface -InterfaceAlias 'EasyConnect Suite' -AddressFamily IPv4
-Get-NetRoute -InterfaceAlias 'EasyConnect Suite' -PolicyStore ActiveStore
-Get-DnsClientNrptRule | Where-Object Comment -eq 'EasyConnectSuite resource TUN'
+Get-NetIPInterface -InterfaceAlias 'EasyConnect Suite*' -AddressFamily IPv4
+Get-NetRoute -InterfaceAlias 'EasyConnect Suite*' -PolicyStore ActiveStore
+Get-DnsClientNrptRule | Where-Object Comment -match '^EasyConnectSuite resource TUN(?: #(?:[1-9]|[1-5][0-9]|6[0-3]))?$'
 ```
 
 使用实际开放的业务端口验证，而不是 ping，例如 `Test-NetConnection <内网IP> -Port <业务端口>`。同时确认 aTrust 的独立资源和 Clash 的普通代理流量仍可使用。断开后再查看，确认本程序的路由和标记规则已经清理。
 
-日志位于 `%APPDATA%\EasyConnectVPN\logs\engine.log`。初始化失败或资源路由失败会作为连接错误返回；代理端口占用会记入日志。
+日志位于 `%APPDATA%\EasyConnectVPN\logs\engine.log`，多连接共享此进程日志。初始化、资源路由失败和代理端口占用都会作为所属连接的错误返回。
 
 如果强制结束进程后遗留了本程序的 DNS 标记，可在管理员 PowerShell 中清理：
 
 ```powershell
 Get-DnsClientNrptRule |
-  Where-Object Comment -eq 'EasyConnectSuite resource TUN' |
+  Where-Object Comment -match '^EasyConnectSuite resource TUN(?: #(?:[1-9]|[1-5][0-9]|6[0-3]))?$' |
   ForEach-Object { Remove-DnsClientNrptRule -Name $_.Name -Force }
 Clear-DnsClientCache
 ```

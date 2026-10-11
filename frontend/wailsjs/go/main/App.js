@@ -14,8 +14,16 @@ export function GetAppConfig() {
   return window['go']['main']['App']['GetAppConfig']();
 }
 
+export function GetConnections() {
+  return window['go']['main']['App']['GetConnections']();
+}
+
 export function GetInterfaces() {
   return window['go']['main']['App']['GetInterfaces']();
+}
+
+export function GetProfileLogs(arg1) {
+  return window['go']['main']['App']['GetProfileLogs'](arg1);
 }
 
 export function GetStatus() {
@@ -34,6 +42,10 @@ export function SetActiveProfile(arg1) {
   return window['go']['main']['App']['SetActiveProfile'](arg1);
 }
 
+export function SetProfileTUNMode(arg1, arg2) {
+  return window['go']['main']['App']['SetProfileTUNMode'](arg1, arg2);
+}
+
 export function SetProxyEnabled(arg1) {
   return window['go']['main']['App']['SetProxyEnabled'](arg1);
 }
@@ -42,8 +54,20 @@ export function SetTUNMode(arg1) {
   return window['go']['main']['App']['SetTUNMode'](arg1);
 }
 
+export function StartProfileVPN(arg1) {
+  return window['go']['main']['App']['StartProfileVPN'](arg1);
+}
+
 export function StartVPN() {
   return window['go']['main']['App']['StartVPN']();
+}
+
+export function StopAllVPN() {
+  return window['go']['main']['App']['StopAllVPN']();
+}
+
+export function StopProfileVPN(arg1) {
+  return window['go']['main']['App']['StopProfileVPN'](arg1);
 }
 
 export function StopVPN() {

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -56,6 +55,7 @@ type httpProxy struct {
 	client      *http.Client
 	tunnelsMu   sync.Mutex
 	tunnels     map[*httpTunnel]struct{}
+	closed      bool
 }
 
 func newHTTPProxy(dialer ProxyDialer) *httpProxy {
@@ -143,10 +143,12 @@ func (p *httpProxy) handleConnect(w http.ResponseWriter, req *http.Request) {
 	}
 
 	tunnel := &httpTunnel{client: clientConn, target: targetConn}
-	p.registerTunnel(tunnel)
-	defer p.unregisterTunnel(tunnel)
 	defer clientConn.Close()
 	defer targetConn.Close()
+	if !p.registerTunnel(tunnel) {
+		return
+	}
+	defer p.unregisterTunnel(tunnel)
 
 	if _, err := buffered.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
 		return
@@ -178,10 +180,14 @@ func relayHTTPConnect(dst net.Conn, src io.Reader, host, direction string, done 
 	done <- struct{}{}
 }
 
-func (p *httpProxy) registerTunnel(tunnel *httpTunnel) {
+func (p *httpProxy) registerTunnel(tunnel *httpTunnel) bool {
 	p.tunnelsMu.Lock()
+	defer p.tunnelsMu.Unlock()
+	if p.closed {
+		return false
+	}
 	p.tunnels[tunnel] = struct{}{}
-	p.tunnelsMu.Unlock()
+	return true
 }
 
 func (p *httpProxy) unregisterTunnel(tunnel *httpTunnel) {
@@ -192,6 +198,7 @@ func (p *httpProxy) unregisterTunnel(tunnel *httpTunnel) {
 
 func (p *httpProxy) closeTunnels() {
 	p.tunnelsMu.Lock()
+	p.closed = true
 	tunnels := make([]*httpTunnel, 0, len(p.tunnels))
 	for tunnel := range p.tunnels {
 		tunnels = append(tunnels, tunnel)
@@ -218,29 +225,37 @@ func newHTTPServer(bindAddr string, handler http.Handler) *http.Server {
 	}
 }
 
-func ServeHTTP(bindAddr string, dialer ProxyDialer) {
-	proxy := newHTTPProxy(dialer)
+type httpService struct {
+	server *http.Server
+	proxy  *httpProxy
+}
 
-	log.Printf("HTTP server listening on %s", bindAddr)
+func (s *httpService) Close() error {
+	s.proxy.close()
+	return s.server.Close()
+}
 
-	server := newHTTPServer(bindAddr, proxy)
-
-	hook_func.RegisterTerminalFunc("CloseHTTPListener", func(ctx context.Context) error {
-		log.Println("Closing HTTP listener...")
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		defer proxy.close()
-		if err := server.Shutdown(ctx); err != nil {
-			return fmt.Errorf("close HTTP listener failed: %w", err)
-		}
-		return nil
-	})
-
-	if err := server.ListenAndServe(); err != nil {
-		if errors.Is(err, http.ErrServerClosed) {
-			log.Println("HTTP server closed")
-		} else {
-			log.Println("HTTP listen failed: " + err.Error())
-		}
+// StartHTTP binds synchronously and returns the owner of this proxy only.
+func StartHTTP(bindAddr string, dialer ProxyDialer) (io.Closer, error) {
+	listener, err := net.Listen("tcp", bindAddr)
+	if err != nil {
+		return nil, err
 	}
+	proxy := newHTTPProxy(dialer)
+	server := newHTTPServer(bindAddr, proxy)
+	go func() {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("HTTP proxy failed: %v", err)
+		}
+	}()
+	return &httpService{server, proxy}, nil
+}
+
+func ServeHTTP(bindAddr string, dialer ProxyDialer) {
+	server, err := StartHTTP(bindAddr, dialer)
+	if err != nil {
+		log.Printf("HTTP listen failed: %v", err)
+		return
+	}
+	hook_func.RegisterTerminalFunc("CloseHTTPListener", func(context.Context) error { return server.Close() })
 }

@@ -38,6 +38,8 @@ type ResourceOptions struct {
 }
 
 type Options struct {
+	// OwnedLifecycle leaves keepalive cleanup to the embedding client owner.
+	OwnedLifecycle   bool
 	Server           string
 	Auth             AuthOptions
 	SessionID        string
@@ -49,6 +51,7 @@ type Options struct {
 }
 
 type Client struct {
+	ownedLifecycle    bool
 	server            string // Example: rvpn.zju.edu.cn:443. No protocol prefix
 	username          string
 	password          string
@@ -96,6 +99,7 @@ func NewClient(options Options) *Client {
 		challengeHandler = authchallenge.NewCLIHandler(authchallenge.CLIOptions{})
 	}
 	c := &Client{
+		ownedLifecycle:    options.OwnedLifecycle,
 		server:            options.Server,
 		username:          options.Auth.Username,
 		password:          options.Auth.Password,
@@ -272,10 +276,9 @@ func (c *Client) Setup() error {
 	// /por/update_session.csp; we mirror that. Guarded by sync.Once so the
 	// repeated Setup calls don't double-start it.
 	c.keepAliveStarted.Do(func() {
-		hook_func.RegisterTerminalFunc("CloseSessionKeepAlive", func(ctx context.Context) error {
-			c.Close()
-			return nil
-		})
+		if !c.ownedLifecycle {
+			hook_func.RegisterTerminalFunc("CloseSessionKeepAlive", func(ctx context.Context) error { c.Close(); return nil })
+		}
 		go c.sessionKeepAliveLoop()
 	})
 

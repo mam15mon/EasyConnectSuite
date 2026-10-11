@@ -3,36 +3,40 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	goruntime "runtime"
+	"strings"
+	"sync"
 	"syscall"
-	"time"
 	"unsafe"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const (
-	NIM_ADD          = 0x00000000
-	NIM_MODIFY       = 0x00000001
-	NIM_DELETE       = 0x00000002
-	NIF_MESSAGE      = 0x00000001
-	NIF_ICON         = 0x00000002
-	NIF_TIP          = 0x00000004
-	WM_USER          = 0x0400
-	WM_TRAYICON      = WM_USER + 101
-	WM_LBUTTONUP     = 0x0202
-	WM_RBUTTONUP     = 0x0205
-	WM_LBUTTONDBLCLK = 0x0203
-	IDI_APPLICATION  = 32512
-	MF_STRING        = 0x00000000
-	MF_GRAYED        = 0x00000001
-	MF_DISABLED      = 0x00000002
-	MF_CHECKED       = 0x00000008
-	MF_POPUP         = 0x00000010
-	MF_SEPARATOR     = 0x00000800
-	TPM_RIGHTBUTTON  = 0x0002
-	TPM_RETURNCMD    = 0x0100
+	NIM_ADD           = 0x00000000
+	NIM_MODIFY        = 0x00000001
+	NIM_DELETE        = 0x00000002
+	NIF_MESSAGE       = 0x00000001
+	NIF_ICON          = 0x00000002
+	NIF_TIP           = 0x00000004
+	WM_POWERBROADCAST = 0x0218
+	WM_USER           = 0x0400
+	WM_TRAYICON       = WM_USER + 101
+	WM_TRAYQUIT       = WM_USER + 102
+	WM_LBUTTONUP      = 0x0202
+	WM_RBUTTONUP      = 0x0205
+	WM_LBUTTONDBLCLK  = 0x0203
+	IDI_APPLICATION   = 32512
+	MF_STRING         = 0x00000000
+	MF_GRAYED         = 0x00000001
+	MF_DISABLED       = 0x00000002
+	MF_CHECKED        = 0x00000008
+	MF_POPUP          = 0x00000010
+	MF_SEPARATOR      = 0x00000800
+	TPM_RIGHTBUTTON   = 0x0002
+	TPM_RETURNCMD     = 0x0100
 )
 
 var (
@@ -55,6 +59,7 @@ var (
 	procDestroyMenu         = user32.NewProc("DestroyMenu")
 	procGetCursorPos        = user32.NewProc("GetCursorPos")
 	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
+	procPostMessageW        = user32.NewProc("PostMessageW")
 
 	procShell_NotifyIconW = shell32.NewProc("Shell_NotifyIconW")
 	procExtractIconExW    = shell32.NewProc("ExtractIconExW")
@@ -91,30 +96,42 @@ type MSG struct {
 }
 
 type NOTIFYICONDATA struct {
-	cbSize           uint32
-	hWnd             uintptr
-	uID              uint32
-	uFlags           uint32
-	uCallbackMessage uint32
-	hIcon            uintptr
-	szTip            [128]uint16
-	dwState          uint32
-	dwStateMask      uint32
-	szInfo           [256]uint16
+	cbSize            uint32
+	hWnd              uintptr
+	uID               uint32
+	uFlags            uint32
+	uCallbackMessage  uint32
+	hIcon             uintptr
+	szTip             [128]uint16
+	dwState           uint32
+	dwStateMask       uint32
+	szInfo            [256]uint16
 	uTimeoutOrVersion uint32
-	szInfoTitle      [64]uint16
-	dwInfoFlags      uint32
-	guidItem         [16]byte
-	hBalloonIcon     uintptr
+	szInfoTitle       [64]uint16
+	dwInfoFlags       uint32
+	guidItem          [16]byte
+	hBalloonIcon      uintptr
 }
 
 var (
 	globalTrayApp  *App
 	globalTrayHwnd uintptr
 	globalNID      NOTIFYICONDATA
+	trayIconMu     sync.Mutex
+	trayClosed     bool
 )
 
 func trayWndProc(hwnd uintptr, msg uint32, wParam uintptr, lParam uintptr) uintptr {
+	if msg == WM_TRAYQUIT {
+		procDestroyWindow.Call(hwnd)
+		procPostQuitMessage.Call(0)
+		return 0
+	}
+	if msg == WM_POWERBROADCAST && globalTrayApp != nil {
+		if globalTrayApp.logPowerEvent(wParam) {
+			return 1
+		}
+	}
 	if msg == WM_TRAYICON {
 		switch lParam {
 		case WM_LBUTTONUP, WM_LBUTTONDBLCLK:
@@ -132,124 +149,7 @@ func trayWndProc(hwnd uintptr, msg uint32, wParam uintptr, lParam uintptr) uintp
 				return 0
 			}
 
-			status := globalTrayApp.GetStatus()
-			cfg := globalTrayApp.GetAppConfig()
-			activeProfile := globalTrayApp.GetActiveProfile()
-
-			hMenu, _, _ := procCreatePopupMenu.Call()
-
-			// 1. Status Header Line (Grayed out informational line)
-			var statusText string
-			if status.Running {
-				if status.State == "connected" {
-					if status.ClientIP != "" {
-						statusText = fmt.Sprintf("● 已连接: %s (%s)", status.ActiveProfile, status.ClientIP)
-					} else {
-						statusText = fmt.Sprintf("● 已连接: %s", status.ActiveProfile)
-					}
-				} else {
-					statusText = fmt.Sprintf("⏳ 握手中: %s...", status.ActiveProfile)
-				}
-			} else {
-				statusText = "○ 状态: 未连接 (空闲就绪)"
-			}
-			sPtr, _ := syscall.UTF16PtrFromString(statusText)
-			procAppendMenuW.Call(hMenu, MF_STRING|MF_GRAYED|MF_DISABLED, 1000, uintptr(unsafe.Pointer(sPtr)))
-			procAppendMenuW.Call(hMenu, MF_SEPARATOR, 0, 0)
-
-			// 2. Direct Profile Switch Submenu: ⚡ 切换并连接配置 ▶
-			hSubMenu, _, _ := procCreatePopupMenu.Call()
-			for i, p := range cfg.Profiles {
-				cmdID := uintptr(2000 + i)
-				pLabel := p.Name
-				if p.Enable2FA {
-					pLabel += " [2FA]"
-				}
-				var flags uintptr = MF_STRING
-				if p.ID == cfg.ActiveProfileID {
-					if status.Running {
-						flags |= MF_CHECKED
-						pLabel = "✓ " + pLabel + " (当前连接)"
-					} else {
-						pLabel = "★ " + pLabel + " (当前默认)"
-					}
-				}
-				pPtr, _ := syscall.UTF16PtrFromString(pLabel)
-				procAppendMenuW.Call(hSubMenu, flags, cmdID, uintptr(unsafe.Pointer(pPtr)))
-			}
-			subTitlePtr, _ := syscall.UTF16PtrFromString("⚡ 切换并连接配置")
-			procAppendMenuW.Call(hMenu, MF_POPUP, hSubMenu, uintptr(unsafe.Pointer(subTitlePtr)))
-
-			procAppendMenuW.Call(hMenu, MF_SEPARATOR, 0, 0)
-
-			// 3. Connect Action: Enabled when NOT running, Grayed when already running
-			connectLabel := fmt.Sprintf("▶ 连接当前配置 (%s)", activeProfile.Name)
-			connPtr, _ := syscall.UTF16PtrFromString(connectLabel)
-			var connFlags uintptr = MF_STRING
-			if status.Running {
-				connFlags |= MF_GRAYED | MF_DISABLED
-			}
-			procAppendMenuW.Call(hMenu, connFlags, 1001, uintptr(unsafe.Pointer(connPtr)))
-
-			// 4. Disconnect Action: Enabled when running, Grayed when NOT running
-			discPtr, _ := syscall.UTF16PtrFromString("⏹ 断开 VPN 连接")
-			var discFlags uintptr = MF_STRING
-			if !status.Running {
-				discFlags |= MF_GRAYED | MF_DISABLED
-			}
-			procAppendMenuW.Call(hMenu, discFlags, 1002, uintptr(unsafe.Pointer(discPtr)))
-
-			procAppendMenuW.Call(hMenu, MF_SEPARATOR, 0, 0)
-
-			// 5. Show Main Window
-			showPtr, _ := syscall.UTF16PtrFromString("💻 显示主控制台")
-			procAppendMenuW.Call(hMenu, MF_STRING, 1003, uintptr(unsafe.Pointer(showPtr)))
-
-			// 6. Exit Application
-			exitPtr, _ := syscall.UTF16PtrFromString("✕ 退出程序")
-			procAppendMenuW.Call(hMenu, MF_STRING, 1004, uintptr(unsafe.Pointer(exitPtr)))
-
-			cmd, _, _ := procTrackPopupMenu.Call(
-				hMenu,
-				TPM_RIGHTBUTTON|TPM_RETURNCMD,
-				uintptr(pt.X),
-				uintptr(pt.Y),
-				0,
-				hwnd,
-				0,
-			)
-			procDestroyMenu.Call(hMenu)
-
-			switch {
-			case cmd == 1001: // Connect current
-				go globalTrayApp.StartVPN()
-			case cmd == 1002: // Disconnect
-				go globalTrayApp.StopVPN()
-			case cmd == 1003: // Show Window
-				if globalTrayApp.ctx != nil {
-					wailsruntime.WindowShow(globalTrayApp.ctx)
-					wailsruntime.WindowUnminimise(globalTrayApp.ctx)
-				}
-			case cmd == 1004: // Exit
-				RemoveTrayIcon()
-				globalTrayApp.shutdown(globalTrayApp.ctx)
-				if globalTrayApp.ctx != nil {
-					wailsruntime.Quit(globalTrayApp.ctx)
-				}
-			case cmd >= 2000 && int(cmd-2000) < len(cfg.Profiles):
-				targetProfile := cfg.Profiles[cmd-2000]
-				go func() {
-					if globalTrayApp.GetStatus().Running {
-						globalTrayApp.StopVPN()
-						time.Sleep(300 * time.Millisecond)
-					}
-					globalTrayApp.SetActiveProfile(targetProfile.ID)
-					globalTrayApp.StartVPN()
-					if globalTrayApp.ctx != nil {
-						wailsruntime.EventsEmit(globalTrayApp.ctx, "profile-switched", targetProfile.ID)
-					}
-				}()
-			}
+			showTrayMenu(globalTrayApp, hwnd, pt)
 			return 0
 		}
 	}
@@ -257,9 +157,110 @@ func trayWndProc(hwnd uintptr, msg uint32, wParam uintptr, lParam uintptr) uintp
 	return ret
 }
 
+func appendTrayMenu(menu, flags, id uintptr, text string) {
+	// Ampersands in profile names are text, not native menu accelerators.
+	ptr, _ := syscall.UTF16PtrFromString(strings.ReplaceAll(text, "&", "&&"))
+	procAppendMenuW.Call(menu, flags, id, uintptr(unsafe.Pointer(ptr)))
+}
+
+func buildTrayMenu(statuses []VPNStatus) (uintptr, map[uintptr]trayAction) {
+	menu, _, _ := procCreatePopupMenu.Call()
+	appendTrayMenu(menu, MF_GRAYED, 0, traySummary(statuses))
+	appendTrayMenu(menu, MF_STRING, 1003, "打开 VPN 工作台")
+	procAppendMenuW.Call(menu, MF_SEPARATOR, 0, 0)
+	actions := make(map[uintptr]trayAction, len(statuses)*2)
+	var running bool
+	for i, s := range statuses {
+		submenu, _, _ := procCreatePopupMenu.Call()
+		protocol := s.Protocol
+		switch protocol {
+		case "easyconnect":
+			protocol = "EasyConnect"
+		case "univpn":
+			protocol = "UniVPN"
+		case "topsec":
+			protocol = "TopSAP"
+		}
+		flags := uintptr(MF_POPUP)
+		if s.Running && s.State == "connected" {
+			flags |= MF_CHECKED
+		}
+		appendTrayMenu(menu, flags, submenu, fmt.Sprintf("%s · %s · %s", s.ActiveProfile, protocol, trayState(s)))
+		label, action := trayLifecycleAction(s)
+		id := uintptr(2000 + i*2)
+		actions[id] = action
+		flags = MF_STRING
+		if s.State == "stopping" {
+			flags |= MF_GRAYED
+		}
+		appendTrayMenu(submenu, flags, id, label)
+		actions[id+1] = trayAction{kind: "details", profileID: s.ProfileID}
+		appendTrayMenu(submenu, MF_STRING, id+1, "查看详情")
+		running = running || s.Running
+	}
+	if len(statuses) == 0 {
+		appendTrayMenu(menu, MF_GRAYED, 0, "暂无 VPN 配置，请打开工作台添加")
+	}
+	procAppendMenuW.Call(menu, MF_SEPARATOR, 0, 0)
+	flags := uintptr(MF_STRING)
+	if !running {
+		flags |= MF_GRAYED
+	}
+	appendTrayMenu(menu, flags, 1002, "断开全部 VPN")
+	appendTrayMenu(menu, MF_STRING, 1004, "退出程序（断开全部）")
+	return menu, actions
+}
+
+func showTrayMenu(app *App, hwnd uintptr, pt POINT) {
+	menu, actions := buildTrayMenu(app.trayStatuses())
+	defer procDestroyMenu.Call(menu)
+	cmd, _, _ := procTrackPopupMenu.Call(menu, TPM_RIGHTBUTTON|TPM_RETURNCMD, uintptr(pt.X), uintptr(pt.Y), 0, hwnd, 0)
+	switch cmd {
+	case 1003:
+		showTrayWorkspace(app)
+	case 1004:
+		go func() {
+			app.shutdown(app.ctx)
+			if app.ctx != nil {
+				wailsruntime.Quit(app.ctx)
+			}
+		}()
+	case 1002:
+		go app.executeTrayAction(trayAction{kind: "disconnect_all"})
+	default:
+		if action, ok := actions[cmd]; ok {
+			if action.kind == "details" {
+				if app.SetActiveProfile(action.profileID) {
+					if app.ctx != nil {
+						wailsruntime.EventsEmit(app.ctx, "profile-switched", action.profileID)
+					}
+					showTrayWorkspace(app)
+				}
+			} else {
+				go func() {
+					result, cancelled := app.executeTrayAction(action)
+					if result != "OK" && !cancelled && app.ctx != nil {
+						_, _ = wailsruntime.MessageDialog(app.ctx, wailsruntime.MessageDialogOptions{Type: wailsruntime.ErrorDialog, Title: "VPN 操作失败", Message: result})
+					}
+				}()
+			}
+		}
+	}
+}
+
+func showTrayWorkspace(app *App) {
+	if app.ctx != nil {
+		wailsruntime.WindowShow(app.ctx)
+		wailsruntime.WindowUnminimise(app.ctx)
+	}
+}
+
 // StartTray initializes Windows system tray icon
 func StartTray(app *App, ctx context.Context) {
 	globalTrayApp = app
+	trayIconMu.Lock()
+	trayClosed = false
+	trayIconMu.Unlock()
 
 	go func() {
 		goruntime.LockOSThread()
@@ -285,7 +286,6 @@ func StartTray(app *App, ctx context.Context) {
 			0, 0, 0, 0,
 			0, 0, hInstance, 0,
 		)
-		globalTrayHwnd = hwnd
 
 		// Extract custom high-resolution icon from the compiled executable
 		exePath, _ := os.Executable()
@@ -306,6 +306,14 @@ func StartTray(app *App, ctx context.Context) {
 			hIcon, _, _ = procLoadIconW.Call(0, uintptr(IDI_APPLICATION))
 		}
 
+		tip := trayTooltip(app.trayStatuses())
+		trayIconMu.Lock()
+		if trayClosed {
+			trayIconMu.Unlock()
+			procDestroyWindow.Call(hwnd)
+			return
+		}
+		globalTrayHwnd = hwnd
 		globalNID = NOTIFYICONDATA{
 			cbSize:           uint32(unsafe.Sizeof(NOTIFYICONDATA{})),
 			hWnd:             hwnd,
@@ -313,17 +321,11 @@ func StartTray(app *App, ctx context.Context) {
 			uFlags:           NIF_MESSAGE | NIF_ICON | NIF_TIP,
 			uCallbackMessage: WM_TRAYICON,
 			hIcon:            hIcon,
-		}
-
-		tipStr := "EasyConnect VPN (未连接)"
-		tipRunes := []rune(tipStr)
-		for i, r := range tipRunes {
-			if i < 127 {
-				globalNID.szTip[i] = uint16(r)
-			}
+			szTip:            trayTooltipBuffer(tip),
 		}
 
 		procShell_NotifyIconW.Call(NIM_ADD, uintptr(unsafe.Pointer(&globalNID)))
+		trayIconMu.Unlock()
 
 		var msg MSG
 		for {
@@ -335,24 +337,18 @@ func StartTray(app *App, ctx context.Context) {
 			procDispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
 		}
 
-		procShell_NotifyIconW.Call(NIM_DELETE, uintptr(unsafe.Pointer(&globalNID)))
+		RemoveTrayIcon()
 	}()
 }
 
 // UpdateTrayTooltip modifies the tooltip string dynamically
 func UpdateTrayTooltip(tip string) {
+	trayIconMu.Lock()
+	defer trayIconMu.Unlock()
 	if globalTrayHwnd == 0 || globalNID.hWnd == 0 {
 		return
 	}
-	for i := range globalNID.szTip {
-		globalNID.szTip[i] = 0
-	}
-	tipRunes := []rune(tip)
-	for i, r := range tipRunes {
-		if i < 127 {
-			globalNID.szTip[i] = uint16(r)
-		}
-	}
+	globalNID.szTip = trayTooltipBuffer(tip)
 	globalNID.uFlags = NIF_TIP
 	procShell_NotifyIconW.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&globalNID)))
 	globalNID.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
@@ -360,13 +356,37 @@ func UpdateTrayTooltip(tip string) {
 
 // RemoveTrayIcon removes the icon from system tray
 func RemoveTrayIcon() {
+	trayIconMu.Lock()
+	defer trayIconMu.Unlock()
+	trayClosed = true
 	if globalNID.hWnd != 0 {
 		procShell_NotifyIconW.Call(NIM_DELETE, uintptr(unsafe.Pointer(&globalNID)))
 		globalNID.hWnd = 0
 	}
 	if globalTrayHwnd != 0 {
-		procDestroyWindow.Call(globalTrayHwnd)
-		procPostQuitMessage.Call(0)
+		procPostMessageW.Call(globalTrayHwnd, WM_TRAYQUIT, 0, 0)
 		globalTrayHwnd = 0
 	}
+}
+
+// Windows supplies these events; they do not identify sleep versus hibernation.
+func (a *App) logPowerEvent(event uintptr) bool {
+	var name string
+	switch event {
+	case 4:
+		name = "suspend"
+	case 18:
+		name = "resume_automatic"
+	case 7:
+		name = "resume_user"
+	default:
+		return false
+	}
+	log.Printf("System power pid=%d source=WM_POWERBROADCAST event=%s", os.Getpid(), name)
+	for _, status := range a.GetConnections() {
+		if status.Running {
+			log.Printf("[VPN pid=%d profile=%q] power event=%s state=%s uptime_seconds=%d", os.Getpid(), status.ProfileID, name, status.State, status.Duration)
+		}
+	}
+	return true
 }

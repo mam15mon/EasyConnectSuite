@@ -1,0 +1,12 @@
+# Validation and unresolved login
+
+- Root `go test -race ./... -count=1 -timeout=75s` and `go vet ./...` passed. Tests include numeric AUTH codes 1, 9, 0x01020304 and 0xffffffff, malformed/success separation, an actual mock TLS rejection with 0x01020304, retained terminal sentinel and typed cause through the adapter. Existing multi-session, certificate and TCP/UDP regressions passed.
+- `wails build -m -nosyncgomod -trimpath -o EasyConnectGUI-multi-vpn-authdiag.exe` passed. No frontend schema change; regenerated output unchanged. Uncompressed size 20,518,400 bytes; SHA256 `3ED82FCAFAC7AA9FCE14B59D83090637F2F5469F1667A39C6C68F2F11F7A7380`. No UPX per user's latest packaging preference.
+- User reports official UniVPN 10781.16.0.0729 login succeeds. Local version metadata agrees. Inspecting only booleans confirmed server/port match the user screenshot, blank auth domain and enabled explicit certificate skip. Official profile field names contain no domain setting. Static language labels distinguish generic authentication, credentials, device/MAC and connection limit failures, but supply no numeric wire-code mapping. Official log message identifiers show LOGIN_SUCCESS.
+- The current wire encoding agrees with the pinned C reference, which defaults blank authgroup to hostname. Its Python prototype has a different synthetic MAC representation. Neither this difference nor auth-domain default is established as the cause; neither was changed.
+- Private profiles/logs were not copied to task records/Git. No credentials, tokens, raw response payloads or real connection attempts made by the assistant.
+- Actual gateway code and protocol compatibility remain unresolved. This task fixes diagnostic classification only; it must not be described as restoring live login. Next evidence: one user-initiated connection with the diagnostic EXE and its numeric rejection line.
+
+# Bug analysis (Trellis break-loop)
+
+Category E (implicit assumption) and D (test coverage gap): a nonzero status was equated to incorrect credentials; tests only asserted terminal classification and lost the distinguishing status. TLS certificate bypass resolved a separate earlier handshake failure, not authentication. Prevention implemented: typed status error, decimal/hex rendering, independent arbitrary-status tests, adapter error-chain assertions and backend error contract. No Trellis template source tree exists here to synchronize; this is a managed project, not Trellis CLI source.

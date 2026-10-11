@@ -1,0 +1,145 @@
+# TopSAP evidence (2026-10-10)
+
+## Public repositories inspected
+
+| Source and pinned revision | Verified boundary |
+| --- | --- |
+| [Sajor-X/TopSAP_Client](https://github.com/Sajor-X/TopSAP_Client/tree/91c9d2ed5c2e6968c4280c99a5a83e219d6a9cd3), Apache-2.0 | top.py calls localhost:7443 API for login_by_pwd, get_gid and query_statistics, plus an external OCR service; it does not implement the remote VPN transport. Its ten-login retry behavior is unsuitable for this project. |
+| [inclyc/containerized-topsap](https://github.com/inclyc/containerized-topsap/tree/2cb38126fcf54b87ac1cd634da8bc2a7125a3002), no detected repository license | Containerfile extracts official sv_websrv, libvpn_client.so and topvpn binaries. Wrapper scripts do not supply a portable protocol core. |
+| [libra146/docker-topsap](https://github.com/libra146/docker-topsap), AGPL-3.0 repository | README and start.sh run official TopSAP binaries with expect and danted. Not a Go protocol implementation; none of its code copied. |
+| [cankevinlaurent/vpn_script](https://github.com/cankevinlaurent/vpn_script/tree/3e52ec89911c2a4e732d9b469b339cff9b7d321a), GPL-3.0 | Python handles device administration CGI and user management. It is not an IP tunnel client and is unsuitable as a data-channel reference. |
+
+These searches do not prove no independent implementation exists. They establish only that the inspected candidates lack one.
+
+## Installed official program: read-only observations
+
+Uninstall metadata identifies TopSAP 3.6.6.18.64.1 under NGVONE/Client. Electron UI uses TopSAP.node and native libTopSecVPN.dll; the DLL inspected is PE i386 with SendRequestInfo exported. na_client.exe and sv_service.exe are present. No vendor executable, DLL or JS was modified, loaded into a new process, or copied into this repository.
+
+Bundled sv_init.js sends login_by_pwd JSON through Electron IPC, with gateway, username/password representation, optional gid, vpn_version, auth/data protocol and ports, and certificate type. Those parameters are UI-to-native API contracts, not proof of remote wire encoding. The inspected Python also targets the local API, so directly porting its requests would still depend on the official core.
+
+Static native string markers identify remote paths such as /vone/login/auth_param, /vone/login/user_pswd, /vone/login/gid, /vone/portal/res_list and /vone/portal/client_get_res_list. These are research leads, not sufficient descriptions of request fields, response framing, cipher negotiation or data transport. No real server, user, device ID, password or token is recorded here.
+
+## Capture readiness
+
+tshark and dumpcap are already installed and on PATH. dumpcap -D successfully enumerates WLAN, loopback and the vendor SV-Connection interface; built-in PktMon is available. This agent shell is not elevated. Interface discovery is verified; capture rights and packet collection have not yet been tested. PCAP/PCAPNG are already excluded by .gitignore. No capture or real login was started in this research pass.
+
+## Next evidence collection
+
+1. Confirm graphic CAPTCHA behavior; inspect only relevant sanitized diagnostic metadata for authentication mode, TLS and tunnel capabilities.
+2. Take one bounded, target-filtered official-client connect/disconnect sample while the user performs normal authentication. Avoid unrelated device traffic and keep original capture local.
+3. Determine whether documented TLS session-key export or useful application diagnostics provide the missing plaintext. Do not assume SSLKEYLOGFILE works with the native SDK, and do not globally disable certificate verification to acquire a sample.
+4. Establish remote authentication sequence, resource replies, data framing, heartbeat and teardown with independent sanitized vectors before implementing engine/topsec.
+5. Implement and test against those vectors, then integrate existing lifecycle/TUN/proxy surfaces and validate authorized live behavior.
+
+An encrypted packet trace alone does not establish a complete protocol. If no plaintext diagnostics or packet semantics are available, report the exact missing evidence instead of inventing a transport or shipping a nonworking protocol selector.
+
+## Follow-up: authentication and capture preflight
+
+User confirms no graphic CAPTCHA; password authentication needs no SMS or browser step. Do not add CAPTCHA UI or OCR to the initial scope.
+
+The unelevated dumpcap WLAN preflight uses filter `less 0`, duration one second, and a temporary file outside the repository. It exits successfully with zero packets, confirming capture permission without collecting any network traffic; the temporary file was removed. Thus capture need not elevate Codex or change the official installation.
+
+The initial process filter omitted TopCOM.exe, so its absence of matched sockets was insufficient evidence that the official client was disconnected. User subsequently supplied a connected screenshot; endpoint ownership and the active vendor adapter were verified. Future connection checks must include TopCOM as well as na_client and the Electron UI.
+
+Compiled na_client string markers include `before add private header, enc data len:%d` and `private header len:%d, send msg len:%d`; this establishes a private framing lead but not the header structure, command IDs or algorithm. Native strings contain OpenSSL symbols. The SDK's presence of `nss_keylog_int` does not prove application-level key export is enabled. [OpenSSL callback documentation](https://docs.openssl.org/1.1.1/man3/SSL_CTX_set_keylog_callback/) describes an application-installed callback; setting an environment variable alone is not established for this SDK. No key material or process-memory dump was collected.
+
+Next concrete dependency: an active user-created official connection, then a bounded capture of only its gateway. Research remains incomplete until authentication/resource replies and private data framing are independently verified.
+
+## Successful official reconnect capture and diagnostic evidence
+
+A bounded capture was started before the user manually disconnected and logged in again. The valid PCAPNG has 261 packets over approximately 64 seconds, with target-filtered Mihomo and WLAN interfaces; duplicate interface observations must be deduplicated when counting logical connections. Authentication connections negotiated TLS 1.0 with ECDHE-ECDSA-AES128-SHA; the persistent data connection negotiated TLS 1.2 with ECDHE-ECDSA-AES128-GCM-SHA256. These are observed properties of this sample, not a claim about every supported gateway mode. One-byte TCP probes must not be interpreted as application heartbeat commands.
+
+The native diagnostic log already contains plaintext authentication HTTP. The successful request uses /vone/login/user_pswd with form fields U, P, HASH and S_CODE. The response reports HTTP 200 and X-sv-ret 0 and supplies user/net parameters. An auth_param response is JavaScript-style object text with unquoted keys; it must not be treated as strict JSON without verifying parsing. Configured auth/data ports in the official request differ from ports in the capabilities response. HASH is associated with a native sha256Str diagnostic, but its input has not been established. Stop speculative digest combinations; derive the algorithm from evidence. Keep diagnostic contents, identifiers, credentials, cookies, raw replies and packet captures outside Git.
+
+ECDHE handshake capture and the public server certificate do not provide the ephemeral secrets needed for passive TLS decryption. No key-export callback has been verified in the native SDK. The data-channel private frame structure remains unverified.
+
+## Local TLS interception experiment
+
+User explicitly requests client HTTPS -> MITM proxy with generated certificate -> server HTTPS. The official login UI has proxy types 0 (none), 1 (SOCKS), and 2 (HTTPS), with address, port, optional user/password/domain. The proxy is a research tool; it is not a replacement protocol core and is not added to the shipped EXE.
+
+Installed mitmproxy 12.2.3 in an isolated local virtual environment outside the repository. Initial cryptography 48/OpenSSL 4 configuration failed during TLS 1.0 setup. Fixed this experimental environment to cryptography 46.0.5, pyOpenSSL 25.3.0 and service-identity 24.2.0; pip check passes, and mitmdump reports OpenSSL 3.5.5.
+
+The proxy listens only on loopback port 18080, intercepts only the selected gateway and port, uses generic TCP interception for that gateway, and shuts down after 20 minutes. Gateway certificate verification is disabled only in this experimental proxy's upstream connection; no system proxy, Windows trust store or shipped client policy was changed. Experimental CA, private key, TLS secrets and flow files remain local outside Git. Note: allow_hosts matches host:port, while tcp_hosts matches hostname only; this was verified from the installed next_layer.py, corrected and retested.
+
+Two credential-free POST probes were sent through the proxy, one using TLS 1.0 and the other TLS 1.2 with the experimental CA explicitly trusted only in those Python contexts. Both established TLS and returned HTTP 404. Offline FlowReader inspection confirmed two TCP flows with plaintext request and response bytes and upstream TLS 1.2. This verifies TLS termination and plaintext recording, not TopSAP login or the meaning of the 404 response. The user has been asked to configure the official proxy and reconnect once. Its acceptance of the generated certificate and whether both authentication/data channels use the proxy remain pending actual evidence.
+
+## Clash TUN routing into MITM
+
+User requests interception through the already-running Clash instead of changing TopSAP's proxy settings. Verified the running Mihomo v1.19.32 production controller through its observed Windows named pipe, with rule mode and TUN enabled. Active controller metadata shows na_client.exe traffic to the gateway currently using DIRECT. The controller pipe in generated YAML differs from the live production pipe; discovery is required, and API credentials must never be printed.
+
+Applied an in-memory experimental HTTP proxy node pointing to loopback 18080 and two rules before the original 25 rules: target gateway TCP/port to MITM, and the MITM Python process to the same gateway/port via DIRECT to prevent recursion. Original subscriptions and persistent profile files were not edited. The local helper preserves Selector choices during reload and keeps an original configuration snapshot outside Git. Verified the runtime has the experimental node and 27 rules.
+
+A credential-free curl request, with no explicit HTTP proxy option, traversed Clash TUN and reached MITM. Offline flow inspection confirms plaintext POST /vone/login/auth_param and a 2373-byte server stream; curl received HTTP 200. Curl's first attempt to validate the intercepted certificate against the experimental CA failed with verification result 53 (unsupported or invalid name syntax). A second, credential-free probe disabled verification only for that invocation. This proves routing and interception; it does not prove the official native client's certificate acceptance. No Windows CA installation or native client modification was made.
+
+Restarted the bounded MITM process with a shutdown hook that removes the experimental rules/node via controller reload from the current generated base configuration, only if the marker rule is still present. A local restore command is also available. The original physical config remains unchanged. Started a new five-minute capture with verified interface GUIDs (loopback, Mihomo and WLAN); use GUIDs rather than assuming numeric capture indexes stay fixed. User is asked only to manually reconnect the official client, with no TopSAP proxy setting required. Official authentication and data-channel interception results remain pending.
+
+## Official MITM authentication confirmed; data sample not yet sealed
+
+The first reconnect recorded logout only: Clash regenerated its base config during the attempt and discarded the runtime-only experimental node/rules. This is an observed ownership issue, not a certificate failure. Moved the temporary insertion into the active subscription's otherwise-empty extension script, with an expiry, and used Clash's observed Reactivate Subscription button. Verified the generated config and running controller both retained 27 rules. Cleanup subsequently restored the extension byte-for-byte and the running rule count to 25.
+
+The next official reconnect was intercepted successfully. Saved plaintext auth_param, user_pswd and get_config_info HTTP, all status 200; login reports X-sv-ret 0. Native TLS 1.0 accepted the generated certificate in this sample without installing a Windows CA. Controller confirms na_client.exe -> MITM and python.exe -> DIRECT for the established TCP data connection. This does not establish certificate behavior for other SDKs/gateways.
+
+The successful login form has U/P/HASH/S_CODE. Its strict JSON reply has user_param, net_param, ErrMsg and Ret; no resource array in this response. acl_permit is an integer, not a resource list. Compression is off and alg is standard. DNS/VIP strings exist in net_param, but must not be confused with resource-scoped routing authorization.
+
+After the user reported access/disconnect completion, the data flow was still open at the controller check. The operator stopped MITM before its standard flow writer sealed that active TCP flow; saved .mitm contains four completed authentication/control flows only. The loopback capture started after the data TLS handshake, so it is not established as a standalone decryptable data sample despite available TLS key logs. Do not claim a verified private tunnel frame from these files.
+
+Corrected capture lifecycle: append each tcp_message's raw plaintext, direction and timestamp immediately to a local JSONL journal; add a local stop flag that calls master.shutdown gracefully. Credential-free curl test confirms request/response journal persistence and HTTP 200. Graceful stop exits 0, removes temporary runtime rules, and reports cleanup completion. This replaces reliance on closing TCP flows or sending Ctrl-C through a piped tool session.
+
+A fresh collection was prepared, but the user stopped Computer Use with Escape before configuration reactivation. No further Windows UI input was issued. Stopped capture and proxy, removed the pending temporary extension block, and verified original script/runtime rules restored. Only completed authentication evidence is confirmed; a complete live-recorded data sample is still needed for the native Go tunnel implementation.
+
+## Fresh live journal ready for user sample
+
+On user asking what to do next, restarted the bounded MITM and prepared the active subscription's temporary expiring extension plus immediate runtime rules without Windows UI automation. Runtime verification reports the experimental node/rule present and 27 rules. A credential-free direct curl probe received HTTP 200; the new JSONL already contains both plaintext request and response. The user only needs to connect/reconnect the official TopSAP, visit one normal internal resource, then keep the tunnel connected and report completion. Do not require disconnect to save messages: per-message flushing is verified. Cleanup remains the tested graceful-stop hook with exact marked-block removal and runtime restoration.
+
+## Complete live tunnel sample verified
+
+User reports successful official login and internal resource access in the fresh live-journal run. Verified na_client.exe -> TOPSAP-MITM-RESEARCH and python.exe -> DIRECT before graceful stop. The completed session journal is held outside Git; SHA-256 is 97a61f9ba58415aafa2cb86833ef79abff0913c43d0caf1c4c97b10f12420db0. Authentication/control HTTP and the persistent TLS 1.2 data stream are saved. Graceful stop exits 0; controller returns to 25 rules with no experimental node/rule, and the subscription extension matches its original bytes.
+
+Offline parser reassembles directional bytes independently of tcp_message boundaries. Client stream begins with a 130-byte HTTP CONNECT prelude, whose target is loopback port 4430; the server stream starts directly with the binary header. After the prelude, both streams are fully consumed by 16-byte headers containing four big-endian uint32 words and a body of word 3's length. This is sample-proven framing, not proof of each header word's semantic name or all supported modes.
+
+| Direction | Stream bytes | Binary frames | Observed header tuple: (word 1, command word, body length, word 4) |
+| --- | --- | --- | --- |
+| Client | 207311 (includes CONNECT) | 2710 | command 1 once, command 7 once, command 15 2708 times; word 1=0 and word 4=1 |
+| Server | 4375572 | 4468 | command 2 once with empty body; command 15 4467 times with word 1=0x0000AABB and word 4=0xEEFF0800 |
+
+Every command-15 payload (7175 total) parses as IPv4 with IP total length exactly equal to the frame body length. All have protocol 6 (TCP); 13 normalized TCP endpoint pairs occur in both directions. Thus actual request/response tunnel traffic is established. No UDP sample was observed, and command 7 must not be called heartbeat without further evidence.
+
+Client command-1 setup body is 328 bytes. The only nonzero regions in this sample are one byte at offset 3 and the exact login response session token at offset 72 (18 bytes here). This is an exact field match, not an inferred cookie conversion; keep actual token local. Command 7 has eight zero bytes; server command 2 has an empty body. Real setup payload must not be committed or replayed as a static fixture.
+
+The authentication response's netacc/com_res fields are short switch-like strings, not resource JSON/XML. Resource ACL discovery remains a separate requirement. Remaining implementation evidence: derive authentication HASH inputs from native/source boundaries, obtain actual resource authorization schema, corroborate setup fields/command semantics from native code, and validate UDP behavior. Do not ship a full Go TopSAP implementation based on a hardcoded real token, guessed HASH or invented ACL.
+
+## Authentication and resources corroborated locally
+
+Native libTopSecVPN.dll at 0x1014CEA0 locates the resource cache suffix starting one byte before `res_list`, hashes it with SHA-256, and emits uppercase hex. The cache path builder uses wide strings `configinfo.txt` and `%s%s`; the actual low-integrity cache is outside the repository. SHA-256 over that suffix exactly equals the captured HASH. Cache keys: user_param, net_param, ErrMsg, res_list, dns_info, acl_list, sec_rule, Ret. Two observed resources use module=na, protocol=ip, mask=/24 and empty ports/domains. DNS lists and net_param DNS addresses are empty/zero; sec_rule.num=0. Do not manufacture DNS zones or default routes.
+
+Native sv_service.exe's local command 0x16 calls 0x5080F0 for S_CODE. Its physical-NIC path uses GetAdaptersInfo and registry PnPInstanceId containing PCI, formats the six bytes with `%03X-%03X-%03X-%03X-%03X-%03X`, then MD5 and Base64. Offline MD5 of the relevant physical NIC in that exact format equals the captured S_CODE. U/P independently decode as ordinary UTF-8 Base64. This is device identity, not a security-check success token; security-check policy is a separate unsupported feature. Do not store actual device identifiers or invoke the official service in the Go product.
+
+Captured get_config_info form uses HASH and TYPE=phone; logout has an empty body. Auth and data User-Agent strings and CONNECT prelude have been verified. Setup byte at offset 3 equals 4. Command 7 semantics remain unknown; implement the observed one-time eight-zero body only. No speculative heartbeat timer.
+
+## Go implementation verification
+
+Go parses the actual auth_param and two-resource cache in a private overlay test; raw inputs stay outside Git. Go localDeviceCode equals the CURRENT native service command-0x16 result. First implementation incorrectly selected the last MAC; correcting to concatenation alone was insufficient. Native 0x508E70 carries the RegQueryValueEx byte count (initial 256) across queried adapters, including non-PCI and ERROR_MORE_DATA. This skips a physical adapter when a prior smaller registry value has reduced the byte count. Go mirrors that bounded API behavior with Key.GetValue; the final native comparison passes. Product does not invoke this official service. Synthetic one-/two-adapter digest vectors and actual gVisor TCP/UDP echo pass. Root test, vet and race checks pass. Certificate-only gateway probe (no credentials) confirms name mismatch and chain errors; user-requested per-profile opt-in is available for TopSAP, with SPKI pin equality retained. Live Go login, live UDP and system TUN coexistence remain pending.
+
+Final production Windows amd64 Wails rebuild includes the final certificate UI and bounded device query changes. Frontend compilation and packaging pass with Compress=false; PE section inspection contains no UPX sections. Output is build/bin/EasyConnectGUI-multi-vpn-topsec.exe, 20633088 bytes, SHA-256 28ECB1A2AFC5714391C9F218A7DD4019DBD71E893921EA43106C94AA6E7EB2A2. Root go test and go vet also pass after this rebuild. Task remains in_progress for actual Go gateway login, internal access and system TUN coexistence.
+
+## Password-change permission regression
+
+User's first Go test was blocked by our local "must change password" error. The successful official capture and local resource cache both have Ret=0 and user_param.change_pswd=on. Installed sv_portal.js stores this alongside change_mail/change_phone in userSetting; SystemConfig.changePassword checks userSetting[0] to permit a user-initiated change. The cause was an unverified semantic assumption plus a mock fixture omitting this real success flag. Adding it to the synthetic success response reproduces the user's error before the fix. Remove the erroneous guard and its now-unused decoded field. Full root tests and vet pass after the fix; protocol success/refusal/cancellation/isolation tests now all see this flag. No password change, additional authentication attempts or guessed force-change fields are introduced. Record this contract in the protocol spec to prevent recurrence.
+
+Uncompressed correction build: build/bin/EasyConnectGUI-multi-vpn-topsec-fix1.exe, 20632576 bytes, SHA-256 3D0DEAC189A1E6DACB954D6CA6368A98A236B8F220D955BC3034010EA94FEE58. Wails frontend and Windows amd64 production build pass with Compress=false. Real Go login/internal access remains pending the user's next test.
+
+## Full-resource request correction and persistent diagnostics
+
+User's fix1 test reached authentication but GUI reported missing complete resources. engine.log only recorded the generic authentication stage; the returned error was not persisted. User explicitly requested clear logs for diagnosis. Reinspect successful capture: user_pswd response keys are user_param/net_param/ErrMsg/Ret; captured get_config_info TYPE=phone response has only Ret/phone/mail. The earlier assertion that this response should contain resources was wrong. The local official cache is a separate artifact and must not be mistaken for that captured response.
+
+Native libTopSecVPN.dll full-config path builds HASH with &TYPE=all at 0x1015172e..0x10151752, then the same POST /vone/login/get_config_info line at 0x101517dc. TYPE=phone appears in a distinct path. Change the Go request to TYPE=all without a retry/fallback. The mock now returns only contacts for phone and checks all, reproducing missing resources before the fix. No actual authenticated gateway calls were made in this diagnosis.
+
+Add existing standard-logger diagnostics with session numbers, gateway/certificate policy, stages, HTTP status/timing, numeric Ret and resource presence/count, TLS/ACK progress, first packet sizes, closing byte counters and logout results. Adapter logs all setup failures before the UI return. Regression tests verify real log-file persistence for successful TCP/UDP, terminal refusal and authenticated missing resources; secret sentinel strings and encoded credentials are absent. Root tests/vet and race checks pass. Uncompressed fix2 Windows build passes: 20653568 bytes, SHA-256 455DDA50508C06BAE53A7DF7CD019DACB7BF1DD80E79D2207247D30E67BEFFC7. Actual TYPE=all gateway response and full Go internal access remain pending the user's next test.
+
+## Actual Go traffic failure: address reassigned by complete configuration
+
+fix2 authenticated, fetched two resources and created TUN, but the internal SSH attempt had tx=420 and rx=0. diag3 reported token_matches_login=true, vip_matches_login=false and a valid first IPv4 checksum. The native na_client.exe ProcessLoginServerAckPacket_NEW at 0x52d820 parses the complete config JSON (configinfo success) and reads net_param.vip_v4 at 0x52e7af..0x52e820 before configuring the network address. The old successful cached sample had identical login/config VIP, hiding the bug.
+
+Use TYPE=all's net_param for the data-stack IPv4 and DNS; reject invalid/missing current IPv4 instead of reusing the earlier address. Tests independently assign login 10.91.0.2 and complete-config 10.91.0.9; the integration gateway drops packets with the obsolete source. Before correction, the session assertion failed; after correction TCP and UDP echo pass. Invalid current VIP revokes authentication without opening data TLS. Root test/vet and filtering tests pass.
+
+Uncompressed fix4 is 20653056 bytes, SHA256 818BF1EF81655C6F7C7CD4A09F5B9A26B622A4B21ADF65936D7510F5B77510DF. Actual log 2026-10-11 01:57:40 records the first transmit and receive in the same second, using full_config with vip_changed=true. User confirms internal access works and is keeping the session running for stability testing. This confirms this gateway's TCP access; live UDP, long-term stability and simultaneous real-vendor TUN coexistence remain separate validation.
