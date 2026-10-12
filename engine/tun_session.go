@@ -31,6 +31,7 @@ func (e *Engine) TUNState() TUNStatus {
 	return s
 }
 func (e *Engine) tunStatus(state string, err error) {
+	e.logf("TUN state=%s cause=%v", state, err)
 	s := TUNStatus{State: state}
 	if err != nil {
 		s.Error = err.Error()

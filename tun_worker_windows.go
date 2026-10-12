@@ -80,6 +80,11 @@ func (m *tunManager) ensure(ctx context.Context) error {
 		windows.CloseHandle(handle)
 		return err
 	}
+	if state, e := windows.WaitForSingleObject(handle, 0); e != nil || state == windows.WAIT_OBJECT_0 {
+		conn.Close()
+		windows.CloseHandle(handle)
+		return errors.New("TUN Worker exited during handshake")
+	}
 	peer := tunipc.NewPeer(conn, m.handle, func(msg tunipc.Message) {
 		if msg.Op == "log" || msg.Op == "progress" {
 			log.Printf("[TUN worker=%d profile=%q] %s", pid, msg.Ref.Profile, msg.Text)
@@ -136,6 +141,8 @@ func (m *tunManager) lost(peer *tunipc.Peer) {
 	}
 }
 func (m *tunManager) request(ctx context.Context, msg tunipc.Message) (tunipc.Message, error) {
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
 	m.mu.Lock()
 	p := m.peer
 	m.mu.Unlock()
@@ -541,6 +548,7 @@ func runTUNWorker(args []string) error {
 	ready := make(chan struct{})
 	w.peer = tunipc.NewPeer(conn, func(ctx context.Context, m tunipc.Message) (tunipc.Message, error) { <-ready; return w.handle(ctx, m) }, nil)
 	close(ready)
+	log.SetOutput(workerLog{w.peer})
 	w.peer.Heartbeat()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -569,4 +577,15 @@ func runTUNWorker(args []string) error {
 			}
 		}
 	}
+}
+
+type workerLog struct{ peer *tunipc.Peer }
+
+func (w workerLog) Write(data []byte) (int, error) {
+	text := strings.TrimSpace(string(data))
+	if len(text) > 4096 {
+		text = text[:4096]
+	}
+	err := w.peer.Emit(tunipc.Message{Op: "log", Text: text})
+	return len(data), err
 }
