@@ -48,6 +48,7 @@ test('TUN mode request keeps captured profile and releases busy state after reje
   await entered.promise;
   assert.equal(state.modeSaving,true);
   state.activeProfile={id:'b'};
+  state.currentStatus={profileId:'b',running:true,state:'connected'};
   result.resolve(Promise.reject(new Error('UAC canceled')));
   await assert.rejects(operation,/UAC canceled/);
   assert.deepEqual(calls,[['a',true]]);
