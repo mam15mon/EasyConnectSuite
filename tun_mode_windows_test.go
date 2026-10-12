@@ -16,6 +16,43 @@ type fakeTUNControl struct {
 	prepare  func()
 }
 
+type hotTUNTestEngine struct {
+	fakeVPNEngine
+	state engine.TUNStatus
+}
+
+func (e *hotTUNTestEngine) SetTUN(ctx context.Context, enabled bool) error {
+	e.state = engine.TUNStatus{State: "off"}
+	if enabled {
+		e.state.State = "on"
+	}
+	e.opts.OnTUNStatus(e.state)
+	return nil
+}
+func (e *hotTUNTestEngine) TUNState() engine.TUNStatus { return e.state }
+func TestAppHotTUNSwitchPreservesConnectionStatus(t *testing.T) {
+	a := multiTestApp(t)
+	var e *hotTUNTestEngine
+	if got := a.startConnection(func(o engine.Options) (vpnEngine, error) {
+		e = &hotTUNTestEngine{fakeVPNEngine: fakeVPNEngine{opts: o}}
+		o.OnStatus(engine.Status{Phase: engine.PhaseConnected, ClientIP: "192.0.2.19"})
+		return e, nil
+	}); got != "OK" {
+		t.Fatal(got)
+	}
+	defer a.StopAllVPN()
+	before := a.GetStatus()
+	for _, enabled := range []bool{true, false} {
+		if err := a.setProfileTUNMode("a", enabled, &fakeTUNControl{}); err != nil {
+			t.Fatal(err)
+		}
+		s := a.GetStatus()
+		if s.State != "connected" || !s.Running || s.ClientIP != before.ClientIP || s.SocksPort != before.SocksPort || s.HTTPPort != before.HTTPPort || s.TUNMode != enabled || e.stopped.Load() {
+			t.Fatalf("hot switch altered VPN %+v", s)
+		}
+	}
+}
+
 func (f *fakeTUNControl) Prepare(context.Context, string) error {
 	f.prepared++
 	if f.prepare != nil {
