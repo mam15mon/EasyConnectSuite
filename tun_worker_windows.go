@@ -476,6 +476,8 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 			return tunipc.Message{}, errors.New("obsolete TUN update")
 		}
 		if err := entry.ingress.UpdateSpec(*m.Spec); err != nil {
+			err = errors.Join(err, entry.ingress.Close())
+			delete(w.entries, m.Ref.Attachment)
 			return tunipc.Message{}, err
 		}
 		entry.spec = *m.Spec
