@@ -26,6 +26,10 @@ export function GetProfileLogs(arg1) {
   return window['go']['main']['App']['GetProfileLogs'](arg1);
 }
 
+export function GetProfileVPNResources(arg1) {
+  return window['go']['main']['App']['GetProfileVPNResources'](arg1);
+}
+
 export function GetStatus() {
   return window['go']['main']['App']['GetStatus']();
 }

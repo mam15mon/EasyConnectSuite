@@ -15,6 +15,8 @@ export function GetInterfaces():Promise<Array<string>>;
 
 export function GetProfileLogs(arg1:string):Promise<Array<string>>;
 
+export function GetProfileVPNResources(arg1:string):Promise<Array<engine.ResourceEntry>>;
+
 export function GetStatus():Promise<main.VPNStatus>;
 
 export function GetVPNResources():Promise<Array<engine.ResourceEntry>>;
