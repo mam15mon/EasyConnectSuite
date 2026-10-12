@@ -17,6 +17,7 @@ func TestTunnelFatalReturnsBeforeClosingNetworkStack(t *testing.T) {
 	release := make(chan struct{})
 	statuses := make(chan Status, 2)
 	e := &Engine{opts: Options{OnStatus: func(s Status) { statuses <- s }}}
+	e.ctx, e.cancel = context.WithCancel(context.Background())
 	e.running.Store(true)
 	closed := 0
 	e.registerTerminal("CloseVPNStack", func(context.Context) error {
