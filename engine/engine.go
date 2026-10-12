@@ -61,6 +61,8 @@ type Options struct {
 	Domain             string
 	InsecureSkipVerify bool
 	TUNSlot            int
+	TUNController      TUNController
+	OnTUNStatus        func(TUNStatus)
 
 	// OnLog receives every log line produced by the engine.
 	OnLog func(line string)
@@ -81,10 +83,10 @@ type Engine struct {
 
 	running atomic.Bool
 
-	dnsName string
-	router  policyRouter
-	tun     atomic.Pointer[tunIngress]
-	fatal   atomic.Bool
+	dnsName    string
+	router     policyRouter
+	tunSession tunSession
+	fatal      atomic.Bool
 
 	stopOnce       sync.Once
 	ctx            context.Context
@@ -227,12 +229,7 @@ func Start(opts Options) (_ *Engine, err error) {
 		if err != nil {
 			return err
 		}
-		if ingress := e.tun.Load(); ingress != nil {
-			if err := ingress.Update(next); err != nil {
-				next.resolver.Close()
-				return err
-			}
-		}
+		e.updateTUN(next, false)
 		previous := e.router.current.Swap(next)
 		vpnStack.SetupIPPool(next.resolver.IPPool)
 		if previous != nil {
@@ -248,13 +245,7 @@ func Start(opts Options) (_ *Engine, err error) {
 	})
 	vpnStack.SetupRecovered(func() {
 		policy := e.router.current.Load()
-		if ingress := e.tun.Load(); ingress != nil {
-			e.goWithRecovery("TUN DNS zone refresh", func() {
-				if err := ingress.RefreshDNS(policy); err != nil {
-					e.logf("TUN DNS zone refresh failed: %v", err)
-				}
-			})
-		}
+		e.goWithRecovery("TUN DNS zone refresh", func() { e.updateTUN(policy, true) })
 		clientIP := ""
 		if ip, err := vpnClient.IP(); err == nil {
 			clientIP = ip.String()
@@ -263,14 +254,6 @@ func Start(opts Options) (_ *Engine, err error) {
 	})
 	vpnStack.SetupFatalHandler(e.handleTunnelFatal)
 	e.goWithRecovery("gvisor stack Run", func() { vpnStack.Run() })
-	if conf.TUNMode {
-		ingress, err := startTUNSlot(&e.router, policy, e.emitProgress, opts.TUNSlot)
-		if err != nil {
-			return nil, fmt.Errorf("TUN 启动失败: %w", err)
-		}
-		e.tun.Store(ingress)
-		e.registerTerminal("CloseTUNIngress", func(ctx context.Context) error { return ingress.Close() })
-	}
 	if conf.SocksBind != "" || conf.HTTPBind != "" {
 		e.emitProgress("启动代理", "正在启动本地 SOCKS5 / HTTP 代理…")
 	}
@@ -336,6 +319,11 @@ func Start(opts Options) (_ *Engine, err error) {
 		return nil, fmt.Errorf("VPN 隧道在启动期间断开")
 	}
 	e.running.Store(true)
+	if conf.TUNMode {
+		if err := e.SetTUN(e.ctx, true); err != nil {
+			e.logf("TUN attach failed: %v", err)
+		}
+	}
 	e.emitStatusFull(Status{Phase: PhaseConnected, Message: "VPN 已连接", ClientIP: clientIP, DNS: e.dnsName})
 	e.logf("startup complete elapsed=%s", time.Since(startedAt).Round(time.Millisecond))
 	started = true
@@ -455,6 +443,8 @@ func (e *Engine) handleTunnelFatal(cause error) {
 }
 
 func (e *Engine) execTerminal() {
+	e.cancel()
+	_ = e.SetTUN(context.Background(), false)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	e.terminalMu.Lock()

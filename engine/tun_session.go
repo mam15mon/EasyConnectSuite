@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/mythologyli/zju-connect/client"
+	"net/netip"
 	"sync"
 
 	"EasyConnectSuite/internal/tunipc"
@@ -130,7 +132,7 @@ func (e *Engine) updateTUN(p *connectionPolicy, discover bool) {
 	if err == nil {
 		t.backend.mu.Lock()
 		t.backend.policy = view
-		t.backend.bindings = makeBindings()
+		t.backend.bindings = make(map[netip.Addr][]client.DomainResource)
 		t.backend.mu.Unlock()
 		t.spec.Policy++
 		t.spec.Prefixes, err = resourcePrefixes(view.ips)
