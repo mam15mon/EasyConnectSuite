@@ -8,7 +8,7 @@ SetProfileTUNMode 在 a.mu 内保存配置，非管理员且任何连接运行�
 
 frontend 把 API bool 当 restarting；托盘直接调 StartProfileVPN，故新提权准备必须在后端统一覆盖，不能只改按钮。现有测试证明保存、取消回滚、显式 ID、通过拒绝提权来保护其他连接、等待旧进程；新测试须正向证明 GUI/其他连接持续运行。
 
-## 隔离选择
+## 初轮隔离选择（后续用户已要求热附着，不采用完整引擎迁移）
 
 engine/engine.go:197–273 创建 gVisor/policy/router/ingress。tun_windows.go:219–444 的 TCP/UDP/DNS handler 依赖会话 dialer/stack/resolver，并建立域名动态 /32 路由和绑定。依赖 sing-tun 的 stack_system_windows.go:fixWindowsFirewall 还会创建防火墙规则；只分离管理员路由命令不够。
 
@@ -37,3 +37,11 @@ engine/engine.go:197–273 创建 gVisor/policy/router/ingress。tun_windows.go:
 - 保留 slot 0–63、相同前缀/重叠 DNS 拒绝、更具体路由优先、默认路由拒绝、未知配置 ID 错误和旧回调身份防护。
 
 下一步确认“本条已连接配置是否需原地开关”，再收敛最终 IPC/日志/生命周期设计。尚未运行任何真实提权、系统网络修改或网关连接。
+
+## 用户决策后的收敛
+
+用户明确回复“需要拆分tun的附着”。最终采用 GUI 保留全部 VPN Engine/resolver/代理，Worker 只持有 ingress/系统配置，每流 TCP/UDP 数据管道和 DNS RPC 回调 GUI。详细 design.md/implement.md 已编写，前文完整引擎 Worker 建议仅保留为研究历史，不能实施。
+
+补充证据：loadPolicy 的 conf.TUNMode/DisableZJUConfig 会改变代理资源，热开关不可重建并交换该 policy；需在扩展前保存原始资源，单独构造 TUN view。原 resolver/IPPool 保留，TUN 后端过滤域名授权并保持 TCPPrefL3/AppID/fake-IP上下文。原 answerDNS 添加系统动态路由，需拆 GUI DNS/ACL 与 Worker路由提交。relogin 中 Update 失败目前会传播到 VPN 恢复，新的 TUN失败应隔离，不触发会话重登。
+
+技术边界在最终设计中明确：单控制管道与独立按流数据管道、typed/versioned请求、双向真实PID校验、GUI独占 engine.log、Worker不接收认证数据、per-attachment/session/policy版本及取消。产品决策已解决；只待用户审阅完整最终方案。

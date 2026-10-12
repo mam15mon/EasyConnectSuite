@@ -2,7 +2,7 @@
   "id": "tun-worker-helper",
   "name": "tun-worker-helper",
   "title": "独立提权 TUN Worker，GUI 不重启",
-  "description": "以同一 VPN.exe 的后台 Worker 承担 TUN 提权与清理，通过 IPC 保持 GUI 和已有 VPN 会话运行，移除提权 MessageBox。",
+  "description": "拆分 TUN 附着与分离：普通 GUI 保留 VPN 会话/代理，通过单独提权 Worker 和命名管道实现不断线热切换，移除 MessageBox。",
   "status": "planning",
   "dev_type": "fullstack",
   "scope": "windows-tun-worker",
@@ -34,8 +34,16 @@
     "engine/engine.go",
     "engine/tun_windows.go",
     "engine/tun_identity_windows.go",
-    "build/windows/wails.exe.manifest"
+    "build/windows/wails.exe.manifest",
+    "engine/policy.go",
+    "engine/dns_zones.go",
+    "engine/tun_session_windows.go",
+    "tun_worker_windows.go",
+    "internal/tunipc",
+    "frontend/wailsjs/go/main/App.js",
+    "frontend/wailsjs/go/main/App.d.ts",
+    "frontend/wailsjs/go/models.ts"
   ],
-  "notes": "用户已同意建任务与规划；已研究提权/TUN数据路径，建议单共享 Worker 承载 TUN 会话。待确认当前连接是否要求原地开关；产品代码未改，不进入实施。",
+  "notes": "用户明确要求拆分 TUN 附着并支持本条不断线热切换，取消完整引擎 Worker 方案。prd/design/implement 已收敛，研究与范围已记录，等待最新最终方案审阅；planning，不改产品代码，不派发代理。",
   "meta": {}
 }
