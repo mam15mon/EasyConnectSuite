@@ -29,7 +29,7 @@ export function installPreview(onStatus) {
     GetProfileLogs:async id=>[`${new Date().toLocaleTimeString()} [VPN profile="${id}"] status phase=${statuses.get(id)?.state||'disconnected'}`,`${new Date().toLocaleTimeString()} 演示记录：实际阶段、停止原因和流量统计由新版引擎写入。`],
     GetInterfaces:async()=>['WLAN','以太网'],
     SetActiveProfile:async id=>{ if(!profiles.some(p=>p.id===id)) return false; selected=id; return true; },
-    SetProfileTUNMode:async(id,enabled)=>{ const p=profiles.find(p=>p.id===id); if(!p)throw new Error('配置不存在'); p.tunMode=enabled; return false; },
+    SetProfileTUNMode:async(id,enabled)=>{ const p=profiles.find(p=>p.id===id); if(!p)throw new Error('配置不存在'); p.tunMode=enabled; const status=statuses.get(id); if(status.running){status.tunState=enabled?"attaching":"detaching";emit(id);await new Promise(r=>setTimeout(r,300));status.tunMode=enabled;status.tunState=enabled?"on":"off";status.tunError="";emit(id);} },
     SetProxyEnabled:async enabled=>{ profiles.find(p=>p.id===selected).disableProxy=!enabled; },
     StartProfileVPN:async id=>{
       const status=statuses.get(id);

@@ -357,7 +357,7 @@ function updateStatusUI(status) {
 
   stateNote.title = stateNote.innerText;
   tunModeToggle.checked = !!(status.running ? status.tunMode : activeProfile?.tunMode);
-  tunModeToggle.disabled = modeSaving || selectionPending || status.running || !activeProfile;
+  tunModeToggle.disabled = modeSaving || selectionPending || !activeProfile || status.tunState === "attaching" || status.tunState === "detaching" || (status.running && status.state !== "connected" && !(status.stage === "重连中" && status.tunMode));
   proxyModeToggle.checked = !(status.running ? status.disableProxy : activeProfile?.disableProxy);
   proxyModeToggle.disabled = modeSaving || selectionPending || status.running || !activeProfile;
   proxyModeNote.title = status.running
@@ -365,11 +365,9 @@ function updateStatusUI(status) {
     : 'SOCKS5 / HTTP，可与 TUN 同时开启';
   profileSelect.disabled = modeSaving;
   btnToggle.disabled = modeSaving || !activeProfile || (pendingActions.has(activeProfile?.id) && status.state !== 'connecting');
-  tunModeNote.title = modeSaving
-    ? '正在保存设置或等待管理员授权…'
-    : status.running
-      ? '断开连接后可切换模式'
-      : '开启时需要管理员授权';
+  const tunMessage = status.tunError || (modeSaving || status.tunState === 'attaching' ? '正在附着 TUN 或等待系统 UAC 授权…' : status.tunState === 'detaching' ? '正在清理 TUN 网卡和路由…' : '系统流量按服务器授权资源进入 VPN，开关不会重新登录。');
+  tunModeNote.title = tunMessage;
+  tunModeNote.querySelector('small').textContent = tunMessage;
   updateInfoFields(status);
   renderConnections();
 }
@@ -537,23 +535,16 @@ document.getElementById('btn-modal-save').addEventListener('click', async () => 
 // ---------- 连接 ----------
 
 async function saveTUNMode(enabled) {
+  const id = activeProfile.id;
   modeSaving = true;
   updateStatusUI(currentStatus);
-  let restarting = false;
   try {
-    restarting = await window.go.main.App.SetProfileTUNMode(activeProfile.id, enabled);
-    if (restarting) {
-      tunModeToggle.checked = enabled;
-      tunModeNote.title = '授权成功，正在以管理员身份重新启动…';
-      return true;
-    }
-    await refreshProfiles();
-    return false;
+    await window.go.main.App.SetProfileTUNMode(id, enabled);
   } finally {
-    if (!restarting) {
-      modeSaving = false;
-      updateStatusUI(currentStatus);
-    }
+    modeSaving = false;
+    await refreshProfiles();
+    await refreshConnections();
+    updateStatusUI(currentStatus);
   }
 }
 
@@ -602,10 +593,10 @@ async function toggleConnection(id) {
         modeSaving = true;
         updateStatusUI(currentStatus);
         try {
-          if (await window.go.main.App.SetProfileTUNMode(id, true)) return;
+          await window.go.main.App.SetProfileTUNMode(id, true);
         } finally { modeSaving = false; }
       }
-      receiveStatus({profileId:id, activeProfile:profile.name, protocol:profile.protocol || 'easyconnect', running:true, state:'connecting', stage:'准备中', message:'正在准备连接…', tunMode:!!profile.tunMode, disableProxy:!!profile.disableProxy});
+      receiveStatus({profileId:id, activeProfile:profile.name, protocol:profile.protocol || 'easyconnect', running:true, state:'connecting', stage:'准备中', message:'正在准备连接…', tunMode:false, tunState:"off", disableProxy:!!profile.disableProxy});
       const res = await window.go.main.App.StartProfileVPN(id);
       if (actionVersions.get(id) !== actionVersion) return;
       if (res !== 'OK') {
