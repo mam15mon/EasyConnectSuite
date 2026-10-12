@@ -22,6 +22,10 @@ export function installPreview(onStatus) {
     GetConnections:async()=>clone([...statuses.values()]),
     GetStatus:async()=>clone(statuses.get(selected)),
     GetVPNResources:async()=>clone(statuses.get(selected)?.state==='connected' ? resources.get(selected)||[] : []),
+    GetProfileVPNResources:async id=>{
+      if(!profiles.some(p=>p.id===id))throw new Error('服务器配置不存在');
+      return clone(statuses.get(id)?.state==='connected' ? resources.get(id)||[] : []);
+    },
     GetProfileLogs:async id=>[`${new Date().toLocaleTimeString()} [VPN profile="${id}"] status phase=${statuses.get(id)?.state||'disconnected'}`,`${new Date().toLocaleTimeString()} 演示记录：实际阶段、停止原因和流量统计由新版引擎写入。`],
     GetInterfaces:async()=>['WLAN','以太网'],
     SetActiveProfile:async id=>{ if(!profiles.some(p=>p.id===id)) return false; selected=id; return true; },

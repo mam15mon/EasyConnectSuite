@@ -436,6 +436,23 @@ func (a *App) GetVPNResources() []engine.ResourceEntry {
 	return a.resources
 }
 
+// GetProfileVPNResources reads resources without depending on the selected profile.
+func (a *App) GetProfileVPNResources(id string) ([]engine.ResourceEntry, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, p := range a.appConfig.Profiles {
+		if p.ID != id {
+			continue
+		}
+		c := a.connections[id]
+		if c == nil || c.stopping || !c.status.Running {
+			return nil, nil
+		}
+		return append([]engine.ResourceEntry(nil), c.resources...), nil
+	}
+	return nil, fmt.Errorf("服务器配置不存在")
+}
+
 // handleEngineStatus translates engine lifecycle events into the VPNStatus
 // the frontend and tray already understand. Called from engine goroutines.
 func (a *App) handleEngineStatus(s engine.Status) {

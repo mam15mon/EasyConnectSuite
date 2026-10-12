@@ -229,8 +229,12 @@ func (a *App) startConnectionID(id string, start func(engine.Options) (vpnEngine
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		delete(a.connections, p.ID)
 		cancel()
-		a.status = disconnectedStatus(p)
-		a.emitConnectionLocked(a.status, nil)
+		status := disconnectedStatus(p)
+		if p.ID == a.appConfig.ActiveProfileID {
+			a.status = status
+			a.resources = nil
+		}
+		a.emitConnectionLocked(status, nil)
 		a.mu.Unlock()
 		return err.Error()
 	}
@@ -240,10 +244,12 @@ func (a *App) startConnectionID(id string, start func(engine.Options) (vpnEngine
 	eng, err := start(opts)
 	a.mu.Lock()
 	c.engine = eng
-	if !c.stopping {
+	if err != nil {
+		cancel()
+	}
+	if a.connections[p.ID] == c && !c.stopping {
 		if err != nil {
 			applyEngineStatus(&c.status, &c.started, &c.resources, engine.Status{Phase: engine.PhaseError, Message: err.Error()})
-			cancel()
 		} else {
 			c.resources = eng.Resources()
 		}
