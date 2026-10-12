@@ -398,7 +398,12 @@ func Relay(a, b net.Conn, packet bool) {
 			_ = dst.Close()
 			_ = src.Close()
 		} else {
-			_, _ = io.Copy(dst, src)
+			_, err := io.Copy(dst, src)
+			if err != nil {
+				_ = dst.Close()
+				_ = src.Close()
+				return
+			}
 			if c, ok := dst.(interface{ CloseWrite() error }); ok {
 				_ = c.CloseWrite()
 			} else {
