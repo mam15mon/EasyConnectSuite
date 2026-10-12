@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -157,4 +158,72 @@ func TestTUNSystemUACCancellation(t *testing.T) {
 	if manager.peer != nil || len(manager.reservations) != 0 || len(manager.attachments) != 0 {
 		t.Fatal("canceled UAC retained worker resources")
 	}
+}
+
+func TestTUNSystemCrashFixture(t *testing.T) {
+	if os.Getenv("ECS_TUN_CRASH_CHILD") != "1" {
+		t.Skip("subprocess fixture")
+	}
+	manager := newTUNManager()
+	ctx, c := context.WithTimeout(context.Background(), time.Minute)
+	defer c()
+	spec := engine.TUNSpec{Ref: tunipc.Ref{Profile: "crash-fixture", Session: "crash", Attachment: "crash-attachment", Policy: 1}, Slot: 61, Prefixes: []string{"198.51.100.77/32"}, Names: []string{".tun61.example"}}
+	if _, err := manager.Attach(ctx, spec, &systemTestBackend{}); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("WORKER_READY %d\n", manager.pid)
+	select {}
+}
+func TestTUNSystemParentCrashCleanup(t *testing.T) {
+	if os.Getenv("ECS_TUN_SYSTEM_TEST") != "crash" {
+		t.Skip("requires real system TUN fixture")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe, "-test.run=^TestTUNSystemCrashFixture$", "-test.v", "-test.timeout=90s")
+	cmd.Env = append(os.Environ(), "ECS_TUN_CRASH_CHILD=1")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Stderr = os.Stderr
+	if err = cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer cmd.Process.Kill()
+	ready := make(chan uint32, 1)
+	go func() {
+		scan := bufio.NewScanner(stdout)
+		for scan.Scan() {
+			var pid uint32
+			if _, e := fmt.Sscanf(scan.Text(), "WORKER_READY %d", &pid); e == nil {
+				ready <- pid
+				return
+			}
+		}
+	}()
+	var workerPID uint32
+	select {
+	case workerPID = <-ready:
+	case <-time.After(time.Minute):
+		t.Fatal("crash fixture never attached")
+	}
+	handle, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, workerPID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(handle)
+	assertSystemResidue(t, 1)
+	if err = cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	cmd.Wait()
+	result, err := windows.WaitForSingleObject(handle, 45000)
+	if err != nil || result != windows.WAIT_OBJECT_0 {
+		t.Fatal("Worker did not exit after parent crash", err)
+	}
+	assertSystemResidue(t, 0)
+	t.Logf("force-killed ordinary parent; Worker %d cleaned routes and NRPT and exited", workerPID)
 }
