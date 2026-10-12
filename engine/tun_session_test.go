@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/configs"
@@ -16,18 +17,55 @@ type testAttachment struct {
 	once    sync.Once
 	done    chan struct{}
 	updates int
+	failure error
 }
 
 func (a *testAttachment) Close(context.Context) error {
 	a.once.Do(func() { close(a.done) })
 	return nil
 }
-func (a *testAttachment) Update(context.Context, TUNSpec) error { a.updates++; return nil }
+func (a *testAttachment) Update(context.Context, TUNSpec) error { a.updates++; return a.failure }
 func (a *testAttachment) Done() <-chan struct{}                 { return a.done }
 
 type testController struct {
 	attachment *testAttachment
 	entered    chan struct{}
+}
+
+func TestTUNWorkerLossAndUpdateFailureLeaveVPNRunning(t *testing.T) {
+	for _, update := range []bool{false, true} {
+		events := make(chan TUNStatus, 8)
+		c := &testController{}
+		e := &Engine{id: 22, opts: Options{ConnectionID: "profile", TUNController: c, OnTUNStatus: func(s TUNStatus) { events <- s }}}
+		e.ctx, e.cancel = context.WithCancel(context.Background())
+		p := &connectionPolicy{resourceIPs: []client.IPResource{}, resourceDomains: client.DomainResources{}}
+		e.router.current.Store(p)
+		e.running.Store(true)
+		if err := e.SetTUN(context.Background(), true); err != nil {
+			t.Fatal(err)
+		}
+		if update {
+			c.attachment.failure = errors.New("route conflict")
+			e.updateTUN(p, false)
+		} else {
+			c.attachment.Close(context.Background())
+		}
+		deadline, cancel := context.WithTimeout(context.Background(), time.Second)
+		found := false
+		for !found {
+			select {
+			case s := <-events:
+				found = s.State == "error"
+			case <-deadline.Done():
+				t.Fatal("TUN failure not reported")
+			}
+		}
+		cancel()
+		if !e.Running() || e.ctx.Err() != nil || e.router.current.Load() != p {
+			t.Fatal("TUN failure stopped or changed VPN")
+		}
+		e.Stop()
+	}
 }
 
 func (c *testController) Attach(ctx context.Context, s TUNSpec, b TUNBackend) (TUNAttachment, error) {
