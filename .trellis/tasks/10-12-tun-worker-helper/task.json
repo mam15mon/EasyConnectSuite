@@ -44,6 +44,6 @@
     "frontend/wailsjs/go/main/App.d.ts",
     "frontend/wailsjs/go/models.ts"
   ],
-  "notes": "用户明确要求拆分 TUN 附着并支持本条不断线热切换，取消完整引擎 Worker 方案。prd/design/implement 已收敛，研究与范围已记录，等待最新最终方案审阅；planning，不改产品代码，不派发代理。",
+  "notes": "用户已明确“开始”；inline 完成独立 Worker、热附着、IPC、UI、模拟及实际系统验收。正在完成最终构建与归档；同一工作区另有界面任务修改，保留并等待其提交后合并。",
   "meta": {}
 }
