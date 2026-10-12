@@ -339,3 +339,41 @@ Actual diagnostic result is AUTH code 2; no verified semantic mapping. Observed 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 13: 独立 TUN Worker 验收与交付
+<!-- trellis-session: v=2 fp=c0663b16cd4b074d -->
+
+**Date**: 2026-10-12
+**Task**: 独立 TUN Worker 验收与交付
+**Branch**: `codex/tun-worker-helper`
+
+### Summary
+
+完成普通 GUI 的独立提权 Worker 与不断线 TUN 热附着，保留最终 VPN Suite 界面；实际 UAC 同意/取消、双 TUN 系统操作和父进程崩溃清理通过，交付 VPN.exe。
+
+### Main Changes
+
+- 移除 GUI 提权重启与 MessageBox；单 Worker 多附着、命名管道数据与心跳、独立 TUN 状态和清理。
+- 补充可执行规范与逐项验收证据，完成任务归档；按既有授权合并 main 并安全删除本任务分支。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `532ef77` | docs: 完成 TUN Worker 验收记录与最终构建确认 |
+| `9b039cf` | test: preserve App connection identity and proxy endpoints during hot TUN switches |
+| `aca4fcf` | test: enforce IPC request limits, client identity and heartbeat expiry |
+
+### Testing
+
+- [OK] 根模块及相关嵌套模块 test/vet/race 通过；前端 14 项测试与最终 Wails 构建通过。
+- [OK] 真实 Windows UAC 同意/取消、槽位 60/61 独立创建清理、系统 TCP/DNS、父进程强杀清理通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 真实网关、跨管理员账户授权及完整休眠/系统故障矩阵未执行，保留验收边界；TopSAP 实网任务保持独立。

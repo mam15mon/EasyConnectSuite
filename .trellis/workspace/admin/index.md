@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 12
+- **Total Sessions**: 13
 - **Last Active**: 2026-10-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~341 | Active |
+| `journal-1.md` | ~379 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 13 | 2026-10-12 | 独立 TUN Worker 验收与交付 | `532ef77`, `9b039cf`, `aca4fcf` | `codex/tun-worker-helper` |
 | 12 | 2026-10-12 | 多 VPN 状态归属修复验收与 VPN.exe 交付 | `1657c85`, `e1f6481`, `9c3973e`, `1e7c548`, `9577354`, `f0ce8e7`, `271f145` | `codex/multi-vpn-acceptance-fixes` |
 | 11 | 2026-10-11 | 修复多VPN连接列表详情同步 | `a52a79c`, `6116068`, `800ce7d`, `6bb9ca1` | `codex/univpn-windows-core` |
 | 10 | 2026-10-11 | 多VPN托盘独立操作与v3交付 | `90dfb50`, `34c5a10`, `471a300`, `82225f4`, `835fe0a`, `14f1b6b` | `codex/univpn-windows-core` |
