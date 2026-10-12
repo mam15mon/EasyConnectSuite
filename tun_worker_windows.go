@@ -306,6 +306,14 @@ func (m *tunManager) handle(ctx context.Context, msg tunipc.Message) (tunipc.Mes
 	}
 	a.streams.Store(upstream, true)
 	a.streams.Store(listener, true)
+	if a.ctx.Err() != nil {
+		upstream.Close()
+		listener.Close()
+		a.streams.Delete(upstream)
+		a.streams.Delete(listener)
+		<-m.flows
+		return tunipc.Message{}, net.ErrClosed
+	}
 	go func() {
 		defer func() {
 			upstream.Close()
@@ -549,7 +557,10 @@ func runTUNWorker(args []string) error {
 		case <-w.peer.Done():
 			return nil
 		case <-w.closing:
-			time.Sleep(50 * time.Millisecond)
+			select {
+			case <-w.peer.Done():
+			case <-time.After(time.Second):
+			}
 			return nil
 		case <-ticker.C:
 			r, e := windows.WaitForSingleObject(parent, 0)

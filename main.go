@@ -26,6 +26,12 @@ var assets embed.FS
 // trace. With this in place the runtime panic dump lands in
 // %APPDATA%\EasyConnectVPN\logs\crash.log.
 func setupCrashLog() {
+	setupNamedCrashLog("crash.log")
+}
+func setupWorkerCrashLog() {
+	setupNamedCrashLog("tun-worker-crash.log")
+}
+func setupNamedCrashLog(filename string) {
 	debug.SetTraceback("all")
 
 	logDir := ""
@@ -38,7 +44,7 @@ func setupCrashLog() {
 		logDir = "."
 	}
 
-	path := filepath.Join(logDir, "crash.log")
+	path := filepath.Join(logDir, filename)
 	if info, err := os.Stat(path); err == nil && info.Size() > 8*1024*1024 {
 		_ = os.Rename(path, path+".old")
 	}
