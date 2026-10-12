@@ -5,7 +5,7 @@ The desktop backend is Go 1.25.6 with Wails v2. It embeds the local zju-connect 
 | Guide | Scope |
 | --- | --- |
 | [Directory structure](directory-structure.md) | Application, engine and upstream fork |
-| [Configuration](configuration-guidelines.md) | JSON profiles and Wails serialization |
+| [Configuration](configuration-guidelines.md) | JSON profiles, Wails serialization, session identity and explicit resource queries |
 | [Errors](error-handling.md) | Rollback, authentication refusal and cancellation |
 | [Logging](logging-guidelines.md) | Engine logs and credentials |
 | [Quality](quality-guidelines.md) | Minimal changes and Windows verification |
