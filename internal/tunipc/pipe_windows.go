@@ -33,9 +33,13 @@ func validName(n string) bool {
 }
 
 type Listener struct {
-	mu     sync.Mutex
-	handle windows.Handle
-	name   string
+	mu           sync.Mutex
+	handle       windows.Handle
+	name         string
+	closed       bool
+	accepting    bool
+	acceptCancel context.CancelFunc
+	acceptDone   chan struct{}
 }
 
 func Listen(name string) (*Listener, error) {
@@ -59,6 +63,14 @@ func Listen(name string) (*Listener, error) {
 }
 func (l *Listener) Close() error {
 	l.mu.Lock()
+	l.closed = true
+	if l.accepting {
+		cancel, done := l.acceptCancel, l.acceptDone
+		l.mu.Unlock()
+		cancel()
+		<-done
+		return l.Close()
+	}
 	defer l.mu.Unlock()
 	if l.handle == windows.InvalidHandle {
 		return nil
@@ -69,10 +81,22 @@ func (l *Listener) Close() error {
 }
 func (l *Listener) Accept(ctx context.Context, pid uint32) (net.Conn, error) {
 	l.mu.Lock()
+	if l.closed || l.accepting {
+		l.mu.Unlock()
+		return nil, net.ErrClosed
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	l.accepting = true
+	l.acceptCancel = cancel
+	l.acceptDone = make(chan struct{})
 	h := l.handle
 	l.mu.Unlock()
+	defer func() { cancel(); l.mu.Lock(); l.accepting = false; close(l.acceptDone); l.mu.Unlock() }()
 	if h == windows.InvalidHandle {
 		return nil, net.ErrClosed
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
 	event, e := windows.CreateEvent(nil, 1, 0, nil)
 	if e != nil {
@@ -112,7 +136,7 @@ func (l *Listener) Accept(ctx context.Context, pid uint32) (net.Conn, error) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.handle != h {
+	if l.handle != h || l.closed {
 		return nil, net.ErrClosed
 	}
 	l.handle = windows.InvalidHandle

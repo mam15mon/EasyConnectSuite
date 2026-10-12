@@ -74,3 +74,39 @@ func TestNamedPipeRejectsServerPIDAndCancelsAccept(t *testing.T) {
 		t.Fatal("wrong server accepted")
 	}
 }
+
+func TestListenerCloseWakesPendingAccept(t *testing.T) {
+	l, err := Listen(NewName())
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, e := l.Accept(context.Background(), uint32(os.Getpid())); done <- e }()
+	ctx, c := context.WithTimeout(context.Background(), time.Second)
+	defer c()
+	for {
+		l.mu.Lock()
+		active := l.accepting
+		l.mu.Unlock()
+		if active {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("accept never entered")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if err = l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case e := <-done:
+		if e == nil {
+			t.Fatal("closed listener accepted")
+		}
+	case <-ctx.Done():
+		t.Fatal("Close did not wake Accept")
+	}
+}
