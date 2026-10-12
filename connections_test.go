@@ -398,3 +398,42 @@ func TestSelectedLogDirectoryFailureClearsResources(t *testing.T) {
 		t.Fatalf("incomplete rollback: %s %+v %v", result, a.GetStatus(), a.GetVPNResources())
 	}
 }
+
+func TestProfileResourcesUseExplicitIDAndReturnSnapshot(t *testing.T) {
+	a := multiTestApp(t)
+	a.selectConnectionLocked()
+	before := a.GetStatus()
+	rows := []engine.ResourceEntry{{Kind: "ip", Target: "192.0.2.0/24"}}
+	c := &vpnConnection{status: disconnectedStatus(a.appConfig.Profiles[1]), resources: rows}
+	c.status.Running = true
+	c.status.State = "connected"
+	a.connections = map[string]*vpnConnection{"b": c}
+	got, err := a.GetProfileVPNResources("b")
+	if err != nil || !reflect.DeepEqual(got, rows) {
+		t.Fatalf("explicit B query: %v %v", got, err)
+	}
+	got[0].Target = "mutated"
+	if c.resources[0].Target != "192.0.2.0/24" {
+		t.Fatal("returned resources alias live session")
+	}
+	if a.GetStatus() != before || a.GetActiveProfile().ID != "a" {
+		t.Fatal("resource read changed selected A")
+	}
+	if got, err := a.GetProfileVPNResources("unknown"); err == nil || len(got) != 0 {
+		t.Fatal("missing ID was replaced with active resources")
+	}
+	if got, err := a.GetProfileVPNResources("a"); err != nil || len(got) != 0 {
+		t.Fatal("no-session query failed", got, err)
+	}
+	for _, state := range []string{"disconnected", "error", "stopping"} {
+		t.Run(state, func(t *testing.T) {
+			c.stopping = state == "stopping"
+			c.status.Running = c.stopping
+			c.status.State = state
+			got, err := a.GetProfileVPNResources("b")
+			if err != nil || len(got) != 0 {
+				t.Fatalf("obsolete resources exposed for %s: %v %v", state, got, err)
+			}
+		})
+	}
+}

@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 // Execute the production functions with controlled Wails responses; no timers or live VPNs.
 const source = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
 function productionFunction(name) {
-  const start = source.indexOf(`async function ${name}(`);
+  let start = source.indexOf(`function ${name}(`);
+  if (source.slice(start - 6, start) === 'async ') start -= 6;
   assert.ok(start >= 0, `production function ${name} exists`);
   return source.slice(start, source.indexOf('\n}', start) + 2);
 }
@@ -33,7 +34,7 @@ function workspace(api = {}) {
     renderResources(rows) { state.rendered = rows; }, showToast(message) { state.notifications.push(message); },
   };
   vm.createContext(state);
-  vm.runInContext(['selectProfile','refreshResources','toggleConnection','refreshConnections'].map(productionFunction).join('\n'), state);
+  vm.runInContext(['selectProfile','refreshResources','toggleConnection','refreshConnections','receiveStatus'].map(productionFunction).join('\n'), state);
   return state;
 }
 
@@ -72,4 +73,91 @@ test('late startup error cannot replace a newer successful tray connection', asy
   assert.equal(state.currentStatus.state,'connected');
   assert.equal(state.currentStatus.clientIp,'192.0.2.22');
   assert.equal(state.pendingActions.size,0);
+});
+
+test('newest resource response wins when requests return in reverse order', async () => {
+  const first=deferred(), second=deferred();
+  let requests=0;
+  const state=workspace({GetProfileVPNResources:()=>++requests===1?first.promise:second.promise});
+  const old=state.refreshResources(false), latest=state.refreshResources(false);
+  second.resolve([{target:'new'}]); await latest;
+  first.resolve([{target:'old'}]); await old;
+  assert.equal(state.rendered[0].target,'new');
+  assert.equal(state.profileResources.get('a')[0].target,'new');
+});
+
+test('A to B to A selection rejects the first A response', async () => {
+  const first=deferred();
+  const state=workspace({GetProfileVPNResources:()=>first.promise});
+  const old=state.refreshResources(false);
+  state.activeProfile={id:'b'}; state.selectionVersion++;
+  state.activeProfile={id:'a'}; state.selectionVersion++;
+  state.renderResources([{target:'current-A'}]);
+  first.resolve([{target:'old-A'}]); await old;
+  assert.equal(state.rendered[0].target,'current-A');
+  assert.equal(state.profileResources.has('a'),false);
+});
+
+test('disconnect event invalidates pending resource response', async () => {
+  const pending=deferred();
+  const state=workspace({GetProfileVPNResources:()=>pending.promise});
+  const refresh=state.refreshResources(false);
+  state.receiveStatus({profileId:'a',running:false,state:'disconnected'});
+  pending.resolve([{target:'obsolete'}]); await refresh;
+  assert.equal(state.rendered.length,0);
+  assert.equal(state.profileResources.has('a'),false);
+});
+
+test('resource update event takes precedence over a pending read', async () => {
+  const pending=deferred();
+  const state=workspace({GetProfileVPNResources:()=>pending.promise});
+  const handlers=new Map();
+  state.window.runtime={EventsOn:(event,handler)=>handlers.set(event,handler)};
+  const start=source.indexOf("window.runtime.EventsOn('vpn-resources'");
+  const end=source.indexOf("window.runtime.EventsOn('profile-switched'",start);
+  vm.runInContext(source.slice(start,end),state);
+  const refresh=state.refreshResources(false);
+  handlers.get('vpn-resources')({profileId:'a',entries:[{target:'event-new'}]});
+  pending.resolve([{target:'read-old'}]); await refresh;
+  assert.equal(state.rendered[0].target,'event-new');
+  assert.equal(state.profileResources.get('a')[0].target,'event-new');
+});
+
+test('actual current startup failure remains visible and releases pending action', async () => {
+  const failed={profileId:'a',running:false,state:'error',lastError:'authentication rejected'};
+  const state=workspace({StartProfileVPN:async()=>failed.lastError,GetConnections:async()=>[failed]});
+  await state.toggleConnection('a');
+  assert.equal(state.currentStatus.state,'error');
+  assert.equal(state.currentStatus.lastError,'authentication rejected');
+  assert.equal(state.pendingActions.size,0);
+  assert.ok(state.notifications.some(message=>message.includes('authentication rejected')));
+});
+
+test('unknown resource ID reports failure without querying selected-profile API', async () => {
+  let legacyCalls=0;
+  const state=workspace({
+    GetProfileVPNResources:async()=>{throw new Error('服务器配置不存在');},
+    GetVPNResources:async()=>{legacyCalls++;return [{target:'wrong'}];},
+  });
+  state.activeProfile={id:'unknown'};
+  await state.refreshResources(false);
+  assert.equal(legacyCalls,0);
+  assert.equal(state.profileResources.size,0);
+  assert.ok(state.notifications.some(message=>message.includes('服务器配置不存在')));
+});
+
+test('preview resource API uses explicit ID and rejects unknown profiles', async () => {
+  const preview=readFileSync(new URL('./preview.mjs',import.meta.url),'utf8');
+  const scope={window:{},structuredClone,setInterval(){}};
+  vm.createContext(scope);
+  vm.runInContext(preview.replace('export function installPreview','function installPreview'),scope);
+  scope.installPreview(()=>{});
+  const api=scope.window.go.main.App;
+  const selected=(await api.GetAppConfig()).activeProfileId;
+  assert.equal(selected,'topsec');
+  const rows=await api.GetProfileVPNResources('uni');
+  assert.equal(rows[0].target,'192.0.2.0 ~ 192.0.2.255');
+  assert.equal((await api.GetAppConfig()).activeProfileId,selected);
+  assert.equal((await api.GetProfileVPNResources('easy')).length,0);
+  await assert.rejects(api.GetProfileVPNResources('unknown'),/服务器配置不存在/);
 });
