@@ -116,7 +116,7 @@ func (l *Listener) Accept(ctx context.Context, pid uint32) (net.Conn, error) {
 		return nil, net.ErrClosed
 	}
 	l.handle = windows.InvalidHandle
-	return &pipeConn{File: os.NewFile(uintptr(h), l.name)}, nil
+	return newPipeConn(h, l.name)
 }
 func Dial(ctx context.Context, name string, pid uint32) (net.Conn, error) {
 	if !validName(name) {
@@ -131,7 +131,7 @@ func Dial(ctx context.Context, name string, pid uint32) (net.Conn, error) {
 				_ = windows.CloseHandle(h)
 				return nil, errors.New("pipe server identity mismatch")
 			}
-			return &pipeConn{File: os.NewFile(uintptr(h), name)}, nil
+			return newPipeConn(h, name)
 		}
 		if !errors.Is(e, windows.ERROR_PIPE_BUSY) && !errors.Is(e, windows.ERROR_FILE_NOT_FOUND) {
 			return nil, e
@@ -144,10 +144,33 @@ func Dial(ctx context.Context, name string, pid uint32) (net.Conn, error) {
 	}
 }
 
-type pipeConn struct{ *os.File }
+// Go 1.25 pipe File.Read and File.Write share an unsynchronized offset.
+// Separate handles give each direction its own File state while retaining full duplex IO.
+type pipeConn struct {
+	reader, writer *os.File
+	name           string
+}
+
+func newPipeConn(h windows.Handle, name string) (net.Conn, error) {
+	var duplicate windows.Handle
+	if err := windows.DuplicateHandle(windows.CurrentProcess(), h, windows.CurrentProcess(), &duplicate, 0, false, windows.DUPLICATE_SAME_ACCESS); err != nil {
+		windows.CloseHandle(h)
+		return nil, err
+	}
+	return &pipeConn{reader: os.NewFile(uintptr(h), name), writer: os.NewFile(uintptr(duplicate), name), name: name}, nil
+}
+func (c *pipeConn) Read(b []byte) (int, error)         { return c.reader.Read(b) }
+func (c *pipeConn) Write(b []byte) (int, error)        { return c.writer.Write(b) }
+func (c *pipeConn) Close() error                       { return errors.Join(c.reader.Close(), c.writer.Close()) }
+func (c *pipeConn) SetReadDeadline(t time.Time) error  { return c.reader.SetReadDeadline(t) }
+func (c *pipeConn) SetWriteDeadline(t time.Time) error { return c.writer.SetWriteDeadline(t) }
+func (c *pipeConn) SetDeadline(t time.Time) error {
+	return errors.Join(c.SetReadDeadline(t), c.SetWriteDeadline(t))
+}
+
 type pipeAddr string
 
 func (a pipeAddr) Network() string       { return "pipe" }
 func (a pipeAddr) String() string        { return string(a) }
-func (c *pipeConn) LocalAddr() net.Addr  { return pipeAddr(c.Name()) }
-func (c *pipeConn) RemoteAddr() net.Addr { return pipeAddr(c.Name()) }
+func (c *pipeConn) LocalAddr() net.Addr  { return pipeAddr(c.name) }
+func (c *pipeConn) RemoteAddr() net.Addr { return pipeAddr(c.name) }
