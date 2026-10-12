@@ -18,6 +18,39 @@ type pipeTestBackend struct {
 	network string
 }
 
+type rejectedUpdateIngress struct{ closed bool }
+
+func (i *rejectedUpdateIngress) Close() error { i.closed = true; return nil }
+func (i *rejectedUpdateIngress) UpdateSpec(engine.TUNSpec) error {
+	return errors.New("conflicting DNS namespace")
+}
+func TestWorkerRejectsDirectionAndClosesFailedPolicyUpdate(t *testing.T) {
+	ref := tunipc.Ref{Profile: "profile", Session: "session", Attachment: "attachment", Policy: 1}
+	spec := engine.TUNSpec{Ref: ref, Slot: 1}
+	ingress := &rejectedUpdateIngress{}
+	w := &workerServer{authenticated: true, entries: map[string]*workerEntry{ref.Attachment: {spec: spec, ingress: ingress, backend: &workerBackend{ref: ref}}}}
+	for _, op := range []string{"dial", "dns", "unknown"} {
+		if _, e := w.handle(context.Background(), tunipc.Message{Op: op, Ref: ref}); e == nil {
+			t.Fatal("wrong direction accepted", op)
+		}
+	}
+	stale := spec
+	if _, e := w.handle(context.Background(), tunipc.Message{Op: "update", Ref: stale.Ref, Spec: &stale}); e == nil {
+		t.Fatal("old version accepted")
+	}
+	if ingress.closed {
+		t.Fatal("stale request closed active ingress")
+	}
+	next := spec
+	next.Policy++
+	if _, e := w.handle(context.Background(), tunipc.Message{Op: "update", Ref: next.Ref, Spec: &next}); e == nil {
+		t.Fatal("failed update hidden")
+	}
+	if !ingress.closed || len(w.entries) != 0 {
+		t.Fatal("failed update retained ingress")
+	}
+}
+
 func (b *pipeTestBackend) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	if network != b.network || address != "192.0.2.1:443" {
 		return nil, errors.New("denied")
