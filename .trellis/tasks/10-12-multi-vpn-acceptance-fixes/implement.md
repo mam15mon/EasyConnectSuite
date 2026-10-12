@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 用户已授权创建修复计划；状态为 planning，尚未实施。
+- 用户已审阅计划并授权完成任务；状态为 in_progress。
 - PRD 已收敛为 R1–R3 / AC1–AC7，无阻塞产品问题。
 - 当前为 Codex inline 模式，主会话直接实施和检查，不派发子代理；无需填充代理 JSONL。
 - 实施前审阅最新 prd.md、design.md、本文与 research/acceptance-evidence.md。收到后续实施授权后再运行 task.py start，加载 trellis-before-dev。

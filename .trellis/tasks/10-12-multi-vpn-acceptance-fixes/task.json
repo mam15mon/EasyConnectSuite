@@ -12,7 +12,7 @@
   "assignee": "admin",
   "createdAt": "2026-10-12",
   "completedAt": null,
-  "branch": "main",
+  "branch": "codex/multi-vpn-acceptance-fixes",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
