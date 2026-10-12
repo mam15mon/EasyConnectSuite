@@ -1,4 +1,4 @@
-# EasyConnect Suite
+# VPN Suite
 
 支持深信服 EasyConnect、华为／联软 UniVPN 及天融信 TopSAP 标准模式协议子集的第三方 Windows 图形客户端。一个 EXE 可同时连接多个配置，分别管理连接状态、资源、本地代理和 TUN。EasyConnect 引擎基于 [zju-connect](https://github.com/mythologyli/zju-connect)(上游 commit `4031c52`)，UniVPN 和 TopSAP 使用 Go 协议核心；**引擎源码直接编译进 GUI 进程**，无需 OpenConnect 或 Python 子进程。支持范围见 [UniVPN 接入说明](docs/univpn-go.md)及 [TopSAP 测试版说明](docs/topsec-go.md)；TopSAP 的新版 EXE 仍待真实网关验证。
 

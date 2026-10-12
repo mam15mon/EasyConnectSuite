@@ -70,7 +70,7 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:             "EasyConnect Suite · VPN 工作台",
+		Title:             "VPN Suite · VPN 工作台",
 		Width:             1080,
 		Height:            820,
 		MinWidth:          840,

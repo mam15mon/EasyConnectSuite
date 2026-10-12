@@ -7,7 +7,7 @@ const app = document.querySelector('#app');
 
 app.innerHTML = `
   <header class="top">
-    <div class="brand"><span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6z"/><path d="m8 12 3 3 5-6"/></svg></span><span class="brand-name">VPN 工作台</span><span class="brand-caption">EasyConnect Suite</span></div>
+    <div class="brand"><span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6z"/><path d="m8 12 3 3 5-6"/></svg></span><span class="brand-name">VPN 工作台</span><span class="brand-caption">VPN Suite</span></div>
     <div class="top-status" aria-live="polite"><span class="summary-online"><i></i><strong id="global-connected">0</strong> 已连接</span><span id="global-pending">0 连接中</span><span id="global-errors" hidden></span></div>
   </header>
   <main class="workspace">
@@ -20,8 +20,10 @@ app.innerHTML = `
     <section class="detail-workspace" aria-labelledby="detail-name">
       <div class="detail-header"><div><h2 id="detail-name">选择一条 VPN</h2><span id="detail-gateway" class="subtle"></span></div><div class="detail-actions"><button class="btn-plain" id="btn-edit-profile">编辑</button><button class="btn-icon danger" id="btn-del-profile" aria-label="删除当前配置" title="删除当前配置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg></button><button class="master-switch" id="btn-toggle"><span id="btn-label">连接</span></button></div></div>
       <select class="profile-select" id="profile-select" aria-label="切换查看的 VPN" hidden></select>
-      <div class="status-strip"><span class="connection-state" id="state-word">未连接</span><span class="detail-duration">连接时长 <span id="uptime-display">00:00:00</span></span></div>
-      <p class="state-note" id="state-note">选择或新建配置后连接。</p>
+      <div class="hero-status-bar">
+        <div class="status-strip"><span class="connection-state" id="state-word">未连接</span><span class="detail-duration">时长 <span id="uptime-display">00:00:00</span></span></div>
+        <p class="state-note" id="state-note">选择或新建配置后连接。</p>
+      </div>
       <div class="telemetry-grid">
         <button class="telemetry-item" id="item-client-ip" title="复制虚拟 IP"><span class="telemetry-label">虚拟 IP</span><span class="telemetry-val pending" id="client-ip-val">—</span></button>
         <button class="telemetry-item" id="item-dns" title="复制内网 DNS"><span class="telemetry-label">内网 DNS</span><span class="telemetry-val pending" id="dns-val">—</span></button>
@@ -34,8 +36,10 @@ app.innerHTML = `
         <button role="tab" id="tab-logs" data-workspace-page="logs" aria-controls="page-logs" aria-selected="false" tabindex="-1">运行记录</button>
       </nav>
       <section class="workspace-page resources-panel" id="page-resources" role="tabpanel" aria-labelledby="tab-resources">
-        <div class="resource-heading"><span>服务器授权的访问范围 <span class="panel-count-badge" id="route-count"></span></span><button class="btn-plain" id="btn-refresh-resources" title="刷新当前连接的资源视图">刷新</button><p id="resource-owner" hidden></p></div>
-        <div class="routes-search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input class="routes-filter" id="routes-filter" type="search" placeholder="搜索 IP、域名或端口" aria-label="筛选当前 VPN 资源" /></div>
+        <div class="resource-toolbar">
+          <div class="resource-heading"><span>服务器授权的访问范围 <span class="panel-count-badge" id="route-count"></span></span><button class="btn-plain" id="btn-refresh-resources" title="刷新当前连接的资源视图">刷新</button><p id="resource-owner" hidden></p></div>
+          <div class="routes-search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input class="routes-filter" id="routes-filter" type="search" placeholder="搜索 IP、域名或端口" aria-label="筛选当前 VPN 资源" /></div>
+        </div>
         <div class="route-table" id="route-table"><div class="route-empty">连接后显示服务器授权的资源。</div></div>
       </section>
       <section class="workspace-page" id="page-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
