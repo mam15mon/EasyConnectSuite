@@ -19,16 +19,19 @@ import (
 // A new immutable policy is published after each successful login. Listeners
 // keep the router, not a stale resolver or a previous session's resource list.
 type connectionPolicy struct {
-	resolver     *resolve.Resolver
-	stack        stack.Stack
-	dialer       *dial.Dialer
-	tunDialer    *dial.Dialer
-	ips          []client.IPResource
-	domains      client.DomainResources
-	dnsRecords   map[string][]net.IP
-	dnsName      string
-	useRemoteDNS bool
-	entries      []ResourceEntry
+	resolver        *resolve.Resolver
+	stack           stack.Stack
+	dialer          *dial.Dialer
+	tunDialer       *dial.Dialer
+	ips             []client.IPResource
+	domains         client.DomainResources
+	dnsRecords      map[string][]net.IP
+	dnsName         string
+	useRemoteDNS    bool
+	entries         []ResourceEntry
+	resourceIPs     []client.IPResource
+	resourceDomains client.DomainResources
+	resourceError   error
 }
 
 type policyRouter struct {
@@ -70,6 +73,9 @@ func loadPolicy(conf configs.Config, c client.Client, vpnStack stack.Stack) (*co
 	ips, ipErr := c.IPResources()
 	domains, domainErr := c.DomainResources()
 	records, _ := c.DNSResource()
+	rawIPs := append([]client.IPResource{}, ips...)
+	rawDomains := cloneDomains(domains)
+	domains = cloneDomains(domains)
 	// Missing IP resources must not turn a TUN request into unrestricted VPN
 	// routing. An empty non-nil list still permits authorized domain resources.
 	if conf.TUNMode {
@@ -119,6 +125,13 @@ func loadPolicy(conf configs.Config, c client.Client, vpnStack stack.Stack) (*co
 		}
 	}
 	p := &connectionPolicy{stack: vpnStack, resolver: resolver, ips: ips, domains: domains, dnsRecords: records, dnsName: remote, useRemoteDNS: useRemote}
+	p.resourceIPs, p.resourceDomains = rawIPs, rawDomains
+	if ipErr != nil && domainErr != nil {
+		p.resourceError = fmt.Errorf("VPN 未返回可用的资源列表，无法建立资源 TUN")
+	}
+	for _, domain := range conf.CustomProxyDomain {
+		p.resourceDomains[domain] = append(p.resourceDomains[domain], client.DomainResource{PortMin: 1, PortMax: 65535, Protocol: "all"})
+	}
 	p.dialer = dial.NewDialer(vpnStack, resolver, ips, conf.ProxyAll, conf.DialDirectProxy)
 	// A miss on a TUN route must fail rather than dial DIRECT back into the
 	// same system route. SOCKS5 keeps its existing selective routing behavior.
@@ -126,6 +139,24 @@ func loadPolicy(conf configs.Config, c client.Client, vpnStack stack.Stack) (*co
 	p.entries = buildResourceEntries(ips, domains, records)
 	log.Printf("VPN resources: %d IP ranges, %d domains; DNS %s", len(ips), len(domains), remote)
 	return p, nil
+}
+
+func cloneDomains(domains client.DomainResources) client.DomainResources {
+	copy := make(client.DomainResources, len(domains))
+	for name, rules := range domains {
+		copy[name] = append([]client.DomainResource(nil), rules...)
+	}
+	return copy
+}
+
+func (p *connectionPolicy) tunView() (*connectionPolicy, error) {
+	if p.resourceError != nil {
+		return nil, p.resourceError
+	}
+	v := *p
+	v.ips, v.domains = p.resourceIPs, p.resourceDomains
+	v.tunDialer = dial.NewDialer(p.stack, p.resolver, v.ips, true, "")
+	return &v, nil
 }
 
 // Preserve server prefix lengths. Never manufacture narrower routes to defeat
