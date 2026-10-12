@@ -51,7 +51,7 @@ func (b *systemTestBackend) DNS(ctx context.Context, data []byte) ([]byte, []str
 }
 func assertSystemResidue(t *testing.T, want int) {
 	t.Helper()
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", `$routes=@(Get-NetRoute -AddressFamily IPv4 -PolicyStore ActiveStore | Where-Object { $_.InterfaceAlias -in @('EasyConnect Suite #60','EasyConnect Suite #61') -and $_.DestinationPrefix -in @('198.51.100.77/32','198.51.100.78/32') }); $dns=@(Get-DnsClientNrptRule | Where-Object { $_.Comment -in @('EasyConnectSuite resource TUN #60','EasyConnectSuite resource TUN #61') }); [Console]::Write("{0},{1}",$routes.Count,$dns.Count)`)
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", `$routes=@(Get-NetRoute -AddressFamily IPv4 -PolicyStore ActiveStore | Where-Object { $_.InterfaceAlias -in @('EasyConnect Suite #60','EasyConnect Suite #61') -and $_.DestinationPrefix -in @('198.51.100.77/32','198.51.100.78/32') }); $dns=@(Get-DnsClientNrptRule | Where-Object { $_.Comment -in @('EasyConnectSuite resource TUN #60','EasyConnectSuite resource TUN #61') }); [Console]::Write(($routes.Count.ToString() + "," + $dns.Count.ToString()))`)
 	data, e := cmd.CombinedOutput()
 	if e != nil || strings.TrimSpace(string(data)) != fmt.Sprintf("%d,%d", want, want) {
 		t.Fatalf("system resource counts %q want %d: %v", data, want, e)
