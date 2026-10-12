@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -32,6 +33,50 @@ func TestFrameRejectsMalformed(t *testing.T) {
 	data := b.Bytes()
 	if _, e := ReadMessage(bytes.NewReader(data[:len(data)-1])); e == nil {
 		t.Fatal("accepted truncation")
+	}
+}
+
+func TestPeerRejectsRequestOverflow(t *testing.T) {
+	a, b := net.Pipe()
+	entered := make(chan struct{}, 64)
+	p := NewPeer(a, nil, nil)
+	defer p.Close()
+	q := NewPeer(b, func(ctx context.Context, _ Message) (Message, error) {
+		entered <- struct{}{}
+		<-ctx.Done()
+		return Message{}, ctx.Err()
+	}, nil)
+	defer q.Close()
+	ctx, c := context.WithCancel(context.Background())
+	defer c()
+	var done sync.WaitGroup
+	for i := 0; i < 64; i++ {
+		done.Add(1)
+		go func() { defer done.Done(); p.Call(ctx, Message{Op: "held"}) }()
+	}
+	for i := 0; i < 64; i++ {
+		select {
+		case <-entered:
+		case <-time.After(time.Second):
+			t.Fatal("request never entered")
+		}
+	}
+	if _, e := p.Call(ctx, Message{Op: "overflow"}); e == nil || e.Error() != "too many IPC requests" {
+		t.Fatalf("overflow %v", e)
+	}
+	p.Close()
+	q.Close()
+	done.Wait()
+}
+func TestIdleControlPipeExpiresWithoutHeartbeat(t *testing.T) {
+	a, b := net.Pipe()
+	defer b.Close()
+	p := NewPeer(a, nil, nil)
+	defer p.Close()
+	select {
+	case <-p.Done():
+	case <-time.After(20 * time.Second):
+		t.Fatal("heartbeat loss did not close pipe")
 	}
 }
 

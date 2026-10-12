@@ -51,6 +51,33 @@ func TestNamedPipeIdentityDeadlinesAndClose(t *testing.T) {
 	}
 }
 
+func TestNamedPipeRejectsWrongClientPID(t *testing.T) {
+	name := NewName()
+	l, e := Listen(name)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer l.Close()
+	ctx, c := context.WithTimeout(context.Background(), time.Second)
+	defer c()
+	done := make(chan error, 1)
+	go func() {
+		conn, e := l.Accept(ctx, uint32(os.Getpid()+1))
+		if e == nil {
+			conn.Close()
+		}
+		done <- e
+	}()
+	conn, e := Dial(ctx, name, uint32(os.Getpid()))
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer conn.Close()
+	if e = <-done; e == nil {
+		t.Fatal("wrong client PID accepted")
+	}
+}
+
 func TestNamedPipeRejectsServerPIDAndCancelsAccept(t *testing.T) {
 	l, e := Listen(NewName())
 	if e != nil {
