@@ -255,7 +255,9 @@ func (p *Peer) read() {
 			defer func() { cancel(); p.mu.Lock(); delete(p.requests, m.ID); p.mu.Unlock(); <-p.slots }()
 			r := Message{}
 			var err error
-			if m.Op != "ping" {
+			if m.Op != "ping" && p.handler == nil {
+				err = errors.New("unsupported IPC request")
+			} else if m.Op != "ping" {
 				r, err = p.handler(ctx, m)
 			}
 			r.Kind = "reply"
@@ -297,10 +299,14 @@ type DataConn struct {
 	readMu, writeMu sync.Mutex
 	remaining       []byte
 	eof             bool
+	writeClosed     bool
 }
 
 func NewDataConn(c net.Conn, packet bool) *DataConn { return &DataConn{Conn: c, packet: packet} }
 func (c *DataConn) Read(b []byte) (int, error) {
+	if len(b) == 0 {
+		return 0, nil
+	}
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
 	if c.eof {
@@ -312,7 +318,7 @@ func (c *DataConn) Read(b []byte) (int, error) {
 			return 0, e
 		}
 		n := binary.BigEndian.Uint32(h[:])
-		if n == 0 {
+		if n == ^uint32(0) {
 			c.eof = true
 			return 0, io.EOF
 		}
@@ -335,6 +341,12 @@ func (c *DataConn) Read(b []byte) (int, error) {
 func (c *DataConn) Write(b []byte) (int, error) {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if c.writeClosed {
+		return 0, net.ErrClosed
+	}
+	if c.packet && len(b) == 0 {
+		return 0, writeAll(c.Conn, make([]byte, 4))
+	}
 	if c.packet && len(b) > 65535 {
 		return 0, errors.New("UDP datagram too large")
 	}
@@ -360,7 +372,11 @@ func (c *DataConn) Write(b []byte) (int, error) {
 func (c *DataConn) CloseWrite() error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	return writeAll(c.Conn, make([]byte, 4))
+	if c.writeClosed {
+		return nil
+	}
+	c.writeClosed = true
+	return writeAll(c.Conn, []byte{255, 255, 255, 255})
 }
 
 func Relay(a, b net.Conn, packet bool) {
