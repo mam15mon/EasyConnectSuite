@@ -311,3 +311,31 @@ Actual diagnostic result is AUTH code 2; no verified semantic mapping. Observed 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 12: 多 VPN 状态归属修复验收与 VPN.exe 交付
+<!-- trellis-session: v=2 fp=d89d5c7f36b74c6b -->
+
+**Date**: 2026-10-12
+**Task**: 多 VPN 状态归属修复验收与 VPN.exe 交付
+**Branch**: `codex/multi-vpn-acceptance-fixes`
+
+### Summary
+
+完成 R1–R3 与 AC1–AC7：旧启动结果按会话身份发布，资源查询显式绑定配置 ID，日志目录失败仅回滚本次连接。新增 Go/Node 确定性回归，根及相关嵌套模块 race/vet、13 项 Node、840×660 脱敏界面和 Wails 未压缩构建通过。默认交付 VPN.exe，20,698,624 字节；清理 18 个旧 EXE、3 张预览图，保留许可/源码。修复任务已归档，随后合回本地 main 并安全删除本次分支；不推送远程。真实网关/UDP/长期稳定性/休眠/TUN 共存留在原 TopSAP 任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1657c85` | test: 固化旧启动返回资源错配及目录失败回归 |
+| `e1f6481` | fix: 按会话身份发布启动结果并绑定配置资源查询 |
+| `9c3973e` | test: 覆盖资源快照逆序响应事件交错与实际失败 |
+| `1e7c548` | build: 同步按配置资源查询绑定与未压缩验收包 |
+| `9577354` | docs: 固化会话身份与按配置资源查询契约 |
+| `f0ce8e7` | build: 统一默认交付文件名为 VPN.exe |
+| `271f145` | docs: 完成多 VPN 修复验收并记录 VPN.exe 交付清理 |
+
+### Status
+
+[OK] **Completed**

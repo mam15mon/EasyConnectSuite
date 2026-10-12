@@ -609,7 +609,9 @@ async function toggleConnection(id) {
       const res = await window.go.main.App.StartProfileVPN(id);
       if (actionVersions.get(id) !== actionVersion) return;
       if (res !== 'OK') {
-        receiveStatus({profileId:id, running:false, state:'error', lastError:res});
+        await refreshConnections();
+        const latest = connectionStatuses.find(s => s.profileId === id);
+        if (latest) receiveStatus(latest);
         throw new Error(res);
       }
     }
@@ -703,7 +705,7 @@ async function refreshResources(notify = true) {
   const refreshBtn = document.getElementById('btn-refresh-resources');
   refreshBtn.classList.add('spinning');
   try {
-    const rows = await window.go.main.App.GetVPNResources();
+    const rows = await window.go.main.App.GetProfileVPNResources(id);
     if (id !== activeProfile?.id || version !== selectionVersion || request !== resourceRequest) return;
     profileResources.set(id, rows || []);
     renderResources(rows);

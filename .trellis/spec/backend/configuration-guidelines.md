@@ -17,3 +17,61 @@ Tray menus use a locked snapshot of all connection statuses, with a tray-only st
 Current profiles include password and TOTP fields in saved JSON; this is not an OS credential vault. Do not copy real profiles, credentials or APPDATA logs into tasks or Git. The root .gitignore excludes vpn_profiles.json, captures and logs.
 
 SetProxyEnabled and SetTUNEnabled illustrate restoring the previous in-memory value when configuration saving fails.
+
+## Scenario: Session identity and explicit profile resources
+
+### 1. Scope / Trigger
+
+Multi-VPN startup, retry, profile selection and resource refresh cross the Go/Wails/JavaScript boundary. An old startup can finish after a replacement session; local UI selection can precede the serialized backend selection.
+
+### 2. Signatures
+
+- `GetProfileVPNResources(id string) ([]engine.ResourceEntry, error)` is the explicit resource query; generated Wails bindings expose `GetProfileVPNResources(arg1: string): Promise<Array<engine.ResourceEntry>>`.
+- Existing `GetVPNResources() []engine.ResourceEntry` remains compatible. New UI refreshes use the explicit API without falling back to the selection-based API.
+- `startConnectionID(id string, start func(engine.Options) (vpnEngine, error)) string` returns `OK` or an error string. That string describes the request that finished, not necessarily the session currently occupying the ID.
+
+### 3. Contracts
+
+`id` must identify a saved profile; never resolve an unknown/empty ID through `ActiveProfileID`. Resource entries retain string fields `kind`, `target`, `ports`, `protocol`. Query under `a.mu`, return a slice copy, and preserve selection/status/sessions. A nil Go slice is an empty resource result at the UI boundary (Wails may serialize it as null).
+
+Publish a startup result only while `a.connections[p.ID] == c && !c.stopping`. Even when superseded, assign that startup's engine, cancel its context on error, close its `ready` channel and return its own error. A log-directory failure removes only that attempted session and emits its profile-scoped status; update global details and clear global resources only when that profile is selected. `APPDATA` determines the existing log location; a directory error remains explicit, with no alternate directory.
+
+UI resource reads capture profile ID, selection version and request version; stale responses and responses invalidated by status/resource events cannot update the cache or view. On a startup error, refresh `GetConnections()` and use its latest status for that ID rather than synthesizing an error status from the return string. Keep the error notification for the failed request.
+
+### 4. Validation & Error Matrix
+
+| Condition | Result |
+| --- | --- |
+| Known profile, current running/non-stopping session | Independent snapshot of its resources |
+| Known profile, absent/disconnected/error/stopping session | Empty resources, no error |
+| Unknown or empty profile ID | `服务器配置不存在`; Wails Promise rejects |
+| Old startup returns after replacement | Old request completes; replacement details/resources remain intact |
+| Log directory fails for a non-selected profile | Original error; selected connection unchanged; attempted profile remains stopped |
+| Log directory fails for selected profile | Original error; non-running details and empty resources |
+
+### 5. Good/Base/Bad Cases
+
+- Good: UI has selected B while backend still selects A; querying B returns B's resources without changing the backend selection.
+- Base: Selecting a disconnected profile displays an empty resource view.
+- Bad: An old A startup fails after tray retry connects a new A session; publishing the old result would contradict the connection list and discard the new resource view.
+
+### 6. Tests Required
+
+`connections_test.go` controls startup ordering with channels, checks replacement/list/detail/resource agreement and successful stop, simulates directory failure with a file in a temporary APPDATA, verifies unrelated state plus selected rollback and retry, and asserts explicit-ID resource snapshots cannot mutate the session or selection. `frontend/src/connection-state.test.mjs` executes production functions with controlled Promises: queued selection, reverse responses, A→B→A, disconnect/resource-event invalidation, late startup error versus newer success, visible current failure, and no legacy query after unknown-ID rejection. Preview must honor the same explicit-ID contract. Test fixtures never use real accounts or logs.
+
+### 7. Wrong vs Correct
+
+Wrong: guard startup publishing only with `!c.stopping`, call `GetVPNResources()` after local selection changes, or turn every failed startup string into `receiveStatus({state:'error'})`.
+
+Correct:
+
+```go
+if a.connections[p.ID] == c && !c.stopping {
+    // Publish only this profile's current session.
+}
+```
+
+```js
+const rows = await window.go.main.App.GetProfileVPNResources(id);
+if (id !== activeProfile?.id || version !== selectionVersion || request !== resourceRequest) return;
+```

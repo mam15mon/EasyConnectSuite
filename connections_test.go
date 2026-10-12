@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"errors"
 	"log"
+	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -285,5 +287,153 @@ func TestStopAndPowerLogsPreserveReasonAndConnectionState(t *testing.T) {
 		if !strings.Contains(text, marker) {
 			t.Fatal("missing stop/power evidence", marker)
 		}
+	}
+}
+
+func TestLateStartupFailureRetainsReplacementConnection(t *testing.T) {
+	t.Setenv("APPDATA", t.TempDir())
+	a := multiTestApp(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	finished := make(chan string, 1)
+	var old *vpnConnection
+	go func() {
+		finished <- a.startConnectionID("a", func(o engine.Options) (vpnEngine, error) {
+			o.OnStatus(engine.Status{Phase: engine.PhaseError, Message: "old tunnel failed"})
+			a.mu.Lock()
+			old = a.connections["a"]
+			a.mu.Unlock()
+			close(entered)
+			<-release
+			return nil, errors.New("old startup returned late")
+		})
+	}()
+	<-entered
+	replacement := &fakeVPNEngine{}
+	result := a.startConnectionID("a", func(o engine.Options) (vpnEngine, error) {
+		replacement.opts = o
+		o.OnStatus(engine.Status{Phase: engine.PhaseConnected, ClientIP: "192.0.2.22"})
+		return replacement, nil
+	})
+	close(release)
+	if result != "OK" {
+		t.Fatal(result)
+	}
+	defer a.StopAllVPN()
+	select {
+	case got := <-finished:
+		if got != "old startup returned late" {
+			t.Fatal(got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("old startup did not finish")
+	}
+	select {
+	case <-old.ready:
+	default:
+		t.Fatal("old startup left cleanup waiting")
+	}
+	selected, listed := a.GetStatus(), a.GetConnections()[0]
+	if selected != listed || selected.State != "connected" || selected.ClientIP != "192.0.2.22" {
+		t.Fatalf("selected=%+v, replacement=%+v", selected, listed)
+	}
+	if rows := a.GetVPNResources(); len(rows) != 1 || rows[0].Target != "a.invalid" {
+		t.Fatalf("replacement resources lost: %v", rows)
+	}
+	if got := a.StopProfileVPN("a"); got != "OK" || !replacement.stopped.Load() {
+		t.Fatal("replacement could not be stopped", got)
+	}
+}
+
+func TestLogDirectoryFailureRetainsOtherSelectedConnection(t *testing.T) {
+	t.Setenv("APPDATA", t.TempDir())
+	a := multiTestApp(t)
+	if got := a.startConnectionID("a", func(o engine.Options) (vpnEngine, error) {
+		o.OnStatus(engine.Status{Phase: engine.PhaseConnected, ClientIP: "192.0.2.1"})
+		return &fakeVPNEngine{opts: o}, nil
+	}); got != "OK" {
+		t.Fatal(got)
+	}
+	defer a.StopAllVPN()
+	before, resources := a.GetStatus(), a.GetVPNResources()
+	blocked := t.TempDir()
+	t.Setenv("APPDATA", blocked)
+	if err := os.WriteFile(filepath.Join(blocked, "EasyConnectVPN"), []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.startConnectionID("b", func(engine.Options) (vpnEngine, error) {
+		t.Fatal("engine started despite directory error")
+		return nil, nil
+	}); got == "OK" {
+		t.Fatal("directory failure was ignored")
+	}
+	if a.GetActiveProfile().ID != "a" || a.GetStatus() != before || !reflect.DeepEqual(resources, a.GetVPNResources()) {
+		t.Fatalf("B failure changed selected A: %+v", a.GetStatus())
+	}
+	if a.connections["b"] != nil || a.GetConnections()[1].Running {
+		t.Fatal("failed B remains registered")
+	}
+	if got := a.StopProfileVPN("b"); got != "Not running" {
+		t.Fatal(got)
+	}
+	t.Setenv("APPDATA", t.TempDir())
+	if got := a.startConnectionID("b", func(o engine.Options) (vpnEngine, error) {
+		o.OnStatus(engine.Status{Phase: engine.PhaseConnected})
+		return &fakeVPNEngine{opts: o}, nil
+	}); got != "OK" {
+		t.Fatal("retry failed", got)
+	}
+}
+
+func TestSelectedLogDirectoryFailureClearsResources(t *testing.T) {
+	blocked := t.TempDir()
+	t.Setenv("APPDATA", blocked)
+	a := multiTestApp(t)
+	a.status = disconnectedStatus(a.GetActiveProfile())
+	a.resources = []engine.ResourceEntry{{Target: "obsolete"}}
+	if err := os.WriteFile(filepath.Join(blocked, "EasyConnectVPN"), []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	result := a.startConnectionID("a", func(engine.Options) (vpnEngine, error) { t.Fatal("unexpected engine start"); return nil, nil })
+	if result == "OK" || a.GetStatus().Running || a.GetStatus().ProfileID != "a" || len(a.GetVPNResources()) != 0 || a.connections["a"] != nil {
+		t.Fatalf("incomplete rollback: %s %+v %v", result, a.GetStatus(), a.GetVPNResources())
+	}
+}
+
+func TestProfileResourcesUseExplicitIDAndReturnSnapshot(t *testing.T) {
+	a := multiTestApp(t)
+	a.selectConnectionLocked()
+	before := a.GetStatus()
+	rows := []engine.ResourceEntry{{Kind: "ip", Target: "192.0.2.0/24"}}
+	c := &vpnConnection{status: disconnectedStatus(a.appConfig.Profiles[1]), resources: rows}
+	c.status.Running = true
+	c.status.State = "connected"
+	a.connections = map[string]*vpnConnection{"b": c}
+	got, err := a.GetProfileVPNResources("b")
+	if err != nil || !reflect.DeepEqual(got, rows) {
+		t.Fatalf("explicit B query: %v %v", got, err)
+	}
+	got[0].Target = "mutated"
+	if c.resources[0].Target != "192.0.2.0/24" {
+		t.Fatal("returned resources alias live session")
+	}
+	if a.GetStatus() != before || a.GetActiveProfile().ID != "a" {
+		t.Fatal("resource read changed selected A")
+	}
+	if got, err := a.GetProfileVPNResources("unknown"); err == nil || len(got) != 0 {
+		t.Fatal("missing ID was replaced with active resources")
+	}
+	if got, err := a.GetProfileVPNResources("a"); err != nil || len(got) != 0 {
+		t.Fatal("no-session query failed", got, err)
+	}
+	for _, state := range []string{"disconnected", "error", "stopping"} {
+		t.Run(state, func(t *testing.T) {
+			c.stopping = state == "stopping"
+			c.status.Running = c.stopping
+			c.status.State = state
+			got, err := a.GetProfileVPNResources("b")
+			if err != nil || len(got) != 0 {
+				t.Fatalf("obsolete resources exposed for %s: %v %v", state, got, err)
+			}
+		})
 	}
 }
