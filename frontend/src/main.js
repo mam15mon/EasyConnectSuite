@@ -39,7 +39,7 @@ app.innerHTML = `
         <div class="route-table" id="route-table"><div class="route-empty">连接后显示服务器授权的资源。</div></div>
       </section>
       <section class="workspace-page" id="page-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
-        <p class="page-description">访问方式分别对当前配置生效，断开后可修改。</p>
+        <p class="page-description">TUN 可在已连接时切换；本地代理需断开后修改。</p>
         <div class="mode-controls">
           <label class="tun-mode-control" id="tun-mode-note" title="开启时需要管理员授权"><div><span class="tun-mode-title">TUN 分流</span><small>系统流量按服务器授权资源进入 VPN。首次开启会提示申请管理员权限。</small></div><input type="checkbox" id="tun-mode-toggle" role="switch" aria-label="TUN 分流" disabled /></label>
           <label class="tun-mode-control" id="proxy-mode-note"><div><span class="tun-mode-title">本地代理</span><small>为当前 VPN 提供独立的 SOCKS5 和 HTTP 端口，可与 TUN 同时使用。</small></div><input type="checkbox" id="proxy-mode-toggle" role="switch" aria-label="本地代理" disabled /></label>
