@@ -8,7 +8,7 @@ export function installPreview(onStatus) {
     {id:'easy', name:'测试环境', protocol:'easyconnect', server:'lab.example.com', port:443, tunMode:false, socksPort:1084, httpPort:1085},
     {id:'error', name:'备用网络', protocol:'easyconnect', server:'backup.example.com', port:443, tunMode:false, socksPort:1086, httpPort:1087},
   ];
-  const statuses = new Map(profiles.map((p,i) => [p.id, {profileId:p.id, activeProfile:p.name, protocol:p.protocol, tunMode:p.tunMode, disableProxy:false, socksPort:String(p.socksPort), httpPort:String(p.httpPort), running:i<2, state:i<2?'connected':i===3?'error':'disconnected', duration:i<2?3182-i*900:0, clientIp:i<2?`192.0.2.${10+i}`:'', dns:i===1?'198.51.100.53':'', lastError:i===3?'模拟错误：连接网关超时，请检查网络后重试。':''}]));
+  const statuses = new Map(profiles.map((p,i) => [p.id, {profileId:p.id, activeProfile:p.name, protocol:p.protocol, tunMode:i===0, tunState:i===0?"on":i===1?"error":"off", tunError:i===1?"演示：TUN DNS 区域与另一条连接冲突；VPN 和本地代理继续运行。":"", disableProxy:false, socksPort:String(p.socksPort), httpPort:String(p.httpPort), running:i<2, state:i<2?'connected':i===3?'error':'disconnected', duration:i<2?3182-i*900:0, clientIp:i<2?`192.0.2.${10+i}`:'', dns:i===1?'198.51.100.53':'', lastError:i===3?'模拟错误：连接网关超时，请检查网络后重试。':''}]));
   const resources = new Map([
     ['topsec', [{kind:'ip', target:'198.51.100.0 ~ 198.51.100.255', ports:'全部端口', protocol:'全部协议'}, {kind:'ip', target:'203.0.113.0 ~ 203.0.113.255', ports:'全部端口', protocol:'全部协议'}]],
     ['uni', [{kind:'ip', target:'192.0.2.0 ~ 192.0.2.255', ports:'443', protocol:'TCP'}, {kind:'domain', target:'intranet.example.com', ports:'443', protocol:'TCP'}]],
