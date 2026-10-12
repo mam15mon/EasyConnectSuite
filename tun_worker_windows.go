@@ -211,7 +211,10 @@ func (m *tunManager) Attach(ctx context.Context, spec engine.TUNSpec, b engine.T
 	m.mu.Unlock()
 	_, err := m.request(ctx, tunipc.Message{Op: "attach", Ref: spec.Ref, Spec: &spec})
 	if err != nil {
+		_, cleanupErr := m.request(context.Background(), tunipc.Message{Op: "detach", Ref: spec.Ref})
+		err = errors.Join(err, cleanupErr)
 		m.mu.Lock()
+		delete(m.reservations, spec.Profile)
 		delete(m.attachments, spec.Attachment)
 		m.mu.Unlock()
 		a.finish()
@@ -467,6 +470,9 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 		})
 		if err != nil {
 			return tunipc.Message{}, err
+		}
+		if ctx.Err() != nil {
+			return tunipc.Message{}, errors.Join(ctx.Err(), ingress.Close())
 		}
 		w.entries[m.Ref.Attachment] = &workerEntry{spec: *m.Spec, ingress: ingress, backend: backend}
 		delete(w.reservations, m.Ref.Profile)

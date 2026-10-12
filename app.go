@@ -322,6 +322,20 @@ func (a *App) DeleteProfile(id string) bool {
 		return false // Preserve at least one profile
 	}
 
+	manager := a.tunManager
+	if manager != nil {
+		if a.modeOps == nil {
+			a.modeOps = map[string]bool{}
+		}
+		a.modeOps[id] = true
+		a.mu.Unlock()
+		err := manager.Release(context.Background(), id)
+		a.mu.Lock()
+		delete(a.modeOps, id)
+		if err != nil {
+			return false
+		}
+	}
 	var newProfiles []Profile
 	for _, p := range a.appConfig.Profiles {
 		if p.ID != id {
