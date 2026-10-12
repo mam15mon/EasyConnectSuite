@@ -67,7 +67,7 @@ func TestTUNDNSRoutesAuthorizedDomainAndChecksPort(t *testing.T) {
 	policy := &connectionPolicy{resolver: resolver, domains: domains}
 	policy.tunDialer = dial.NewDialer(vpn, resolver, []client.IPResource{}, true, "")
 	backend := &fakeRoutes{present: map[string]bool{}}
-	ingress := &tunIngress{ctx: context.Background(), policy: policy, routes: newRouteManager(backend), bindings: make(map[netip.Addr][]client.DomainResource)}
+	ingress := &tunIngress{ctx: context.Background(), service: newTUNBackend(context.Background(), policy), routes: newRouteManager(backend)}
 	request := new(dns.Msg)
 	request.SetQuestion("service.apps.internal.", dns.TypeA)
 	data, _ := request.Pack()
@@ -87,7 +87,7 @@ func TestTUNDNSRoutesAuthorizedDomainAndChecksPort(t *testing.T) {
 	if !backend.present["10.42.0.8/32"] {
 		t.Fatal("missing domain IP route")
 	}
-	if len(ingress.bindings[netip.MustParseAddr("10.42.0.8")]) != 1 {
+	if len(ingress.service.(*tunBackend).bindings[netip.MustParseAddr("10.42.0.8")]) != 1 {
 		t.Fatal("duplicate resource bindings")
 	}
 	conn, err := ingress.dial(context.Background(), "tcp", M.ParseSocksaddr("10.42.0.8:443"))
@@ -110,7 +110,7 @@ func TestTUNIPResourceMissCannotLoopThroughDirect(t *testing.T) {
 	defer resolver.Close()
 	policy := &connectionPolicy{resolver: resolver}
 	policy.tunDialer = dial.NewDialer(vpn, resolver, []client.IPResource{ipRange("10.0.0.1", "10.0.0.1")}, true, "")
-	ingress := &tunIngress{policy: policy, bindings: map[netip.Addr][]client.DomainResource{}}
+	ingress := &tunIngress{service: newTUNBackend(context.Background(), policy)}
 	_, err := ingress.dial(context.Background(), "tcp", M.ParseSocksaddr("10.0.0.2:443"))
 	if !errors.Is(err, dial.ErrACLDenied) {
 		t.Fatalf("unexpected error: %v", err)
@@ -127,7 +127,7 @@ func TestDNSDoesNotOverrideMoreSpecificSystemRoutes(t *testing.T) {
 	defer resolver.Close()
 	policy := &connectionPolicy{resolver: resolver, domains: domains, ips: []client.IPResource{ipRange("10.0.0.0", "10.255.255.255")}}
 	backend := &fakeRoutes{present: map[string]bool{"10.0.0.0/8": true}}
-	ingress := &tunIngress{ctx: context.Background(), policy: policy, routes: newRouteManager(backend), bindings: make(map[netip.Addr][]client.DomainResource)}
+	ingress := &tunIngress{ctx: context.Background(), service: newTUNBackend(context.Background(), policy), routes: newRouteManager(backend)}
 	request := new(dns.Msg)
 	request.SetQuestion("app.corp.internal.", dns.TypeA)
 	data, _ := request.Pack()
@@ -151,7 +151,7 @@ func TestTUNDNSSiblingDomainStillUsesServerIPAndPortPermissions(t *testing.T) {
 	policy := &connectionPolicy{resolver: resolver, domains: domains, ips: []client.IPResource{resource}}
 	policy.tunDialer = dial.NewDialer(vpn, resolver, policy.ips, true, "")
 	backend := &fakeRoutes{present: map[string]bool{"172.31.0.0/16": true}}
-	ingress := &tunIngress{ctx: context.Background(), policy: policy, routes: newRouteManager(backend), bindings: make(map[netip.Addr][]client.DomainResource)}
+	ingress := &tunIngress{ctx: context.Background(), service: newTUNBackend(context.Background(), policy), routes: newRouteManager(backend)}
 	request := new(dns.Msg)
 	request.SetQuestion(host+".", dns.TypeA)
 	data, err := request.Pack()
@@ -179,18 +179,7 @@ func TestTUNDNSSiblingDomainStillUsesServerIPAndPortPermissions(t *testing.T) {
 			t.Fatalf("unauthorized destination %s: %v", address, err)
 		}
 	}
-	if vpn.calls != 1 || len(ingress.bindings) != 0 || len(backend.present) != 1 {
+	if vpn.calls != 1 || len(ingress.service.(*tunBackend).bindings) != 0 || len(backend.present) != 1 {
 		t.Fatal("sibling DNS resolution changed server permissions or routing")
-	}
-}
-
-func TestTUNDNSRefreshCannotRestoreClosedOrReplacedSession(t *testing.T) {
-	policy := &connectionPolicy{domains: client.DomainResources{"old.internal.example": nil}}
-	for _, closed := range []bool{false, true} {
-		ingress := &tunIngress{ctx: context.Background(), policy: &connectionPolicy{}, closed: closed}
-		// A nil backend would panic if the obsolete refresh changed DNS rules.
-		if err := ingress.RefreshDNS(policy); err != nil {
-			t.Fatal(err)
-		}
 	}
 }

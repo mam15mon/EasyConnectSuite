@@ -7,12 +7,12 @@ const app = document.querySelector('#app');
 
 app.innerHTML = `
   <header class="top">
-    <div class="brand"><span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6z"/><path d="m8 12 3 3 5-6"/></svg></span><span class="brand-name">VPN 工作台</span><span class="brand-caption">EasyConnect Suite</span></div>
+    <div class="brand"><span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6z"/><path d="m8 12 3 3 5-6"/></svg></span><span class="brand-name">VPN 工作台</span><span class="brand-caption">VPN Suite</span></div>
     <div class="top-status" aria-live="polite"><span class="summary-online"><i></i><strong id="global-connected">0</strong> 已连接</span><span id="global-pending">0 连接中</span><span id="global-errors" hidden></span></div>
   </header>
   <main class="workspace">
     <aside class="connections-panel" aria-labelledby="connections-heading">
-      <div class="section-head"><h1 id="connections-heading">我的连接 <span id="profile-count" class="panel-count-badge">0</span></h1><button class="add-connection" id="btn-new-profile" aria-label="新建 VPN" title="新建 VPN">＋</button></div>
+      <div class="section-head"><h1 id="connections-heading">我的连接 <span id="profile-count" class="panel-count-badge">0</span></h1><button class="add-connection" id="btn-new-profile" aria-label="新建 VPN" title="新建 VPN"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button></div>
       <div class="view-filters" aria-label="连接筛选"><button class="active" data-connection-filter="all" aria-pressed="true">全部</button><button data-connection-filter="running" aria-pressed="false">运行中</button></div>
       <div class="connection-list" id="connection-list" aria-label="VPN 连接列表"></div>
       <div class="sidebar-footer"><button class="btn-plain danger" id="btn-stop-all" disabled>断开全部连接</button><button class="log-directory" id="log-path-hint" title="复制日志目录">日志目录</button><span id="preview-indicator" hidden>演示模式 · 模拟数据</span></div>
@@ -20,8 +20,10 @@ app.innerHTML = `
     <section class="detail-workspace" aria-labelledby="detail-name">
       <div class="detail-header"><div><h2 id="detail-name">选择一条 VPN</h2><span id="detail-gateway" class="subtle"></span></div><div class="detail-actions"><button class="btn-plain" id="btn-edit-profile">编辑</button><button class="btn-icon danger" id="btn-del-profile" aria-label="删除当前配置" title="删除当前配置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg></button><button class="master-switch" id="btn-toggle"><span id="btn-label">连接</span></button></div></div>
       <select class="profile-select" id="profile-select" aria-label="切换查看的 VPN" hidden></select>
-      <div class="status-strip"><span class="connection-state" id="state-word">未连接</span><span class="detail-duration">连接时长 <span id="uptime-display">00:00:00</span></span></div>
-      <p class="state-note" id="state-note">选择或新建配置后连接。</p>
+      <div class="hero-status-bar">
+        <div class="status-strip"><span class="connection-state" id="state-word">未连接</span><span class="detail-duration">时长 <span id="uptime-display">00:00:00</span></span></div>
+        <p class="state-note" id="state-note">选择或新建配置后连接。</p>
+      </div>
       <div class="telemetry-grid">
         <button class="telemetry-item" id="item-client-ip" title="复制虚拟 IP"><span class="telemetry-label">虚拟 IP</span><span class="telemetry-val pending" id="client-ip-val">—</span></button>
         <button class="telemetry-item" id="item-dns" title="复制内网 DNS"><span class="telemetry-label">内网 DNS</span><span class="telemetry-val pending" id="dns-val">—</span></button>
@@ -34,12 +36,14 @@ app.innerHTML = `
         <button role="tab" id="tab-logs" data-workspace-page="logs" aria-controls="page-logs" aria-selected="false" tabindex="-1">运行记录</button>
       </nav>
       <section class="workspace-page resources-panel" id="page-resources" role="tabpanel" aria-labelledby="tab-resources">
-        <div class="resource-heading"><span>服务器授权的访问范围 <span class="panel-count-badge" id="route-count"></span></span><button class="btn-plain" id="btn-refresh-resources" title="刷新当前连接的资源视图">刷新</button><p id="resource-owner" hidden></p></div>
-        <div class="routes-search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input class="routes-filter" id="routes-filter" type="search" placeholder="搜索 IP、域名或端口" aria-label="筛选当前 VPN 资源" /></div>
+        <div class="resource-toolbar">
+          <div class="resource-heading"><span>服务器授权的访问范围 <span class="panel-count-badge" id="route-count"></span></span><button class="btn-plain" id="btn-refresh-resources" title="刷新当前连接的资源视图">刷新</button><p id="resource-owner" hidden></p></div>
+          <div class="routes-search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input class="routes-filter" id="routes-filter" type="search" placeholder="搜索 IP、域名或端口" aria-label="筛选当前 VPN 资源" /></div>
+        </div>
         <div class="route-table" id="route-table"><div class="route-empty">连接后显示服务器授权的资源。</div></div>
       </section>
       <section class="workspace-page" id="page-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
-        <p class="page-description">访问方式分别对当前配置生效，断开后可修改。</p>
+        <p class="page-description">TUN 可在已连接时切换；本地代理需断开后修改。</p>
         <div class="mode-controls">
           <label class="tun-mode-control" id="tun-mode-note" title="开启时需要管理员授权"><div><span class="tun-mode-title">TUN 分流</span><small>系统流量按服务器授权资源进入 VPN。首次开启会提示申请管理员权限。</small></div><input type="checkbox" id="tun-mode-toggle" role="switch" aria-label="TUN 分流" disabled /></label>
           <label class="tun-mode-control" id="proxy-mode-note"><div><span class="tun-mode-title">本地代理</span><small>为当前 VPN 提供独立的 SOCKS5 和 HTTP 端口，可与 TUN 同时使用。</small></div><input type="checkbox" id="proxy-mode-toggle" role="switch" aria-label="本地代理" disabled /></label>
@@ -57,7 +61,7 @@ app.innerHTML = `
     <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-head">
         <div class="modal-title" id="modal-title">编辑服务器配置</div>
-        <button class="modal-close" id="modal-close-btn" aria-label="关闭配置编辑">&times;</button>
+        <button class="modal-close" id="modal-close-btn" aria-label="关闭配置编辑"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="form-id" />
@@ -357,7 +361,7 @@ function updateStatusUI(status) {
 
   stateNote.title = stateNote.innerText;
   tunModeToggle.checked = !!(status.running ? status.tunMode : activeProfile?.tunMode);
-  tunModeToggle.disabled = modeSaving || selectionPending || status.running || !activeProfile;
+  tunModeToggle.disabled = modeSaving || selectionPending || !activeProfile || status.tunState === "attaching" || status.tunState === "detaching" || (status.running && status.state !== "connected" && !(status.stage === "重连中" && status.tunMode));
   proxyModeToggle.checked = !(status.running ? status.disableProxy : activeProfile?.disableProxy);
   proxyModeToggle.disabled = modeSaving || selectionPending || status.running || !activeProfile;
   proxyModeNote.title = status.running
@@ -365,11 +369,9 @@ function updateStatusUI(status) {
     : 'SOCKS5 / HTTP，可与 TUN 同时开启';
   profileSelect.disabled = modeSaving;
   btnToggle.disabled = modeSaving || !activeProfile || (pendingActions.has(activeProfile?.id) && status.state !== 'connecting');
-  tunModeNote.title = modeSaving
-    ? '正在保存设置或等待管理员授权…'
-    : status.running
-      ? '断开连接后可切换模式'
-      : '开启时需要管理员授权';
+  const tunMessage = status.tunError || (modeSaving || status.tunState === 'attaching' ? '正在附着 TUN 或等待系统 UAC 授权…' : status.tunState === 'detaching' ? '正在清理 TUN 网卡和路由…' : '系统流量按服务器授权资源进入 VPN，开关不会重新登录。');
+  tunModeNote.title = tunMessage;
+  tunModeNote.querySelector('small').textContent = tunMessage;
   updateInfoFields(status);
   renderConnections();
 }
@@ -537,23 +539,16 @@ document.getElementById('btn-modal-save').addEventListener('click', async () => 
 // ---------- 连接 ----------
 
 async function saveTUNMode(enabled) {
+  const id = activeProfile.id;
   modeSaving = true;
   updateStatusUI(currentStatus);
-  let restarting = false;
   try {
-    restarting = await window.go.main.App.SetProfileTUNMode(activeProfile.id, enabled);
-    if (restarting) {
-      tunModeToggle.checked = enabled;
-      tunModeNote.title = '授权成功，正在以管理员身份重新启动…';
-      return true;
-    }
-    await refreshProfiles();
-    return false;
+    await window.go.main.App.SetProfileTUNMode(id, enabled);
   } finally {
-    if (!restarting) {
-      modeSaving = false;
-      updateStatusUI(currentStatus);
-    }
+    modeSaving = false;
+    await refreshProfiles();
+    await refreshConnections();
+    updateStatusUI(currentStatus);
   }
 }
 
@@ -602,10 +597,10 @@ async function toggleConnection(id) {
         modeSaving = true;
         updateStatusUI(currentStatus);
         try {
-          if (await window.go.main.App.SetProfileTUNMode(id, true)) return;
+          await window.go.main.App.SetProfileTUNMode(id, true);
         } finally { modeSaving = false; }
       }
-      receiveStatus({profileId:id, activeProfile:profile.name, protocol:profile.protocol || 'easyconnect', running:true, state:'connecting', stage:'准备中', message:'正在准备连接…', tunMode:!!profile.tunMode, disableProxy:!!profile.disableProxy});
+      receiveStatus({profileId:id, activeProfile:profile.name, protocol:profile.protocol || 'easyconnect', running:true, state:'connecting', stage:'准备中', message:'正在准备连接…', tunMode:false, tunState:"off", disableProxy:!!profile.disableProxy});
       const res = await window.go.main.App.StartProfileVPN(id);
       if (actionVersions.get(id) !== actionVersion) return;
       if (res !== 'OK') {

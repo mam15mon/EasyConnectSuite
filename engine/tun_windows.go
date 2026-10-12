@@ -12,17 +12,17 @@ import (
 	"net"
 	"net/netip"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"EasyConnectSuite/internal/tunipc"
 	"github.com/miekg/dns"
 	stun "github.com/mythologyli/sing-tun"
-	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"
@@ -40,11 +40,10 @@ type tunIngress struct {
 	mu                sync.RWMutex
 	device            stun.Tun
 	stack             stun.Stack
-	router            *policyRouter
-	policy            *connectionPolicy
+	service           TUNBackend
+	spec              TUNSpec
 	routes            *routeManager
 	backend           *windowsRoutes
-	bindings          map[netip.Addr][]client.DomainResource
 	ctx               context.Context
 	cancel            context.CancelFunc
 	closeOnce         sync.Once
@@ -56,16 +55,19 @@ type tunIngress struct {
 // sing-tun already embeds Wintun. The ingress converts TCP/UDP flows into
 // calls to our existing VPN dialer, so gVisor reconnect and IP updates remain
 // shared with SOCKS5. It never changes the system's default route.
-func startTUNSlot(router *policyRouter, policy *connectionPolicy, progress func(string, string), slot int) (_ *tunIngress, err error) {
-	name, prefixText, dnsIP, tag, err := tunIdentity(slot)
+func StartTUNIngress(spec TUNSpec, service TUNBackend, progress func(string, string)) (_ *tunIngress, err error) {
+	name, prefixText, dnsIP, tag, err := tunIdentity(spec.Slot)
 	if err != nil {
 		return nil, err
 	}
 	if !windows.GetCurrentProcessToken().IsElevated() {
 		return nil, fmt.Errorf("请以管理员身份运行 EasyConnectGUI 后启用 TUN")
 	}
+	if err := spec.Validate(); err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	t := &tunIngress{name: name, dns: dnsIP, prefix: prefixText, router: router, policy: policy, bindings: make(map[netip.Addr][]client.DomainResource), ctx: ctx, cancel: cancel}
+	t := &tunIngress{name: name, dns: dnsIP, prefix: prefixText, service: service, ctx: ctx, cancel: cancel}
 	defer func() {
 		if err != nil {
 			_ = t.Close()
@@ -95,80 +97,40 @@ func startTUNSlot(router *policyRouter, policy *connectionPolicy, progress func(
 		return nil, err
 	}
 	progress("识别 DNS", "正在通过 VPN DNS 识别内网域名区域…")
-	names := discoverDNSNamespaces(t.ctx, policy)
-	if err = t.update(policy, names, progress); err != nil {
+	if err = t.update(spec, progress); err != nil {
 		return nil, err
 	}
 	log.Printf("TUN ready: %s; route metric 0, interface metric 0; DNS %s", name, dnsIP)
 	return t, nil
 }
 
-func (t *tunIngress) Update(policy *connectionPolicy) error {
-	return t.update(policy, dnsNamespaces(policy), nil)
-}
-
-func (t *tunIngress) update(policy *connectionPolicy, names []string, progress func(string, string)) error {
-	prefixes, err := resourcePrefixes(policy.ips)
-	if err != nil {
+func (t *tunIngress) UpdateSpec(spec TUNSpec) error { return t.update(spec, nil) }
+func (t *tunIngress) update(spec TUNSpec, progress func(string, string)) error {
+	if err := spec.Validate(); err != nil {
 		return err
 	}
-	// A /32 for our virtual DNS beats broad Clash/aTrust routes, without
-	// changing the specificity of any server resource route.
-	prefixes = append(prefixes, t.dnsAddress()+"/32")
-	for _, prefix := range prefixes {
-		if prefix == "0.0.0.0/0" {
-			return fmt.Errorf("服务器下发了默认路由；资源 TUN 不接管全局默认路由")
-		}
-	}
+	prefixes := append(append([]string(nil), spec.Prefixes...), t.dnsAddress()+"/32")
 	tunPolicies.Lock()
 	defer tunPolicies.Unlock()
-	if err := checkTUNConflicts(t, prefixes, names); err != nil {
+	if err := checkTUNConflicts(t, prefixes, spec.Names); err != nil {
 		return err
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed {
-		return errors.New("TUN closed")
+		return net.ErrClosed
 	}
 	if progress != nil {
-		progress("配置路由", fmt.Sprintf("正在配置 %d 条 VPN 资源路由…", len(prefixes)))
+		progress("配置路由", "正在配置 VPN 资源路由…")
 	}
 	if err := t.routes.replace(prefixes); err != nil {
 		return err
 	}
-	if progress != nil {
-		progress("配置 DNS", "正在应用 VPN 分域 DNS 规则…")
-	}
-	if err := t.backend.setDNS(names); err != nil {
+	if err := t.backend.setDNS(append([]string(nil), spec.Names...)); err != nil {
 		return err
 	}
-	t.bindings = make(map[netip.Addr][]client.DomainResource)
-	t.policy = policy
-	tunPolicies.claims[t] = tunClaim{prefixes: prefixes, names: names}
-	log.Printf("TUN DNS namespaces: %s", strings.Join(names, ", "))
-	return nil
-}
-
-// Refresh after the VPN read loop is running, and after a replacement L3
-// tunnel is installed. DNS queries cannot complete inside the relogin callback.
-func (t *tunIngress) RefreshDNS(policy *connectionPolicy) error {
-	names := discoverDNSNamespaces(t.ctx, policy)
-	tunPolicies.Lock()
-	defer tunPolicies.Unlock()
-	claim := tunPolicies.claims[t]
-	if err := checkTUNConflicts(t, claim.prefixes, names); err != nil {
-		return err
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.closed || t.policy != policy {
-		return nil
-	}
-	if err := t.backend.setDNS(names); err != nil {
-		return err
-	}
-	tunPolicies.claims[t] = tunClaim{prefixes: claim.prefixes, names: names}
-	log.Printf("TUN DNS namespaces: %s", strings.Join(names, ", "))
+	t.spec = spec
+	tunPolicies.claims[t] = tunClaim{prefixes: prefixes, names: spec.Names}
 	return nil
 }
 
@@ -217,19 +179,12 @@ func (t *tunIngress) track(conn io.Closer) bool {
 
 func (t *tunIngress) dial(ctx context.Context, network string, target M.Socksaddr) (net.Conn, error) {
 	t.mu.RLock()
-	policy := t.policy
-	resources := append([]client.DomainResource(nil), t.bindings[target.Addr]...)
 	closed := t.closed
 	t.mu.RUnlock()
 	if closed {
-		return nil, errors.New("TUN closed")
+		return nil, net.ErrClosed
 	}
-	if len(resources) > 0 {
-		ctx = context.WithValue(ctx, resolve.ContextKeyDomainResource, resources)
-	}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	return policy.tunDialer.DialIPPort(ctx, network, target.String())
+	return t.service.Dial(ctx, network, target.String())
 }
 
 func (t *tunIngress) NewConnection(ctx context.Context, conn net.Conn, metadata M.Metadata) error {
@@ -250,13 +205,8 @@ func (t *tunIngress) NewConnection(ctx context.Context, conn net.Conn, metadata 
 		return net.ErrClosed
 	}
 	defer t.connections.Delete(upstream)
-	done := make(chan struct{})
-	go func() { _, _ = io.Copy(upstream, conn); _ = upstream.Close(); close(done) }()
-	_, err = io.Copy(conn, upstream)
-	_ = conn.Close()
-	_ = upstream.Close()
-	<-done
-	return err
+	tunipc.Relay(conn, upstream, false)
+	return nil
 }
 
 func (t *tunIngress) NewPacketConnection(ctx context.Context, conn N.PacketConn, metadata M.Metadata) error {
@@ -353,99 +303,49 @@ func (t *tunIngress) serveUDPDNS(conn N.PacketConn) error {
 }
 
 func (t *tunIngress) answerDNS(data []byte) ([]byte, error) {
-	request := new(dns.Msg)
-	if err := request.Unpack(data); err != nil {
+	t.mu.RLock()
+	ref := t.spec.Ref
+	closed := t.closed
+	t.mu.RUnlock()
+	if closed {
+		return nil, net.ErrClosed
+	}
+	answer, routes, err := t.service.DNS(t.ctx, data)
+	if err != nil {
 		return nil, err
 	}
-	response := new(dns.Msg)
-	response.SetReply(request)
-	response.RecursionAvailable = true
-	if len(request.Question) != 1 {
-		response.Rcode = dns.RcodeFormatError
-		return response.Pack()
+	tunPolicies.Lock()
+	defer tunPolicies.Unlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed || t.spec.Ref != ref {
+		return nil, net.ErrClosed
 	}
-	question := request.Question[0]
-	t.mu.RLock()
-	policy := t.policy
-	t.mu.RUnlock()
-	ctx, cancel := context.WithTimeout(t.ctx, 10*time.Second)
-	defer cancel()
-	if question.Qtype != dns.TypeA && question.Qtype != dns.TypeAAAA {
-		if net.ParseIP(policy.dnsName) == nil || !policy.useRemoteDNS {
-			response.Rcode = dns.RcodeNotImplemented
-			return response.Pack()
+	for _, prefix := range routes {
+		p, err := netip.ParsePrefix(prefix)
+		if err != nil || !p.Addr().Is4() || p.Bits() != 32 {
+			return nil, errors.New("invalid DNS route")
 		}
-		upstream, err := policy.stack.DialUDP(ctx, &net.UDPAddr{IP: net.ParseIP(policy.dnsName), Port: 53})
-		if err != nil {
-			response.Rcode = dns.RcodeServerFailure
-			return response.Pack()
-		}
-		defer upstream.Close()
-		_ = upstream.SetDeadline(time.Now().Add(10 * time.Second))
-		dnsClient := &dns.Client{Timeout: 10 * time.Second}
-		answer, _, err := dnsClient.ExchangeWithConn(request, &dns.Conn{Conn: upstream})
-		if err != nil {
-			response.Rcode = dns.RcodeServerFailure
-			return response.Pack()
-		}
-		return answer.Pack()
-	}
-	resolvedCtx, ip, err := policy.resolver.Resolve(ctx, strings.TrimSuffix(question.Name, "."))
-	if err != nil {
-		response.Rcode = dns.RcodeServerFailure
-		return response.Pack()
-	}
-	if ip.To4() == nil {
-		return response.Pack()
-	} // Windows TUN ingress is IPv4 only.
-	if question.Qtype == dns.TypeAAAA {
-		return response.Pack()
-	}
-	if resources, ok := resolvedCtx.Value(resolve.ContextKeyDomainResource).([]client.DomainResource); ok && len(resources) > 0 {
-		address, _ := netip.AddrFromSlice(ip.To4())
-		tunPolicies.Lock()
-		t.mu.Lock()
-		if t.closed || t.policy != policy {
-			t.mu.Unlock()
-			tunPolicies.Unlock()
-			response.Rcode = dns.RcodeServerFailure
-			return response.Pack()
-		}
-		if !ipHasResourceRoute(policy.ips, ip) {
-			prefix := address.String() + "/32"
-			err = checkTUNConflicts(t, []string{prefix}, nil)
-			if err == nil {
-				err = t.routes.add(prefix)
-			}
-			if err == nil && t.device != nil {
-				claim := tunPolicies.claims[t]
-				claim.prefixes = append(claim.prefixes, prefix)
-				tunPolicies.claims[t] = claim
-			}
-		}
+		err = checkTUNConflicts(t, []string{prefix}, nil)
 		if err == nil {
-			existing := t.bindings[address]
-			seen := make(map[client.DomainResource]bool)
-			for _, resource := range existing {
-				seen[resource] = true
-			}
-			for _, resource := range resources {
-				if !seen[resource] {
-					existing = append(existing, resource)
-					seen[resource] = true
-				}
-			}
-			t.bindings[address] = existing
+			err = t.routes.add(prefix)
 		}
-		t.mu.Unlock()
-		tunPolicies.Unlock()
 		if err != nil {
-			response.Rcode = dns.RcodeServerFailure
-			return response.Pack()
+			request := new(dns.Msg)
+			if e := request.Unpack(data); e != nil {
+				return nil, e
+			}
+			reply := new(dns.Msg)
+			reply.SetRcode(request, dns.RcodeServerFailure)
+			return reply.Pack()
+		}
+		claim := tunPolicies.claims[t]
+		if !slices.Contains(claim.prefixes, prefix) {
+			claim.prefixes = append(claim.prefixes, prefix)
+			tunPolicies.claims[t] = claim
 		}
 	}
-	response.Answer = append(response.Answer, &dns.A{Hdr: dns.RR_Header{Name: question.Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 30}, A: ip.To4()})
-	return response.Pack()
+	return answer, nil
 }
 
 func (t *tunIngress) NewError(_ context.Context, err error) { log.Printf("TUN: %v", err) }

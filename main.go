@@ -26,6 +26,12 @@ var assets embed.FS
 // trace. With this in place the runtime panic dump lands in
 // %APPDATA%\EasyConnectVPN\logs\crash.log.
 func setupCrashLog() {
+	setupNamedCrashLog("crash.log")
+}
+func setupWorkerCrashLog() {
+	setupNamedCrashLog("tun-worker-crash.log")
+}
+func setupNamedCrashLog(filename string) {
 	debug.SetTraceback("all")
 
 	logDir := ""
@@ -38,7 +44,7 @@ func setupCrashLog() {
 		logDir = "."
 	}
 
-	path := filepath.Join(logDir, "crash.log")
+	path := filepath.Join(logDir, filename)
 	if info, err := os.Stat(path); err == nil && info.Size() > 8*1024*1024 {
 		_ = os.Rename(path, path+".old")
 	}
@@ -52,24 +58,19 @@ func setupCrashLog() {
 }
 
 func main() {
-	setupCrashLog()
-	restartConfig, err := prepareTUNRestart(os.Args[1:])
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		showTUNRestartError(err)
+	if len(os.Args) > 1 && os.Args[1] == "--tun-worker" {
+		setupWorkerCrashLog()
+		if err := runTUNWorker(os.Args[1:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 		return
 	}
+	setupCrashLog()
 	app := NewApp()
-	if restartConfig != "" {
-		app.configPath = restartConfig
-		app.initDefaultConfig()
-		app.loadConfigFile()
-		app.normalizeProfiles()
-		app.selectConnectionLocked()
-	}
 
-	err = wails.Run(&options.App{
-		Title:             "EasyConnect Suite · VPN 工作台",
+	err := wails.Run(&options.App{
+		Title:             "VPN Suite · VPN 工作台",
 		Width:             1080,
 		Height:            820,
 		MinWidth:          840,

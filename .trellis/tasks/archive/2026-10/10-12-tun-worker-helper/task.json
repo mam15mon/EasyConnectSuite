@@ -3,7 +3,7 @@
   "name": "tun-worker-helper",
   "title": "独立提权 TUN Worker，GUI 不重启",
   "description": "拆分 TUN 附着与分离：普通 GUI 保留 VPN 会话/代理，通过单独提权 Worker 和命名管道实现不断线热切换，移除 MessageBox。",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": "windows-tun-worker",
   "package": null,
@@ -11,8 +11,8 @@
   "creator": "admin",
   "assignee": "admin",
   "createdAt": "2026-10-12",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-10-12",
+  "branch": "codex/tun-worker-helper",
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
@@ -44,6 +44,6 @@
     "frontend/wailsjs/go/main/App.d.ts",
     "frontend/wailsjs/go/models.ts"
   ],
-  "notes": "用户明确要求拆分 TUN 附着并支持本条不断线热切换，取消完整引擎 Worker 方案。prd/design/implement 已收敛，研究与范围已记录，等待最新最终方案审阅；planning，不改产品代码，不派发代理。",
+  "notes": "inline 完成独立 Worker、热附着、IPC、UI、审查、模拟及实际系统验收；最终 Wails 构建包含已提交的 VPN Suite 界面。validation.md 记录逐项证据与未执行边界；按用户授权归档并合并 main，不推送远程。",
   "meta": {}
 }

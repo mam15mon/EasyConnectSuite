@@ -1,4 +1,4 @@
-# EasyConnect Suite
+# VPN Suite
 
 支持深信服 EasyConnect、华为／联软 UniVPN 及天融信 TopSAP 标准模式协议子集的第三方 Windows 图形客户端。一个 EXE 可同时连接多个配置，分别管理连接状态、资源、本地代理和 TUN。EasyConnect 引擎基于 [zju-connect](https://github.com/mythologyli/zju-connect)(上游 commit `4031c52`)，UniVPN 和 TopSAP 使用 Go 协议核心；**引擎源码直接编译进 GUI 进程**，无需 OpenConnect 或 Python 子进程。支持范围见 [UniVPN 接入说明](docs/univpn-go.md)及 [TopSAP 测试版说明](docs/topsec-go.md)；TopSAP 的新版 EXE 仍待真实网关验证。
 
@@ -65,10 +65,10 @@ upx -t build/bin/VPN.exe
 3. 每个配置使用独立 SOCKS5/HTTP 端口。新配置自动分配未被其他配置使用的端口对，通常依次为 `1080/1081`、`1082/1083`；端口已被外部程序占用时，该连接明确报错。
 4. 连接第一个配置，再选择另一个配置连接。切换配置只切换当前查看的状态和资源。可以逐条断开，也可以点击“断开全部”；退出程序关闭全部连接。
 
-TUN 需要管理员权限。已有其他连接时不自动重启切换权限，应先断开全部再授权，随后逐条连接。每个 TUN 使用独立网卡、虚拟 DNS 地址和 NRPT 标记；本程序内完全相同的资源路由前缀或重叠 DNS 命名空间会明确报错。不同长度前缀仍按 Windows 最长匹配选择，程序不能让同一个系统目的地址同时路由到两条隧道；有资源重叠时，可用各配置的本地代理明确选择 VPN。
+TUN 通过独立后台 Worker 申请管理员权限，主 GUI 保持普通权限且不重启。已连接配置可热开启或关闭 TUN，已有 VPN 和代理流继续运行；只显示系统 UAC，不显示额外 MessageBox。每个 TUN 使用独立网卡、虚拟 DNS 地址和 NRPT 标记；本程序内完全相同的资源路由前缀或重叠 DNS 命名空间会明确报错。不同长度前缀仍按 Windows 最长匹配选择，程序不能让同一个系统目的地址同时路由到两条隧道；有资源重叠时，可用各配置的本地代理明确选择 VPN。
 
 ## Windows TUN 模式
 
-GUI 支持按服务器资源分流的 IPv4 TCP/UDP TUN，同时保留本地 SOCKS5/HTTP 代理。与其他客户端的相同前缀比较时使用较低 metric，不改变其他客户端更具体路由的优先级。EasyConnect 域名解析使用限定到 VPN 资源的 Windows NRPT；UniVPN 当前仅使用已验证的 IPv4 地址和路由，不推测 DNS 资源。重登录会更新资源，正常断开只清理所属连接创建的路由和 DNS 规则。强制结束后的残留会在下次启动时检查和清理，发现残留且权限不足时请求管理员授权。
+GUI 支持按服务器资源分流的 IPv4 TCP/UDP TUN，同时保留本地 SOCKS5/HTTP 代理。与其他客户端的相同前缀比较时使用较低 metric，不改变其他客户端更具体路由的优先级。EasyConnect 域名解析使用限定到 VPN 资源的 Windows NRPT；UniVPN 当前仅使用已验证的 IPv4 地址和路由，不推测 DNS 资源。重登录会更新资源，正常断开只清理所属连接创建的路由和 DNS 规则。GUI 退出或失联后 Worker 会清理所属 TUN；下次启动只探测残留，用户开启 TUN 时由授权 Worker 清理。
 
 配置、共存及验证方法见 [Windows TUN 模式](docs/windows-tun.md)。

@@ -12,6 +12,8 @@ import (
 
 func TestEngineCleanupIsLocalAndIdempotent(t *testing.T) {
 	var a, b Engine
+	a.ctx, a.cancel = context.WithCancel(context.Background())
+	b.ctx, b.cancel = context.WithCancel(context.Background())
 	closedA, closedB := 0, 0
 	a.registerTerminal("A", func(context.Context) error { closedA++; return nil })
 	b.registerTerminal("B", func(context.Context) error { closedB++; return nil })
@@ -62,6 +64,7 @@ func TestSharedLogSurvivesAnotherEngineStopping(t *testing.T) {
 func TestLifecycleAndCleanupCausePersistWithConnectionIdentity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "engine.log")
 	e := &Engine{id: 19, opts: Options{ConnectionID: "synthetic-profile", LogFile: path}}
+	e.ctx, e.cancel = context.WithCancel(context.Background())
 	e.startLogCapture()
 	e.emitStatusFull(Status{Phase: PhaseReconnecting, Message: "network timeout"})
 	e.registerTerminal("CloseSynthetic", func(context.Context) error { return fmt.Errorf("synthetic cleanup refusal") })

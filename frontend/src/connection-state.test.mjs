@@ -38,6 +38,24 @@ function workspace(api = {}) {
   return state;
 }
 
+test('TUN mode request keeps captured profile and releases busy state after rejected UAC', async () => {
+  const entered=deferred(), result=deferred();
+  const calls=[];
+  const state=workspace({SetProfileTUNMode:async(id,enabled)=>{calls.push([id,enabled]);entered.resolve();return result.promise;},GetConnections:async()=>[{profileId:'b',running:true,state:'connected'}]});
+  state.refreshProfiles=async()=>{};
+  vm.runInContext(productionFunction('saveTUNMode'),state);
+  const operation=state.saveTUNMode(true);
+  await entered.promise;
+  assert.equal(state.modeSaving,true);
+  state.activeProfile={id:'b'};
+  state.currentStatus={profileId:'b',running:true,state:'connected'};
+  result.resolve(Promise.reject(new Error('UAC canceled')));
+  await assert.rejects(operation,/UAC canceled/);
+  assert.deepEqual(calls,[['a',true]]);
+  assert.equal(state.modeSaving,false);
+  assert.equal(state.currentStatus.profileId,'b');
+});
+
 test('resource refresh targets B while backend selection is still A', async () => {
   const held = deferred(), entered = deferred();
   let backend = 'a';

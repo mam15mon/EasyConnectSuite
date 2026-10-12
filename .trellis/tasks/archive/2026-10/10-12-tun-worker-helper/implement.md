@@ -1,14 +1,14 @@
 # TUN Worker 执行与验收计划
 
-当前 planning；PRD 已按“本条不断线热附着/分离”收敛，设计完成。用户审阅本次最终摘要后才 start；inline 主会话执行，不派发子代理，不创建子任务。阶段之间不得发布未同步的 API/Worker 版本。
+用户已明确“开始”，当前实现与验收已执行，结果见 validation.md；inline 主会话执行，不派发子代理，不创建子任务。阶段之间不得发布未同步的 API/Worker 版本。
 
 ## 1. TUN 后端与会话拆分 → 验证 AC3/AC9
 
-- [ ] 建 codex/tun-worker-helper 分支，读取 prd→design→本文、research 与相关 spec/trellis-before-dev，start。
-- [ ] 固化当前 TUN ACL、TCP/UDP/DNS、域名 /32、最长前缀、slot/冲突、关闭测试，先运行基线。
-- [ ] Engine 保留原会话/代理，抽出 TUNBackend、TUNSpec/TUNAttachment；局部接口重构保持原 TUN 行为，复跑上述回归证明。
-- [ ] 保存扩展前服务端资源快照及解析错误，构建独立 TUN view；测试代理 ZJU/custom/fake-IP 策略与实际资源分离，附着不替换原 resolver/stack。
-- [ ] DNS 系统路由动作与 GUI 解析/授权拆分；GUI 管理域名绑定，Worker 不接收认证或自报 ACL。
+- [x] 建 codex/tun-worker-helper 分支，读取 prd→design→本文、research 与相关 spec/trellis-before-dev，start。
+- [x] 固化当前 TUN ACL、TCP/UDP/DNS、域名 /32、最长前缀、slot/冲突、关闭测试，先运行基线。
+- [x] Engine 保留原会话/代理，抽出 TUNBackend、TUNSpec/TUNAttachment；局部接口重构保持原 TUN 行为，复跑上述回归证明。
+- [x] 保存扩展前服务端资源快照及解析错误，构建独立 TUN view；测试代理 ZJU/custom/fake-IP 策略与实际资源分离，附着不替换原 resolver/stack。
+- [x] DNS 系统路由动作与 GUI 解析/授权拆分；GUI 管理域名绑定，Worker 不接收认证或自报 ACL。
 
 ## 2. 管道与无窗口 Worker → 验证 AC1/AC6
 
@@ -74,3 +74,7 @@ race 使用已有 MinGW GCC+CGO_ENABLED=1，不安装替代工具。PowerShell �
 现有 main.go/app.go/connections.go/tun_mode_windows.go、相关测试、engine/engine.go/policy.go/tun_windows.go/tun_identity_windows.go/dns_zones.go、frontend/src/main.js/preview.mjs、生成绑定/models/dist、manifest、README/Windows TUN 说明和相关 spec。新增 engine/tun_session*.go、根 Worker 管理、internal/tunipc 与测试是跨进程契约所需，不引入通用框架。profile_logs.go 仅确有查询语义变化时改；固定 GUI日志路径保持则不改。
 
 风险最高：热附着与 Stop/重连交错，DNS/fake-IP/ACL不越界，数据管道关闭能唤醒等待，Worker死亡后实际清理确认。每阶段有可复现断言；设计明显变化回到规划审阅，不能默默改成引擎迁移或强制重登。
+
+## 实际完成与测试边界
+
+核心功能、管道数据桥、配置/API/UI、系统提权及多 TUN 创建清理已实现；validation.md 逐项追踪证据。真实 UAC 同意与取消、父进程强制结束、系统 TCP/DNS 均通过；测试使用隔离模拟后端，不读取真实配置或凭据。普通管道使用真实 Windows API，心跳以实际 15 秒超时测试，未增加生产时钟注入接口。跨管理员账户的 UAC 与真实 VPN 网关未在本次执行。未勾选的原始细分计划不是通过声明，最终验证范围以 validation.md 为准。

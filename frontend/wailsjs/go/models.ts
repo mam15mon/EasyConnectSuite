@@ -117,6 +117,8 @@ export namespace main {
 	    socksPort: string;
 	    httpPort: string;
 	    tunMode: boolean;
+	    tunState: string;
+	    tunError: string;
 	    disableProxy: boolean;
 	    duration: number;
 	    lastError: string;
@@ -139,6 +141,8 @@ export namespace main {
 	        this.socksPort = source["socksPort"];
 	        this.httpPort = source["httpPort"];
 	        this.tunMode = source["tunMode"];
+	        this.tunState = source["tunState"];
+	        this.tunError = source["tunError"];
 	        this.disableProxy = source["disableProxy"];
 	        this.duration = source["duration"];
 	        this.lastError = source["lastError"];
