@@ -66,9 +66,10 @@ func (a *App) setProfileTUNMode(id string, enabled bool, manager tunControl) err
 		a.modeOps = map[string]bool{}
 	}
 	a.modeOps[id] = true
+	running := c != nil && c.status.Running
 	a.mu.Unlock()
 	var err error
-	if c != nil && c.status.Running {
+	if running {
 		capability, ok := c.engine.(tunCapable)
 		if !ok {
 			err = errors.New("该 VPN 引擎不支持 TUN 热附着")

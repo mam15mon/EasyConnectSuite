@@ -35,10 +35,11 @@ type TUNStatus struct {
 
 // The backend owns authorization and the shared resolver; ingress owns only system resources.
 type tunBackend struct {
-	mu       sync.RWMutex
-	policy   *connectionPolicy
-	bindings map[netip.Addr][]client.DomainResource
-	ctx      context.Context
+	mu         sync.RWMutex
+	bindingsMu sync.Mutex
+	policy     *connectionPolicy
+	bindings   map[netip.Addr][]client.DomainResource
+	ctx        context.Context
 }
 
 func newTUNBackend(ctx context.Context, p *connectionPolicy) *tunBackend {
@@ -54,11 +55,16 @@ func (b *tunBackend) Dial(ctx context.Context, network, address string) (net.Con
 	if b.ctx.Err() != nil {
 		return nil, net.ErrClosed
 	}
-	if rules := b.bindings[ap.Addr()]; len(rules) > 0 {
+	b.bindingsMu.Lock()
+	rules := append([]client.DomainResource(nil), b.bindings[ap.Addr()]...)
+	b.bindingsMu.Unlock()
+	if len(rules) > 0 {
 		ctx = context.WithValue(ctx, resolve.ContextKeyDomainResource, append([]client.DomainResource(nil), rules...))
 	}
 	ctx, c := context.WithTimeout(ctx, 15*time.Second)
 	defer c()
+	stop := context.AfterFunc(b.ctx, c)
+	defer stop()
 	return b.policy.tunDialer.DialIPPort(ctx, network, address)
 }
 func tunDomainRules(domains client.DomainResources, host string) []client.DomainResource {
@@ -97,6 +103,8 @@ func (b *tunBackend) DNS(ctx context.Context, data []byte) ([]byte, []string, er
 	policy := b.policy
 	ctx, c := context.WithTimeout(ctx, 10*time.Second)
 	defer c()
+	stop := context.AfterFunc(b.ctx, c)
+	defer stop()
 	question := request.Question[0]
 	if question.Qtype != dns.TypeA && question.Qtype != dns.TypeAAAA {
 		if !policy.useRemoteDNS || net.ParseIP(policy.dnsName) == nil {
@@ -123,14 +131,7 @@ func (b *tunBackend) DNS(ctx context.Context, data []byte) ([]byte, []string, er
 	var routes []string
 	if len(rules) > 0 {
 		addr, _ := netip.AddrFromSlice(ip.To4())
-		// Bindings mutate under a separate lock only after the original snapshot is validated.
-		b.mu.RUnlock()
-		b.mu.Lock()
-		if b.policy != policy || b.ctx.Err() != nil {
-			b.mu.Unlock()
-			b.mu.RLock()
-			return nil, nil, net.ErrClosed
-		}
+		b.bindingsMu.Lock()
 		existing := b.bindings[addr]
 		seen := map[client.DomainResource]bool{}
 		for _, r := range existing {
@@ -143,8 +144,7 @@ func (b *tunBackend) DNS(ctx context.Context, data []byte) ([]byte, []string, er
 			}
 		}
 		b.bindings[addr] = existing
-		b.mu.Unlock()
-		b.mu.RLock()
+		b.bindingsMu.Unlock()
 		if !ipHasResourceRoute(policy.ips, ip) {
 			routes = []string{addr.String() + "/32"}
 		}
