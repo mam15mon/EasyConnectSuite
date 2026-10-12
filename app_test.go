@@ -12,8 +12,8 @@ import (
 func TestTUNProfileUsesServerResourcesAndRetainsLocalProxies(t *testing.T) {
 	app := &App{}
 	conf := app.buildEngineConfig(Profile{Server: "vpn.example", Username: "user", TUNMode: true, DisableZjuConfig: false})
-	if !conf.TUNMode || !conf.AddRoute || !conf.DisableZJUConfig {
-		t.Fatal("TUN must use only this server's resources")
+	if conf.TUNMode || conf.AddRoute || conf.DisableZJUConfig {
+		t.Fatal("TUN preference must not replace the proxy policy")
 	}
 	if conf.SocksBind != "127.0.0.1:1080" || conf.HTTPBind != "127.0.0.1:1081" {
 		t.Fatal("local proxies missing")
@@ -44,7 +44,7 @@ func TestProxyAndTUNCanBeConfiguredIndependently(t *testing.T) {
 	for _, tun := range []bool{false, true} {
 		for _, disabled := range []bool{false, true} {
 			conf := (&App{}).buildEngineConfig(Profile{TUNMode: tun, DisableProxy: disabled})
-			if conf.TUNMode != tun || conf.AddRoute != tun {
+			if conf.TUNMode || conf.AddRoute {
 				t.Fatal("proxy setting changed TUN mode")
 			}
 			if disabled && (conf.SocksBind != "" || conf.HTTPBind != "") ||
@@ -81,10 +81,9 @@ func TestProxySwitchRejectsActiveConnectionAndRestoresFailedSave(t *testing.T) {
 	app := &App{configPath: filepath.Join(t.TempDir(), "missing", "profiles.json"), appConfig: AppConfig{
 		ActiveProfileID: "selected", Profiles: []Profile{{ID: "selected"}},
 	}}
-	for _, state := range []string{"starting", "running", "restarting", "save failure"} {
+	for _, state := range []string{"starting", "running", "save failure"} {
 		app.starting = state == "starting"
 		app.status.Running = state == "running"
-		app.restarting = state == "restarting"
 		if err := app.SetProxyEnabled(false); err == nil {
 			t.Fatalf("accepted switch during %s", state)
 		}

@@ -226,9 +226,9 @@ func TestElevationDoesNotInterruptOtherConnections(t *testing.T) {
 		return &fakeVPNEngine{opts: o}, nil
 	})
 	a.SetActiveProfile("b")
-	launched := false
-	if _, err := a.setTUNMode(true, false, func(string) error { launched = true; return nil }); err == nil || launched {
-		t.Fatal("elevation interrupted active connections")
+	manager := &fakeTUNControl{}
+	if err := a.setProfileTUNMode("b", true, manager); err != nil || manager.prepared != 1 || !a.connections["a"].status.Running {
+		t.Fatal("worker preparation interrupted active VPN", err)
 	}
 	a.StopAllVPN()
 }

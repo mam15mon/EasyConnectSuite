@@ -1,217 +1,82 @@
 package main
 
 import (
+	"EasyConnectSuite/engine"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"testing"
-
-	"golang.org/x/sys/windows"
 )
 
+type fakeTUNControl struct {
+	prepared int
+	failure  error
+	prepare  func()
+}
+
+func (f *fakeTUNControl) Prepare(context.Context, string) error {
+	f.prepared++
+	if f.prepare != nil {
+		f.prepare()
+	}
+	return f.failure
+}
+func (f *fakeTUNControl) Release(context.Context, string) error { return nil }
+func (f *fakeTUNControl) Close()                                {}
+func (f *fakeTUNControl) Attach(context.Context, engine.TUNSpec, engine.TUNBackend) (engine.TUNAttachment, error) {
+	return nil, errors.New("not used")
+}
 func tunModeTestApp(t *testing.T) *App {
+	return &App{configPath: filepath.Join(t.TempDir(), "配置 with spaces.json"), appConfig: AppConfig{ActiveProfileID: "second", Profiles: []Profile{{ID: "first"}, {ID: "second"}}}}
+}
+func readTUNTestConfig(t *testing.T, a *App) AppConfig {
 	t.Helper()
-	return &App{
-		configPath: filepath.Join(t.TempDir(), "配置 with spaces.json"),
-		appConfig: AppConfig{
-			ActiveProfileID: "second",
-			Profiles:        []Profile{{ID: "first"}, {ID: "second", Username: "user"}},
-		},
+	data, e := os.ReadFile(a.configPath)
+	if e != nil {
+		t.Fatal(e)
 	}
+	var c AppConfig
+	if e = json.Unmarshal(data, &c); e != nil {
+		t.Fatal(e)
+	}
+	return c
 }
-
-func TestStaleTUNRecoveryElevationAndErrors(t *testing.T) {
-	for _, test := range []struct {
-		name                      string
-		elevated, pending, launch bool
-		cleanupError, launchError error
-	}{
-		{name: "clean"},
-		{name: "needs administrator", pending: true, launch: true},
-		{name: "already elevated", elevated: true, pending: true},
-		{name: "cleanup failed", elevated: true, pending: true, cleanupError: errors.New("cleanup failed")},
-		{name: "probe failed", cleanupError: errors.New("probe failed")},
-		{name: "cancelled elevation", pending: true, launch: true, launchError: errors.New("cancelled")},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			app := tunModeTestApp(t)
-			launched := false
-			restarting, err := app.recoverStaleTUN(test.elevated, func(probe bool) (bool, error) {
-				if probe == test.elevated {
-					t.Fatal("wrong cleanup privilege mode")
-				}
-				return test.pending, test.cleanupError
-			}, func(path string) error {
-				launched = true
-				if path != app.configPath {
-					t.Fatal("lost config path")
-				}
-				return test.launchError
-			})
-			wantRestart := test.launch && test.launchError == nil
-			if launched != test.launch || restarting != wantRestart || app.restarting != wantRestart {
-				t.Fatalf("launch=%v restart=%v app.restarting=%v", launched, restarting, app.restarting)
-			}
-			wantErr := test.cleanupError
-			if wantErr == nil {
-				wantErr = test.launchError
-			}
-			if !errors.Is(err, wantErr) {
-				t.Fatalf("error=%v, want %v", err, wantErr)
-			}
-			if app.appConfig.ActiveProfileID != "second" || app.appConfig.Profiles[1].TUNMode {
-				t.Fatal("cleanup changed VPN configuration")
-			}
-		})
-	}
-}
-
-func readTUNTestConfig(t *testing.T, app *App) AppConfig {
-	t.Helper()
-	data, err := os.ReadFile(app.configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var config AppConfig
-	if err := json.Unmarshal(data, &config); err != nil {
-		t.Fatal(err)
-	}
-	return config
-}
-
-func TestTUNModeElevationSavesSelectedProfileBeforeLaunch(t *testing.T) {
-	app := tunModeTestApp(t)
-	launched := false
-	restarting, err := app.setTUNMode(true, false, func(path string) error {
-		launched = true
-		if path != app.configPath {
-			t.Fatal("lost the original configuration path")
+func TestTUNPreparationSavesBeforeUACAndReleasesAppLock(t *testing.T) {
+	a := tunModeTestApp(t)
+	f := &fakeTUNControl{prepare: func() {
+		if !readTUNTestConfig(t, a).Profiles[1].TUNMode {
+			t.Fatal("not saved before launch")
 		}
-		config := readTUNTestConfig(t, app)
-		if config.ActiveProfileID != "second" || !config.Profiles[1].TUNMode || config.Profiles[0].TUNMode {
-			t.Fatal("selected profile was not persisted before elevation")
+		if !a.mu.TryLock() {
+			t.Fatal("App lock held during UAC")
 		}
-		return nil
-	})
-	if err != nil || !restarting || !launched || !app.restarting {
-		t.Fatalf("restarting=%v launched=%v err=%v", restarting, launched, err)
+		a.mu.Unlock()
+	}}
+	if e := a.setProfileTUNMode("second", true, f); e != nil {
+		t.Fatal(e)
 	}
-	if got := app.StartVPN(); got != "正在以管理员身份重新启动" {
-		t.Fatal("VPN startup was allowed during replacement")
-	}
-}
-
-func TestProfileTUNModeUsesExplicitIDWithoutSwitchingSelection(t *testing.T) {
-	app := tunModeTestApp(t)
-	if _, err := app.setProfileTUNMode("first", true, true, func(string) error { t.Fatal("already elevated"); return nil }); err != nil {
-		t.Fatal(err)
-	}
-	config := readTUNTestConfig(t, app)
-	if !config.Profiles[0].TUNMode || config.Profiles[1].TUNMode || config.ActiveProfileID != "second" {
-		t.Fatal("preparation modified another profile or selection")
-	}
-	app.connections = map[string]*vpnConnection{"first": {status: VPNStatus{Running: true}}}
-	if _, err := app.setProfileTUNMode("first", false, true, func(string) error { return nil }); err == nil {
-		t.Fatal("changed a running unselected connection")
-	}
-	if _, err := app.setProfileTUNMode("missing", true, true, func(string) error { return nil }); err == nil {
-		t.Fatal("missing ID substituted selected profile")
+	if readTUNTestConfig(t, a).Profiles[0].TUNMode {
+		t.Fatal("other profile modified")
 	}
 }
-
-func TestTUNModeCancelledElevationRestoresMemoryAndDisk(t *testing.T) {
-	for _, previous := range []bool{false, true} {
-		t.Run(strconv.FormatBool(previous), func(t *testing.T) {
-			app := tunModeTestApp(t)
-			app.appConfig.Profiles[1].TUNMode = previous
-			cancelled := errors.New("cancelled UAC")
-			restarting, err := app.setTUNMode(true, false, func(string) error { return cancelled })
-			if !errors.Is(err, cancelled) || restarting || app.restarting {
-				t.Fatalf("restarting=%v err=%v", restarting, err)
-			}
-			if app.appConfig.Profiles[1].TUNMode != previous || readTUNTestConfig(t, app).Profiles[1].TUNMode != previous {
-				t.Fatal("cancelled authorization changed the saved mode")
-			}
-		})
+func TestTUNPreparationCancellationRollsBackOnlyTarget(t *testing.T) {
+	a := tunModeTestApp(t)
+	denied := errors.New("canceled UAC")
+	f := &fakeTUNControl{failure: denied}
+	if e := a.setProfileTUNMode("first", true, f); !errors.Is(e, denied) {
+		t.Fatal(e)
+	}
+	if readTUNTestConfig(t, a).Profiles[0].TUNMode {
+		t.Fatal("failed intent retained")
 	}
 }
-
-func TestTUNModeAlreadyElevatedOrDisabledDoesNotLaunch(t *testing.T) {
-	for _, scenario := range []struct{ enabled, elevated bool }{{true, true}, {false, false}} {
-		app := tunModeTestApp(t)
-		restarting, err := app.setTUNMode(scenario.enabled, scenario.elevated, func(string) error {
-			t.Fatal("unnecessary administrator relaunch")
-			return nil
-		})
-		if err != nil || restarting || readTUNTestConfig(t, app).Profiles[1].TUNMode != scenario.enabled {
-			t.Fatalf("restarting=%v err=%v", restarting, err)
-		}
-	}
-}
-
-func TestTUNModeCannotChangeDuringConnectionOrRestart(t *testing.T) {
-	for _, state := range []string{"running", "starting", "restarting"} {
-		t.Run(state, func(t *testing.T) {
-			app := tunModeTestApp(t)
-			app.status.Running = state == "running"
-			app.starting = state == "starting"
-			app.restarting = state == "restarting"
-			_, err := app.setTUNMode(true, false, func(string) error { t.Fatal("launched while busy"); return nil })
-			if err == nil || app.appConfig.Profiles[1].TUNMode {
-				t.Fatal("mode changed while busy")
-			}
-			if _, err := os.Stat(app.configPath); !os.IsNotExist(err) {
-				t.Fatal("wrote configuration while busy")
-			}
-		})
-	}
-}
-
-func TestTUNModeSaveFailureDoesNotLaunchOrChangeMemory(t *testing.T) {
-	app := tunModeTestApp(t)
-	app.configPath = filepath.Join(t.TempDir(), "missing", "config.json")
-	_, err := app.setTUNMode(true, false, func(string) error { t.Fatal("launched without saving"); return nil })
-	if err == nil || app.appConfig.Profiles[1].TUNMode {
-		t.Fatal("failed persistence still changed mode")
-	}
-}
-
-func TestTUNRestartRejectsInvalidArguments(t *testing.T) {
-	for _, args := range [][]string{
-		{"--tun-restart"},
-		{"--tun-restart", "bad", `C:\config.json`},
-		{"--tun-restart", "0", `C:\config.json`},
-		{"--tun-restart", strconv.Itoa(os.Getpid()), `C:\config.json`},
-		{"--tun-restart", "1", "relative.json"},
-	} {
-		if _, err := prepareTUNRestart(args); err == nil {
-			t.Fatalf("accepted invalid arguments: %v", args)
-		}
-	}
-	if path, err := prepareTUNRestart(nil); path != "" || err != nil {
-		t.Fatal("changed ordinary startup")
-	}
-}
-
-func TestTUNRestartWaitsForOriginalProcess(t *testing.T) {
-	command := exec.Command("cmd.exe", "/c", "exit", "0")
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer command.Wait()
-	if err := waitForTUNParent(uint32(command.Process.Pid)); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestTUNRestartArgumentsPreserveUnicodeAndSpaces(t *testing.T) {
-	path := `C:\Users\admin\Desktop\脚本 项目\vpn_profiles.json`
-	args := []string{"--tun-restart", "123", path}
-	parsed, err := windows.DecomposeCommandLine(windows.ComposeCommandLine(args))
-	if err != nil || len(parsed) != 3 || parsed[2] != path {
-		t.Fatalf("argument roundtrip failed: %v %v", parsed, err)
+func TestTUNSaveFailureDoesNotLaunchWorker(t *testing.T) {
+	a := tunModeTestApp(t)
+	a.configPath = filepath.Join(t.TempDir(), "missing", "profiles.json")
+	f := &fakeTUNControl{}
+	if e := a.setProfileTUNMode("first", true, f); e == nil || f.prepared != 0 {
+		t.Fatal("launched without saving")
 	}
 }

@@ -60,6 +60,8 @@ type VPNStatus struct {
 	SocksPort     string `json:"socksPort"`
 	HTTPPort      string `json:"httpPort"`
 	TUNMode       bool   `json:"tunMode"`
+	TUNState      string `json:"tunState"`
+	TUNError      string `json:"tunError"`
 	DisableProxy  bool   `json:"disableProxy"`
 	Duration      int64  `json:"duration"` // uptime seconds
 	LastError     string `json:"lastError"`
@@ -74,7 +76,8 @@ type App struct {
 	status       VPNStatus
 	connections  map[string]*vpnConnection
 	starting     bool
-	restarting   bool
+	tunManager   tunControl
+	modeOps      map[string]bool
 	shuttingDown bool
 	startTime    time.Time
 	tickerCancel context.CancelFunc
@@ -159,11 +162,10 @@ func (a *App) startup(ctx context.Context) {
 	a.starting = true
 	a.mu.Unlock()
 	a.handleEngineStatus(engine.Status{Phase: engine.PhaseConnecting, Stage: "恢复网络配置", Message: "正在检查并清理上次遗留的 TUN 配置…"})
-	if restarting, err := a.cleanupTUNOnStartup(); restarting {
-		runtime.Quit(ctx)
-		return
-	} else if err != nil {
-		a.handleEngineStatus(engine.Status{Phase: engine.PhaseError, Message: err.Error()})
+	if pending, err := a.cleanupTUNOnStartup(); err != nil {
+		a.handleEngineStatus(engine.Status{Phase: engine.PhaseDisconnected, Message: err.Error()})
+	} else if pending {
+		a.handleEngineStatus(engine.Status{Phase: engine.PhaseDisconnected, Message: "检测到遗留 TUN 配置，开启 TUN 时将申请权限清理"})
 	} else {
 		a.handleEngineStatus(engine.Status{Phase: engine.PhaseDisconnected, Message: "网络配置检查完成"})
 	}
@@ -212,6 +214,12 @@ func (a *App) shutdown(ctx context.Context) {
 		a.tickerCancel()
 	}
 	_ = a.stopAllConnections("app_shutdown")
+	a.mu.Lock()
+	manager := a.tunManager
+	a.mu.Unlock()
+	if manager != nil {
+		manager.Close()
+	}
 }
 
 // GetAppConfig returns all profiles and active ID
@@ -249,6 +257,9 @@ func (a *App) SetActiveProfile(id string) bool {
 func (a *App) SaveProfile(p Profile) (Profile, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.modeOps[p.ID] {
+		return Profile{}, fmt.Errorf("该配置正在切换 TUN")
+	}
 	if c := a.connections[p.ID]; c != nil && (c.status.Running || c.stopping) {
 		return Profile{}, fmt.Errorf("请先断开该配置再编辑")
 	}
@@ -301,6 +312,9 @@ func (a *App) DeleteProfile(id string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	if a.modeOps[id] {
+		return false
+	}
 	if c := a.connections[id]; c != nil && (c.status.Running || c.stopping) {
 		return false
 	}
@@ -337,7 +351,7 @@ func (a *App) GetStatus() VPNStatus {
 func (a *App) SetProxyEnabled(enabled bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.starting || a.status.Running || a.restarting {
+	if a.starting || a.status.Running || a.modeOps[a.appConfig.ActiveProfileID] {
 		return fmt.Errorf("请先断开连接，再切换本地代理")
 	}
 	for i := range a.appConfig.Profiles {
@@ -392,8 +406,8 @@ func (a *App) buildEngineConfig(profile Profile) configs.Config {
 	}
 	conf.BindInterface = profile.BindInterface
 	conf.AutoDetectInterface = profile.BindInterface == ""
-	conf.TUNMode = profile.TUNMode
-	conf.AddRoute = profile.TUNMode
+	conf.TUNMode = false
+	conf.AddRoute = false
 	socks, http := profile.SocksPort, profile.HTTPPort
 	if socks == 0 {
 		socks = 1080
@@ -407,7 +421,7 @@ func (a *App) buildEngineConfig(profile Profile) configs.Config {
 		conf.SocksBind = ""
 		conf.HTTPBind = ""
 	}
-	conf.DisableZJUConfig = profile.DisableZjuConfig || profile.TUNMode
+	conf.DisableZJUConfig = profile.DisableZjuConfig
 
 	if profile.DisableKeepAlive {
 		conf.DisableKeepAlive = true

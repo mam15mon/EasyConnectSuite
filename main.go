@@ -52,23 +52,17 @@ func setupCrashLog() {
 }
 
 func main() {
-	setupCrashLog()
-	restartConfig, err := prepareTUNRestart(os.Args[1:])
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		showTUNRestartError(err)
+	if len(os.Args) > 1 && os.Args[1] == "--tun-worker" {
+		setupWorkerCrashLog()
+		if err := runTUNWorker(os.Args[1:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		return
 	}
+	setupCrashLog()
 	app := NewApp()
-	if restartConfig != "" {
-		app.configPath = restartConfig
-		app.initDefaultConfig()
-		app.loadConfigFile()
-		app.normalizeProfiles()
-		app.selectConnectionLocked()
-	}
 
-	err = wails.Run(&options.App{
+	err := wails.Run(&options.App{
 		Title:             "EasyConnect Suite · VPN 工作台",
 		Width:             1080,
 		Height:            820,

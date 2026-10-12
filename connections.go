@@ -157,11 +157,7 @@ func (a *App) startConnectionID(id string, start func(engine.Options) (vpnEngine
 		a.mu.Unlock()
 		return "程序正在退出"
 	}
-	if a.restarting {
-		a.mu.Unlock()
-		return "正在以管理员身份重新启动"
-	}
-	if a.starting {
+	if a.starting || a.modeOps[id] {
 		a.mu.Unlock()
 		return "正在初始化或重启，请稍候"
 	}
@@ -216,6 +212,8 @@ func (a *App) startConnectionID(id string, start func(engine.Options) (vpnEngine
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &vpnConnection{ctx: ctx, cancel: cancel, ready: make(chan struct{}), started: time.Now(), slot: slot, status: disconnectedStatus(p)}
+	c.status.TUNMode = false
+	c.status.TUNState = "off"
 	c.status.Running = true
 	c.status.State = "connecting"
 	c.status.Stage = "准备中"
@@ -238,10 +236,13 @@ func (a *App) startConnectionID(id string, start func(engine.Options) (vpnEngine
 		a.mu.Unlock()
 		return err.Error()
 	}
-	opts := engine.Options{ConnectionID: p.ID, Config: a.buildEngineConfig(p), Context: ctx, Domain: p.Domain, InsecureSkipVerify: p.InsecureSkipVerify, TUNSlot: slot, LogFile: filepath.Join(logDir, "engine.log"),
+	opts := engine.Options{ConnectionID: p.ID, Config: a.buildEngineConfig(p), Context: ctx, Domain: p.Domain, InsecureSkipVerify: p.InsecureSkipVerify, TUNSlot: slot, TUNEnabled: p.TUNMode, TUNController: a.tunControllerLocked(), OnTUNStatus: func(s engine.TUNStatus) { a.connectionTUNStatus(p.ID, c, s) }, LogFile: filepath.Join(logDir, "engine.log"),
 		OnStatus: func(s engine.Status) { a.connectionStatus(p.ID, c, s) }, OnResources: func(rows []engine.ResourceEntry) { a.connectionResources(p.ID, c, rows) }}
 	a.mu.Unlock()
 	eng, err := start(opts)
+	if err != nil {
+		_ = opts.TUNController.(tunControl).Release(context.Background(), p.ID)
+	}
 	a.mu.Lock()
 	c.engine = eng
 	if err != nil {
@@ -291,9 +292,17 @@ func (a *App) stopConnectionReason(id, reason string) string {
 	<-c.ready
 	if c.engine != nil {
 		c.engine.Stop()
+		a.mu.Lock()
+		manager := a.tunManager
+		a.mu.Unlock()
+		if manager != nil {
+			_ = manager.Release(context.Background(), id)
+		}
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	c.status.TUNMode = false
+	c.status.TUNState = "off"
 	c.stopping = false
 	close(c.stopDone)
 	applyEngineStatus(&c.status, &c.started, &c.resources, engine.Status{Phase: engine.PhaseDisconnected, Message: "VPN 已断开"})
@@ -326,4 +335,19 @@ func (a *App) stopAllConnections(reason string) string {
 		a.stopConnectionReason(id, reason)
 	}
 	return "OK"
+}
+
+func (a *App) connectionTUNStatus(id string, c *vpnConnection, s engine.TUNStatus) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.connections[id] != c {
+		return
+	}
+	c.status.TUNState = s.State
+	c.status.TUNError = s.Error
+	c.status.TUNMode = s.State == "on"
+	if id == a.appConfig.ActiveProfileID {
+		a.status = c.status
+	}
+	a.emitConnectionLocked(c.status, c.resources)
 }

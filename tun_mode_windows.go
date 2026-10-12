@@ -1,104 +1,104 @@
 package main
 
 import (
+	"EasyConnectSuite/engine"
+	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"runtime"
-	"strconv"
-	"unsafe"
-
-	"EasyConnectSuite/engine"
-
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows"
 )
 
-func (a *App) recoverStaleTUN(elevated bool, cleanup func(bool) (bool, error), launch func(string) error) (bool, error) {
-	pending, err := cleanup(!elevated)
-	if err != nil {
-		return false, fmt.Errorf("清理上次遗留的 TUN 配置失败：%w", err)
-	}
-	if !pending || elevated {
-		return false, nil
-	}
-	if err := launch(a.configPath); err != nil {
-		return false, fmt.Errorf("遗留的 TUN 配置需要管理员权限清理：%w", err)
-	}
-	a.mu.Lock()
-	a.restarting = true
-	a.mu.Unlock()
-	return true, nil
+type tunControl interface {
+	engine.TUNController
+	Prepare(context.Context, string) error
+	Release(context.Context, string) error
+	Close()
+}
+type tunCapable interface {
+	SetTUN(context.Context, bool) error
+	TUNState() engine.TUNStatus
 }
 
-func (a *App) cleanupTUNOnStartup() (bool, error) {
-	return a.recoverStaleTUN(windows.GetCurrentProcessToken().IsElevated(), engine.CleanupStaleTUN, launchTUNAdministrator)
-}
-
-// SetTUNMode returns true when an elevated replacement has been launched.
-func (a *App) SetTUNMode(enabled bool) (bool, error) {
-	restarting, err := a.setTUNMode(enabled, windows.GetCurrentProcessToken().IsElevated(), launchTUNAdministrator)
-	if restarting {
-		wailsRuntime.Quit(a.ctx)
+func (a *App) tunControllerLocked() tunControl {
+	if a.tunManager == nil {
+		a.tunManager = newTUNManager()
 	}
-	return restarting, err
+	return a.tunManager
 }
-
-// SetProfileTUNMode prepares the clicked connection without changing selection.
-func (a *App) SetProfileTUNMode(id string, enabled bool) (bool, error) {
-	restarting, err := a.setProfileTUNMode(id, enabled, windows.GetCurrentProcessToken().IsElevated(), launchTUNAdministrator)
-	if restarting {
-		wailsRuntime.Quit(a.ctx)
-	}
-	return restarting, err
-}
-
-func (a *App) setTUNMode(enabled, elevated bool, launch func(string) error) (bool, error) {
+func (a *App) SetTUNMode(enabled bool) error {
 	a.mu.Lock()
 	id := a.appConfig.ActiveProfileID
 	a.mu.Unlock()
-	return a.setProfileTUNMode(id, enabled, elevated, launch)
+	return a.SetProfileTUNMode(id, enabled)
 }
-
-func (a *App) setProfileTUNMode(id string, enabled, elevated bool, launch func(string) error) (bool, error) {
+func (a *App) SetProfileTUNMode(id string, enabled bool) error {
+	a.mu.Lock()
+	manager := a.tunControllerLocked()
+	a.mu.Unlock()
+	return a.setProfileTUNMode(id, enabled, manager)
+}
+func (a *App) setProfileTUNMode(id string, enabled bool, manager tunControl) error {
+	a.mu.Lock()
+	c := a.connections[id]
+	if a.starting || a.shuttingDown || a.modeOps[id] || (c != nil && (c.stopping || (c.status.Running && (c.status.State != "connected" && (enabled || c.status.State != "connecting" || c.status.Stage != "重连中"))))) {
+		a.mu.Unlock()
+		return errors.New("该配置正在连接、断开或切换 TUN，请稍候")
+	}
+	index := -1
+	for i, p := range a.appConfig.Profiles {
+		if p.ID == id {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		a.mu.Unlock()
+		return errors.New("服务器配置不存在")
+	}
+	previous := a.appConfig.Profiles[index].TUNMode
+	a.appConfig.Profiles[index].TUNMode = enabled
+	if err := a.saveConfigFile(); err != nil {
+		a.appConfig.Profiles[index].TUNMode = previous
+		a.mu.Unlock()
+		return fmt.Errorf("保存 TUN 配置失败：%w", err)
+	}
+	if a.modeOps == nil {
+		a.modeOps = map[string]bool{}
+	}
+	a.modeOps[id] = true
+	a.mu.Unlock()
+	var err error
+	if c != nil && c.status.Running {
+		capability, ok := c.engine.(tunCapable)
+		if !ok {
+			err = errors.New("该 VPN 引擎不支持 TUN 热附着")
+		} else {
+			err = capability.SetTUN(c.ctx, enabled)
+		}
+	} else if enabled {
+		err = manager.Prepare(context.Background(), id)
+	} else {
+		err = manager.Release(context.Background(), id)
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	connection := a.connections[id]
-	if a.starting || a.restarting || (id == a.appConfig.ActiveProfileID && a.status.Running) || (connection != nil && (connection.status.Running || connection.stopping)) {
-		return false, errors.New("请先断开连接，再切换 TUN 模式")
-	}
-	for i := range a.appConfig.Profiles {
-		if a.appConfig.Profiles[i].ID != id {
-			continue
-		}
-		if enabled && !elevated && a.anyRunningLocked() {
-			return false, errors.New("切换管理员权限前，请先断开所有 VPN")
-		}
-		previous := a.appConfig.Profiles[i].TUNMode
-		a.appConfig.Profiles[i].TUNMode = enabled
-		if err := a.saveConfigFile(); err != nil {
-			a.appConfig.Profiles[i].TUNMode = previous
-			return false, fmt.Errorf("保存 TUN 配置失败：%w", err)
-		}
-		if !enabled || elevated {
-			return false, nil
-		}
-		if err := launch(a.configPath); err != nil {
-			a.appConfig.Profiles[i].TUNMode = previous
-			if saveErr := a.saveConfigFile(); saveErr != nil {
-				return false, fmt.Errorf("%v；还原 TUN 配置失败：%w", err, saveErr)
+	delete(a.modeOps, id)
+	if err != nil {
+		for i := range a.appConfig.Profiles {
+			if a.appConfig.Profiles[i].ID == id {
+				a.appConfig.Profiles[i].TUNMode = previous
+				if saveErr := a.saveConfigFile(); saveErr != nil {
+					err = errors.Join(err, fmt.Errorf("还原 TUN 配置失败：%w", saveErr))
+				}
+				break
 			}
-			return false, err
 		}
-		a.restarting = true
-		return true, nil
 	}
-	return false, errors.New("服务器配置不存在")
+	a.selectConnectionLocked()
+	return err
 }
+func (a *App) cleanupTUNOnStartup() (bool, error) { return engine.CleanupStaleTUN(true) }
 
-// SHELLEXECUTEINFOW layout from shellapi.h. NOASYNC waits for launch completion;
-// NO_UI suppresses shell error dialogs, but keeps the Windows UAC prompt.
 type shellExecuteInfo struct {
 	Size       uint32
 	Mask       uint32
@@ -115,91 +115,4 @@ type shellExecuteInfo struct {
 	HotKey     uint32
 	Icon       windows.Handle
 	Process    windows.Handle
-}
-
-func launchTUNAdministrator(configPath string) error {
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	configPath, err = filepath.Abs(configPath)
-	if err != nil {
-		return err
-	}
-	windows.NewLazySystemDLL("user32.dll").NewProc("MessageBoxW").Call(0,
-		uintptr(unsafe.Pointer(windows.StringToUTF16Ptr("接下来将申请管理员权限，用于配置或清理 TUN 网络。\n\n授权后，当前窗口会关闭并自动重新打开，服务器配置会保留。\n取消授权则保留当前窗口。"))),
-		uintptr(unsafe.Pointer(windows.StringToUTF16Ptr("即将切换管理员权限"))), 0x10040) // MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND
-	parameters := windows.ComposeCommandLine([]string{"--tun-restart", strconv.Itoa(os.Getpid()), configPath})
-	info := shellExecuteInfo{
-		Mask:       0x100 | 0x400, // SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI
-		Verb:       windows.StringToUTF16Ptr("runas"),
-		File:       windows.StringToUTF16Ptr(executable),
-		Parameters: windows.StringToUTF16Ptr(parameters),
-		Directory:  windows.StringToUTF16Ptr(filepath.Dir(executable)),
-		Show:       windows.SW_SHOWNORMAL,
-	}
-	info.Size = uint32(unsafe.Sizeof(info))
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	ole := windows.NewLazySystemDLL("ole32.dll")
-	hr, _, _ := ole.NewProc("CoInitializeEx").Call(0, 2|4) // STA | DISABLE_OLE1DDE
-	if int32(hr) < 0 {
-		return fmt.Errorf("初始化管理员启动失败：0x%x", hr)
-	}
-	defer ole.NewProc("CoUninitialize").Call()
-	result, _, callErr := windows.NewLazySystemDLL("shell32.dll").NewProc("ShellExecuteExW").Call(uintptr(unsafe.Pointer(&info)))
-	if result == 0 {
-		if errors.Is(callErr, windows.ERROR_CANCELLED) {
-			return errors.New("已取消管理员授权，TUN 模式保持原设置")
-		}
-		return fmt.Errorf("以管理员身份启动失败：%w", callErr)
-	}
-	return nil
-}
-
-// Wait before Wails acquires its single-instance mutex and reads the saved
-// profile. Keeping the exact config path also supports portable installations.
-func prepareTUNRestart(args []string) (string, error) {
-	if len(args) == 0 || args[0] != "--tun-restart" {
-		return "", nil
-	}
-	if len(args) != 3 {
-		return "", errors.New("管理员重启参数不完整")
-	}
-	pid, err := strconv.ParseUint(args[1], 10, 32)
-	if err != nil || pid == 0 || pid == uint64(os.Getpid()) || !filepath.IsAbs(args[2]) {
-		return "", errors.New("管理员重启参数无效")
-	}
-	if !windows.GetCurrentProcessToken().IsElevated() {
-		return "", errors.New("管理员授权未生效，请重新开启 TUN 模式")
-	}
-	if err := waitForTUNParent(uint32(pid)); err != nil {
-		return "", err
-	}
-	return args[2], nil
-}
-
-func waitForTUNParent(pid uint32) error {
-	process, err := windows.OpenProcess(windows.SYNCHRONIZE, false, pid)
-	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
-		return nil // The original process has already exited.
-	}
-	if err != nil {
-		return fmt.Errorf("等待原窗口退出失败：%w", err)
-	}
-	defer windows.CloseHandle(process)
-	result, err := windows.WaitForSingleObject(process, 15000)
-	if err != nil {
-		return err
-	}
-	if result != windows.WAIT_OBJECT_0 {
-		return errors.New("原窗口未能退出，请关闭原程序后重新启动")
-	}
-	return nil
-}
-
-func showTUNRestartError(err error) {
-	windows.NewLazySystemDLL("user32.dll").NewProc("MessageBoxW").Call(0,
-		uintptr(unsafe.Pointer(windows.StringToUTF16Ptr(err.Error()))),
-		uintptr(unsafe.Pointer(windows.StringToUTF16Ptr("EasyConnect TUN 启动失败"))), 0x10)
 }

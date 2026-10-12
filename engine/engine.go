@@ -61,6 +61,7 @@ type Options struct {
 	Domain             string
 	InsecureSkipVerify bool
 	TUNSlot            int
+	TUNEnabled         bool
 	TUNController      TUNController
 	OnTUNStatus        func(TUNStatus)
 
@@ -319,7 +320,7 @@ func Start(opts Options) (_ *Engine, err error) {
 		return nil, fmt.Errorf("VPN 隧道在启动期间断开")
 	}
 	e.running.Store(true)
-	if conf.TUNMode {
+	if opts.TUNEnabled {
 		if err := e.SetTUN(e.ctx, true); err != nil {
 			e.logf("TUN attach failed: %v", err)
 		}
