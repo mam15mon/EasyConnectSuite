@@ -117,9 +117,17 @@ func Start(opts Options) (_ *Engine, err error) {
 	e.ctx, e.cancel = context.WithCancel(ctx)
 	e.registerTerminal("CancelEngine", func(context.Context) error { e.cancel(); return nil })
 	e.startLogCapture()
+	diagnostic := log.BeginOperation(e.logPrefix(), "startup", e.ctx.Done())
 	e.logf("start gateway=%s:%d tun=%t slot=%d socks=%q http=%q keepalive_disabled=%t underlay=%q", conf.ServerAddress, conf.ServerPort, conf.TUNMode, opts.TUNSlot, conf.SocksBind, conf.HTTPBind, conf.DisableKeepAlive, conf.BindInterface)
 	started := false
 	defer func() {
+		outcome := "interrupted"
+		if started {
+			outcome = "returned"
+		} else if err != nil {
+			outcome = "failed"
+		}
+		diagnostic.Finish(outcome, err)
 		if !started {
 			e.logf("startup failed elapsed=%s canceled=%t cause=%v", time.Since(startedAt).Round(time.Millisecond), e.ctx.Err() != nil, err)
 			e.execTerminal()
@@ -128,6 +136,7 @@ func Start(opts Options) (_ *Engine, err error) {
 	}()
 
 	e.emitProgress("准备中", "正在初始化网络…")
+	diagnostic.Step("underlay_setup")
 
 	underlayDialer, err := underlay.New(underlay.Options{
 		InterfaceName:  conf.BindInterface,
@@ -148,7 +157,9 @@ func Start(opts Options) (_ *Engine, err error) {
 		c.options.ConnectionID = opts.ConnectionID
 		vpnClient = c
 	case "univpn":
-		vpnClient = newUniVPNClient(e.ctx, conf, opts.Domain, opts.InsecureSkipVerify, underlayDialer)
+		c := newUniVPNClient(e.ctx, conf, opts.Domain, opts.InsecureSkipVerify, underlayDialer)
+		c.options.OnStage = func(stage string) { e.logf("UniVPN setup stage=%s", stage) }
+		vpnClient = c
 	case "easyconnect":
 		vpnClient = easyconnectclient.NewClient(easyconnectclient.Options{
 			OwnedLifecycle: true,
@@ -179,6 +190,7 @@ func Start(opts Options) (_ *Engine, err error) {
 	e.logf("VPN protocol: %s", conf.Protocol)
 	e.emitProgress("认证中", "正在验证账号并登录 VPN 服务器…")
 
+	diagnostic.Step("authentication")
 	if err := vpnClient.Setup(); err != nil {
 		vpnClient.Close()
 		_ = underlayDialer.Close()
@@ -197,6 +209,7 @@ func Start(opts Options) (_ *Engine, err error) {
 	e.emitProgress("建立隧道", "认证已通过，正在创建 VPN 网络栈…")
 
 	// The GUI always uses the gVisor L3 stack (upstream default).
+	diagnostic.Step("stack_create")
 	vpnStack, err := gvisor.NewOwnedStack(vpnClient, func() bool { return e.ctx.Err() != nil })
 	if err != nil {
 		vpnClient.Close()
@@ -207,6 +220,7 @@ func Start(opts Options) (_ *Engine, err error) {
 	vpnStack.SetLogContext(fmt.Sprintf("[VPN pid=%d engine=%d profile=%q stack=%p] ", os.Getpid(), e.id, opts.ConnectionID, vpnStack))
 	e.registerTerminal("CloseVPNStack", func(ctx context.Context) error { return vpnStack.Close() })
 	e.emitProgress("加载资源", "正在加载 VPN 资源和访问规则…")
+	diagnostic.Step("resource_load")
 	policy, err := loadPolicy(conf, vpnClient, vpnStack)
 	if err != nil {
 		return nil, err
@@ -221,27 +235,36 @@ func Start(opts Options) (_ *Engine, err error) {
 	})
 	e.logf("network stack=%p resources=%d", vpnStack, len(policy.entries))
 	vpnStack.SetupIPPool(policy.resolver.IPPool)
-	vpnStack.SetupRelogin(func() error {
+	vpnStack.SetupRelogin(func() (err error) {
+		trace := log.BeginOperation(e.logPrefix(), "relogin_resources", e.ctx.Done())
+		defer func() { trace.Finish("returned", err) }()
+		trace.Step("status_callback")
 		e.emitStatus(PhaseReconnecting, "连接中断，正在自动重新登录...")
+		trace.Step("authentication")
 		if err := vpnClient.Setup(); err != nil {
 			return err
 		}
 		e.logf("reconnect authentication complete; loading resources")
+		trace.Step("resource_load")
 		next, err := loadPolicy(conf, vpnClient, vpnStack)
 		if err != nil {
 			return err
 		}
 		e.logf("reconnect TUN policy update started")
+		trace.Step("tun_update")
 		e.updateTUN(next, false)
 		e.logf("reconnect TUN policy update complete")
+		trace.Step("policy_publish")
 		previous := e.router.current.Swap(next)
 		vpnStack.SetupIPPool(next.resolver.IPPool)
 		if previous != nil {
+			trace.Step("previous_resolver_close")
 			previous.resolver.Close()
 		}
 		e.dnsName = next.dnsName
 		e.logf("reconnect resources updated entries=%d", len(next.entries))
 		if e.opts.OnResources != nil {
+			trace.Step("resources_callback")
 			e.opts.OnResources(next.entries)
 		}
 
@@ -257,6 +280,7 @@ func Start(opts Options) (_ *Engine, err error) {
 		e.emitStatusFull(Status{Phase: PhaseConnected, Message: "隧道已重建，资源已更新", ClientIP: clientIP, DNS: policy.dnsName})
 	})
 	vpnStack.SetupFatalHandler(e.handleTunnelFatal)
+	diagnostic.Step("proxy_start")
 	e.goWithRecovery("gvisor stack Run", func() { vpnStack.Run() })
 	if conf.SocksBind != "" || conf.HTTPBind != "" {
 		e.emitProgress("启动代理", "正在启动本地 SOCKS5 / HTTP 代理…")
@@ -324,6 +348,7 @@ func Start(opts Options) (_ *Engine, err error) {
 	}
 	e.running.Store(true)
 	if opts.TUNEnabled {
+		diagnostic.Step("tun_attach")
 		if err := e.SetTUN(e.ctx, true); err != nil {
 			e.logf("TUN attach failed: %v", err)
 		}
@@ -447,7 +472,11 @@ func (e *Engine) handleTunnelFatal(cause error) {
 }
 
 func (e *Engine) execTerminal() {
+	diagnostic := log.BeginOperation(e.logPrefix(), "shutdown", nil)
+	defer diagnostic.Finish("returned", nil)
+	diagnostic.Step("cancel_engine")
 	e.cancel()
+	diagnostic.Step("tun_detach")
 	_ = e.SetTUN(context.Background(), false)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -460,6 +489,7 @@ func (e *Engine) execTerminal() {
 	funcs := append([]lifecycle.TerminalFunc(nil), e.terminals...)
 	e.terminalMu.Unlock()
 	for _, f := range funcs {
+		diagnostic.Step("terminal_callback")
 		if err := f(ctx); err != nil {
 			e.logf("VPN cleanup failed: %v", err)
 		}
@@ -470,8 +500,10 @@ func (e *Engine) registerTerminal(name string, f lifecycle.TerminalFunc) {
 	cleanup := f
 	f = func(ctx context.Context) error {
 		started := time.Now()
+		diagnostic := log.BeginOperation(e.logPrefix(), "cleanup_"+name, ctx.Done())
 		e.logf("cleanup start step=%s", name)
 		err := cleanup(ctx)
+		diagnostic.Finish("returned", err)
 		e.logf("cleanup complete step=%s elapsed=%s cause=%v", name, time.Since(started).Round(time.Millisecond), err)
 		return err
 	}
@@ -491,7 +523,11 @@ func (e *Engine) registerTerminal(name string, f lifecycle.TerminalFunc) {
 }
 
 func (e *Engine) logf(format string, args ...any) {
-	log.Printf("[VPN pid=%d engine=%d profile=%q protocol=%s] %s", os.Getpid(), e.id, e.opts.ConnectionID, e.conf.Protocol, fmt.Sprintf(format, args...))
+	log.Printf("%s%s", e.logPrefix(), fmt.Sprintf(format, args...))
+}
+
+func (e *Engine) logPrefix() string {
+	return fmt.Sprintf("[VPN pid=%d engine=%d profile=%q protocol=%s] ", os.Getpid(), e.id, e.opts.ConnectionID, e.conf.Protocol)
 }
 
 func (e *Engine) emitProgress(stage, message string) {

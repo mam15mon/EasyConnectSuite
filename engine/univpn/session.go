@@ -18,6 +18,7 @@ type Options struct {
 	Server, Domain, Username, Password string
 	TLSConfig                          *tls.Config
 	DialContext                        func(context.Context, string, string) (net.Conn, error)
+	OnStage                            func(string)
 }
 
 type channel struct {
@@ -99,7 +100,13 @@ func Dial(ctx context.Context, opts Options) (*Session, error) {
 	}
 	setupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	connect := func() (*channel, func() bool, error) {
+	stage := func(name string) {
+		if opts.OnStage != nil {
+			opts.OnStage(name)
+		}
+	}
+	connect := func(name string) (*channel, func() bool, error) {
+		stage(name + "_tcp_dial")
 		raw, err := dial(setupCtx, "tcp", opts.Server)
 		if err != nil {
 			return nil, nil, err
@@ -107,6 +114,7 @@ func Dial(ctx context.Context, opts Options) (*Session, error) {
 		stop := context.AfterFunc(setupCtx, func() { _ = raw.Close() })
 		conn := tls.Client(raw, cfg)
 		deadline, _ := setupCtx.Deadline()
+		stage(name + "_tls_handshake")
 		if err = conn.SetDeadline(deadline); err == nil {
 			err = conn.HandshakeContext(setupCtx)
 		}
@@ -117,7 +125,7 @@ func Dial(ctx context.Context, opts Options) (*Session, error) {
 		}
 		return &channel{conn: conn}, stop, nil
 	}
-	control, stopControl, err := connect()
+	control, stopControl, err := connect("control")
 	if err != nil {
 		return nil, err
 	}
@@ -129,6 +137,7 @@ func Dial(ctx context.Context, opts Options) (*Session, error) {
 		}
 	}()
 
+	stage("first_connect_reply")
 	first := make([]byte, 340)
 	copy(first, []byte{0xfe, 0xfc, 0xef, 0xbe, 0xc1, 0x92, 0xa4, 0xd6})
 	binary.BigEndian.PutUint16(first[12:], 29)
@@ -154,6 +163,7 @@ func Dial(ctx context.Context, opts Options) (*Session, error) {
 			return nil, err
 		}
 	}
+	stage("authentication_reply")
 	reply, err = control.exchange(1, auth)
 	clear(auth)
 	if err != nil {
@@ -163,6 +173,7 @@ func Dial(ctx context.Context, opts Options) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	stage("virtual_ip_resources_reply")
 	reply, err = control.exchange(3, token[:])
 	if err != nil {
 		return nil, err
@@ -172,7 +183,7 @@ func Dial(ctx context.Context, opts Options) (*Session, error) {
 		return nil, err
 	}
 
-	data, stopData, err := connect()
+	data, stopData, err := connect("data")
 	if err != nil {
 		return nil, err
 	}
@@ -187,6 +198,7 @@ func Dial(ctx context.Context, opts Options) (*Session, error) {
 	if !bytes.Equal(controlKey, dataKey) {
 		return nil, errors.New("UniVPN 数据通道证书与控制通道不一致")
 	}
+	stage("data_bind_reply")
 	reply, err = data.exchange(0x64, token[:])
 	if err != nil {
 		return nil, err
@@ -207,6 +219,7 @@ func Dial(ctx context.Context, opts Options) (*Session, error) {
 	stopData()
 	s := &Session{control: control, data: data, ip: ip, routes: routes, token: token, done: make(chan struct{})}
 	ready = true
+	stage("ready")
 	go s.readControl()
 	go s.heartbeats()
 	go func() {

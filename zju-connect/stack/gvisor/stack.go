@@ -359,22 +359,27 @@ func (s *Stack) dropBrokenConn() {
 // Returns true only when the tunnel is usable again; every false return
 // is final (terminal shutdown or fatal already reported).
 func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
+	diagnostic := log.BeginOperation(s.logContext, "l3_reconnect", s.done)
+	var fatalCause error
+	defer func() { diagnostic.Finish("returned", fatalCause) }()
 	if errors.Is(cause, easyconnect.ErrSangforShutdown) {
 		s.logf("L3 tunnel: server returned SHUTDOWN (session terminated by server)")
 	}
 
+	diagnostic.Step("wait_relogin_lock")
 	s.reloginMu.Lock()
-	var fatalCause error
 	recovered := false
 	defer func() {
 		recoveredHandler := s.recoveredHandler
 		handler := s.fatalHandler
 		s.reloginMu.Unlock()
 		if recovered && recoveredHandler != nil {
+			diagnostic.Step("recovered_callback")
 			recoveredHandler()
 		}
 		if fatalCause != nil {
 			if handler != nil {
+				diagnostic.Step("fatal_callback")
 				handler(fatalCause)
 			} else {
 				s.logf("gVisor fatal: %v", fatalCause)
@@ -399,6 +404,7 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 		return true
 	}
 
+	round := 0
 	for {
 		if s.reconnectStopped() {
 			return false
@@ -410,6 +416,7 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 		}
 
 		if wait := reloginCooldown - time.Since(s.lastReloginTime); wait > 0 {
+			diagnostic.Step("retry_cooldown")
 			timer := time.NewTimer(wait)
 			select {
 			case <-s.done:
@@ -423,8 +430,11 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 		}
 
 		s.lastReloginTime = time.Now()
+		round++
+		s.logf("reconnect round=%d login_failures=%d", round, s.reloginFailures)
 		s.logf("L3 tunnel error: %v; re-login attempt %d/%d", cause, s.reloginFailures+1, maxReloginAttempts)
 
+		diagnostic.Step("relogin_callback")
 		if err := s.callRelogin(); err != nil {
 			if errors.Is(err, easyconnect.ErrLoginRejected) {
 				fatalCause = fmt.Errorf("VPN 登录被拒绝，已停止自动重连: %w", err)
@@ -441,6 +451,7 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 		}
 
 		s.logf("Re-login callback complete; rebuilding L3 tunnel")
+		diagnostic.Step("l3_handshake")
 		newConn, err := s.newL3ConnSafe()
 		if err != nil {
 			if isReconnectNetworkError(err) {
@@ -451,6 +462,7 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 			s.logf("Re-login succeeded but L3 handshake failed (%d/%d): %v", s.reloginFailures, maxReloginAttempts, err)
 			continue
 		}
+		diagnostic.Step("install_l3_connection")
 		s.endpoint.connMu.Lock()
 		if s.reconnectStopped() {
 			s.endpoint.connMu.Unlock()
@@ -462,6 +474,7 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 		s.endpoint.l3Conn = newConn
 		s.endpoint.connMu.Unlock()
 
+		diagnostic.Step("previous_l3_close")
 		safeCloseL3(oldConn)
 
 		s.reloginFailures = 0

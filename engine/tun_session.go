@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/mythologyli/zju-connect/client"
+	"github.com/mythologyli/zju-connect/log"
 	"net/netip"
 	"sync"
 	"time"
@@ -143,29 +144,44 @@ func (e *Engine) detachTUN(ctx context.Context) error {
 	return err
 }
 func (e *Engine) updateTUN(p *connectionPolicy, discover bool) {
+	diagnostic := log.BeginOperation(e.logPrefix(), "tun_update", e.ctx.Done())
+	outcome := "interrupted"
+	var diagnosticErr error
+	defer func() { diagnostic.Finish(outcome, diagnosticErr) }()
 	t := &e.tunSession
+	diagnostic.Step("wait_tun_operation_lock")
 	t.op.Lock()
 	defer t.op.Unlock()
 	if t.attachment == nil {
+		outcome = "not_attached"
 		return
 	}
+	diagnostic.Step("resource_view")
 	view, err := p.tunView()
 	if err == nil {
+		diagnostic.Step("wait_backend_policy_lock")
 		t.backend.mu.Lock()
 		t.backend.policy = view
 		t.backend.bindings = make(map[netip.Addr][]client.DomainResource)
 		t.backend.mu.Unlock()
+		diagnostic.Step("build_worker_spec")
 		t.spec.Policy++
 		t.spec.Prefixes, err = resourcePrefixes(view.ips)
 		t.spec.Names = dnsNamespaces(view)
 		if discover {
+			diagnostic.Step("dns_namespace_discovery")
 			t.spec.Names = discoverDNSNamespaces(t.backend.ctx, view)
 		}
 		if err == nil {
+			diagnostic.Step("worker_update_reply")
+			e.logf("TUN update request session=%s attachment=%s policy=%d prefixes=%d names=%d", t.spec.Session, t.spec.Attachment, t.spec.Policy, len(t.spec.Prefixes), len(t.spec.Names))
 			err = t.attachment.Update(e.ctx, t.spec)
 		}
 	}
+	diagnosticErr = err
 	if err != nil {
+		outcome = "failed"
+		diagnostic.Step("failed_update_cleanup")
 		lost := false
 		select {
 		case <-t.attachment.Done():
@@ -173,6 +189,8 @@ func (e *Engine) updateTUN(p *connectionPolicy, discover bool) {
 		default:
 		}
 		e.failTUN(err, lost)
+	} else {
+		outcome = "updated"
 	}
 }
 
