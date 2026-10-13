@@ -80,6 +80,7 @@ type Client struct {
 	dnsServer       string
 	dnsServers      []string
 
+	updateIP  func(net.IP) error
 	ip        net.IP // Client IP
 	ipReverse []byte
 
@@ -141,12 +142,20 @@ func (c *Client) Close() {
 	})
 }
 
+func (c *Client) SetIPUpdateHandler(handler func(net.IP) error) {
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
+	c.updateIP = handler
+}
+
 func (c *Client) IP() (net.IP, error) {
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
 	if c.ip == nil {
 		return nil, errors.New("IP not available")
 	}
 
-	return c.ip.To4(), nil
+	return append(net.IP(nil), c.ip.To4()...), nil
 }
 
 func (c *Client) IPSet() (*netaddr.IPSet, error) {
