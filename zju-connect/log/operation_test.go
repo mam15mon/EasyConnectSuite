@@ -65,6 +65,15 @@ func waitForDiagnosticEvidence(release <-chan struct{}) { <-release }
 
 func TestStalledOperationCapturesEvidenceAfterCancellation(t *testing.T) {
 	w := diagnosticCapture(t)
+	diagnosticSnapshots.Lock()
+	previousSnapshot := diagnosticSnapshots.last
+	diagnosticSnapshots.last = time.Time{}
+	diagnosticSnapshots.Unlock()
+	t.Cleanup(func() {
+		diagnosticSnapshots.Lock()
+		diagnosticSnapshots.last = previousSnapshot
+		diagnosticSnapshots.Unlock()
+	})
 	release := make(chan struct{})
 	defer close(release)
 	go waitForDiagnosticEvidence(release)
