@@ -596,7 +596,7 @@ func initialize(args []string) int {
 
 	if err := validateConnectConfig(conf); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, "Please see: https://EasyConnectSuite/vpncore")
+		fmt.Fprintln(os.Stderr, "Please see: https://github.com/mythologyli/zju-connect")
 		fmt.Fprintln(os.Stderr, "\nUsage:")
 		flags.PrintDefaults()
 		return 1
