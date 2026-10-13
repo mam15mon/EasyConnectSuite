@@ -16,8 +16,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -489,9 +487,6 @@ func (c *Client) requestConfig() (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("request config: unexpected HTTP status %d", resp.StatusCode)
-	}
 
 	var buf bytes.Buffer
 	_, err = io.Copy(&buf, resp.Body)
@@ -585,15 +580,6 @@ func (c *Client) requestResources() (string, error) {
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return "", err
-	}
-
-	// EasyConnect Suite fork: persist the raw resource list so an empty
-	// parse result can be diagnosed from the actual server payload.
-	if dir := os.Getenv("APPDATA"); dir != "" {
-		logDir := filepath.Join(dir, "EasyConnectVPN", "logs")
-		if err := os.MkdirAll(logDir, 0755); err == nil {
-			_ = os.WriteFile(filepath.Join(logDir, "rclist.xml"), buf.Bytes(), 0644)
-		}
 	}
 
 	return buf.String(), nil
@@ -692,16 +678,13 @@ func (c *Client) requestIP() error {
 	log.DebugPrintf("Request IP: wrote %d bytes", n)
 
 	reply := make([]byte, 0x80)
-	n, err = conn.Read(reply)
+	n, err = io.ReadAtLeast(conn, reply, 8)
 	if err != nil {
 		return err
 	}
 
 	log.DebugPrintf("Request IP: read %d bytes", n)
 
-	if n < 8 {
-		return io.ErrUnexpectedEOF
-	}
 	if reply[0] != 0x00 {
 		return errors.New("unexpected request IP reply")
 	}

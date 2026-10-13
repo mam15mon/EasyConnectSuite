@@ -96,7 +96,7 @@ func TestSetupPreservesInitialSuppliedSession(t *testing.T) {
 
 // Serve HTTP authentication and Sangfor's binary IP/send handshakes on one
 // local TLS port. The expired gateway returns SHUTDOWN for the original token.
-func reloginGateway(t *testing.T, sessionID string) (*Client, *atomic.Int32, *atomic.Bool, *atomic.Bool) {
+func reloginGateway(t *testing.T, sessionID string, ipReply ...[]byte) (*Client, *atomic.Int32, *atomic.Bool, *atomic.Bool) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -158,6 +158,10 @@ func reloginGateway(t *testing.T, sessionID string) (*Client, *atomic.Int32, *at
 						if expired.Load() && logins.Load() == 1 {
 							reply[0] = 8
 						}
+					}
+					if packet[0] == 0 && len(ipReply) > 0 {
+						conn.Write(ipReply[0])
+						return
 					}
 					conn.Write(reply)
 					io.Copy(io.Discard, reader)
@@ -231,5 +235,17 @@ func TestSetupDoesNotPublishIPWhenStackUpdateFails(t *testing.T) {
 	current, _ := c.IP()
 	if !current.Equal(previous) || c.requestIPConn != nil {
 		t.Fatal("failed IP update published a new session")
+	}
+}
+
+func TestSetupRejectsTruncatedOrInvalidIPReply(t *testing.T) {
+	for _, reply := range [][]byte{{0}, {0, 0, 0, 0, 10, 1, 2}, {0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 224, 0, 0, 1}} {
+		c, _, _, _ := reloginGateway(t, "", reply)
+		if err := c.Setup(); err == nil {
+			t.Fatalf("invalid IP reply accepted: %x", reply)
+		}
+		if c.ip != nil || c.requestIPConn != nil {
+			t.Fatal("invalid IP session published")
+		}
 	}
 }
