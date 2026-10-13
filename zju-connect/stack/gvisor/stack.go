@@ -440,6 +440,7 @@ func (s *Stack) rebuildL3Conn(broken io.ReadWriteCloser, cause error) bool {
 			continue
 		}
 
+		s.logf("Re-login callback complete; rebuilding L3 tunnel")
 		newConn, err := s.newL3ConnSafe()
 		if err != nil {
 			if isReconnectNetworkError(err) {

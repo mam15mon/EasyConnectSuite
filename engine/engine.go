@@ -226,11 +226,14 @@ func Start(opts Options) (_ *Engine, err error) {
 		if err := vpnClient.Setup(); err != nil {
 			return err
 		}
+		e.logf("reconnect authentication complete; loading resources")
 		next, err := loadPolicy(conf, vpnClient, vpnStack)
 		if err != nil {
 			return err
 		}
+		e.logf("reconnect TUN policy update started")
 		e.updateTUN(next, false)
+		e.logf("reconnect TUN policy update complete")
 		previous := e.router.current.Swap(next)
 		vpnStack.SetupIPPool(next.resolver.IPPool)
 		if previous != nil {

@@ -16,6 +16,9 @@ import (
 )
 
 type TUNSpec = tunipc.Spec
+
+var errTUNPolicyChanged = errors.New("TUN policy changed during request")
+
 type TUNBackend interface {
 	Dial(context.Context, string, string) (net.Conn, error)
 	DNS(context.Context, []byte) ([]byte, []string, error)
@@ -51,13 +54,17 @@ func (b *tunBackend) Dial(ctx context.Context, network, address string) (net.Con
 		return nil, errors.New("invalid TUN destination")
 	}
 	b.mu.RLock()
-	defer b.mu.RUnlock()
 	if b.ctx.Err() != nil {
+		b.mu.RUnlock()
 		return nil, net.ErrClosed
 	}
+	policy := b.policy
 	b.bindingsMu.Lock()
 	rules := append([]client.DomainResource(nil), b.bindings[ap.Addr()]...)
 	b.bindingsMu.Unlock()
+	// Sending may synchronously enter relogin, which updates this policy.
+	// Never keep the policy lock across a VPN network operation.
+	b.mu.RUnlock()
 	if len(rules) > 0 {
 		ctx = context.WithValue(ctx, resolve.ContextKeyDomainResource, append([]client.DomainResource(nil), rules...))
 	}
@@ -65,7 +72,21 @@ func (b *tunBackend) Dial(ctx context.Context, network, address string) (net.Con
 	defer c()
 	stop := context.AfterFunc(b.ctx, c)
 	defer stop()
-	return b.policy.tunDialer.DialIPPort(ctx, network, address)
+	conn, err := policy.tunDialer.DialIPPort(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	b.mu.RLock()
+	changed := b.policy != policy
+	b.mu.RUnlock()
+	if ctx.Err() != nil || changed {
+		_ = conn.Close()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, errTUNPolicyChanged
+	}
+	return conn, nil
 }
 func tunDomainRules(domains client.DomainResources, host string) []client.DomainResource {
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
@@ -96,11 +117,11 @@ func (b *tunBackend) DNS(ctx context.Context, data []byte) ([]byte, []string, er
 		return pack()
 	}
 	b.mu.RLock()
-	defer b.mu.RUnlock()
+	policy := b.policy
+	b.mu.RUnlock()
 	if b.ctx.Err() != nil {
 		return nil, nil, net.ErrClosed
 	}
-	policy := b.policy
 	ctx, c := context.WithTimeout(ctx, 10*time.Second)
 	defer c()
 	stop := context.AfterFunc(b.ctx, c)
@@ -112,6 +133,14 @@ func (b *tunBackend) DNS(ctx context.Context, data []byte) ([]byte, []string, er
 			return pack()
 		}
 		answer, e := exchangeVPNDNS(ctx, policy, request)
+		b.mu.RLock()
+		defer b.mu.RUnlock()
+		if b.policy != policy {
+			return nil, nil, errTUNPolicyChanged
+		}
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
 		if e != nil {
 			response.Rcode = dns.RcodeServerFailure
 			return pack()
@@ -120,6 +149,16 @@ func (b *tunBackend) DNS(ctx context.Context, data []byte) ([]byte, []string, er
 		return d, nil, e
 	}
 	_, ip, e := policy.resolver.Resolve(ctx, strings.TrimSuffix(question.Name, "."))
+	// Publish the answer and domain bindings only for the policy that
+	// authorized this lookup; reconnect may have replaced it during I/O.
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.policy != policy {
+		return nil, nil, errTUNPolicyChanged
+	}
+	if ctx.Err() != nil {
+		return nil, nil, ctx.Err()
+	}
 	if e != nil {
 		response.Rcode = dns.RcodeServerFailure
 		return pack()
