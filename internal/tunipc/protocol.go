@@ -11,9 +11,12 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/mythologyli/zju-connect/log"
 )
 
 const MaxFrame = 1 << 20
@@ -168,9 +171,14 @@ func (p *Peer) send(m Message) error {
 	return nil
 }
 func (p *Peer) Emit(m Message) error { m.Kind = "event"; return p.send(m) }
-func (p *Peer) Call(ctx context.Context, m Message) (Message, error) {
+func (p *Peer) Call(ctx context.Context, m Message) (reply Message, err error) {
 	m.ID = p.next.Add(1)
 	m.Kind = "request"
+	diagnostic := p.controlDiagnostic(ctx, m, "send")
+	if diagnostic != nil {
+		defer func() { diagnostic.Finish("returned", err) }()
+		diagnostic.Step("wait_pending_lock")
+	}
 	ch := make(chan Message, 1)
 	p.mu.Lock()
 	if len(p.pending) >= 64 {
@@ -180,8 +188,14 @@ func (p *Peer) Call(ctx context.Context, m Message) (Message, error) {
 	p.pending[m.ID] = ch
 	p.mu.Unlock()
 	defer func() { p.mu.Lock(); delete(p.pending, m.ID); p.mu.Unlock() }()
+	if diagnostic != nil {
+		diagnostic.Step("send_request")
+	}
 	if e := p.send(m); e != nil {
 		return Message{}, e
+	}
+	if diagnostic != nil {
+		diagnostic.Step("wait_reply")
 	}
 	select {
 	case r := <-ch:
@@ -197,6 +211,23 @@ func (p *Peer) Call(ctx context.Context, m Message) (Message, error) {
 		return Message{}, ctx.Err()
 	case <-p.done:
 		return Message{}, net.ErrClosed
+	}
+}
+
+// Trace only control operations, never packet traffic, DNS payloads or pings.
+func (p *Peer) controlDiagnostic(ctx context.Context, m Message, direction string) *log.Operation {
+	switch m.Op {
+	case "hello", "prepare", "release", "attach", "update", "detach", "shutdown":
+		prefix := fmt.Sprintf("[TUN IPC pid=%d profile=%q session=%q attachment=%q policy=%d request=%d direction=%s] ",
+			os.Getpid(), m.Ref.Profile, m.Ref.Session, m.Ref.Attachment, m.Ref.Policy, m.ID, direction)
+		trace := log.BeginOperation(prefix, "worker_"+m.Op, ctx.Done())
+		p.mu.Lock()
+		pending, active := len(p.pending), len(p.requests)
+		p.mu.Unlock()
+		log.Printf("%spending_requests=%d active_handlers=%d", prefix, pending, active)
+		return trace
+	default:
+		return nil
 	}
 }
 func (p *Peer) read() {
@@ -255,6 +286,11 @@ func (p *Peer) read() {
 			defer func() { cancel(); p.mu.Lock(); delete(p.requests, m.ID); p.mu.Unlock(); <-p.slots }()
 			r := Message{}
 			var err error
+			diagnostic := p.controlDiagnostic(ctx, m, "handle")
+			if diagnostic != nil {
+				defer func() { diagnostic.Finish("returned", err) }()
+				diagnostic.Step("handler")
+			}
 			if m.Op != "ping" && p.handler == nil {
 				err = errors.New("unsupported IPC request")
 			} else if m.Op != "ping" {
@@ -267,7 +303,11 @@ func (p *Peer) read() {
 			if err != nil {
 				r.Error = err.Error()
 			}
-			_ = p.send(r)
+			if diagnostic != nil {
+				diagnostic.Step("send_reply")
+			}
+			sendErr := p.send(r)
+			err = errors.Join(err, sendErr)
 		}(m)
 	}
 }

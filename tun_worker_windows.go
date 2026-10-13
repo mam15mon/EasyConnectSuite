@@ -621,6 +621,11 @@ func runTUNWorker(args []string) (result error) {
 type workerLog struct{ peer *tunipc.Peer }
 
 func (w workerLog) Write(data []byte) (int, error) {
+	// Diagnostic evidence must survive a broken control pipe. The worker's
+	// stderr already belongs to its private crash log; write it there as well.
+	if bytes.Contains(data, []byte("operation=")) {
+		_, _ = os.Stderr.Write(data)
+	}
 	text := strings.TrimSpace(string(data))
 	if len(text) > 4096 {
 		text = text[:4096]
