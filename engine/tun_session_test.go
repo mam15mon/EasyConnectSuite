@@ -282,3 +282,21 @@ func TestStopCancelsPendingTUNRecovery(t *testing.T) {
 		t.Fatal("Stop retained recovering TUN")
 	}
 }
+
+func TestTUNLaterWorkerLossCanRecoverAgain(t *testing.T) {
+	e, c, events := recoveryTestEngine(t)
+	c.attachment.Close(context.Background())
+	awaitTUNState(t, events, "on")
+	e.tunSession.op.Lock()
+	second := c.attachment
+	// Simulate a later suspend/resume after the replacement has stayed healthy.
+	e.tunSession.recoveryAfter = time.Now().Add(-time.Second)
+	e.tunSession.op.Unlock()
+	second.Close(context.Background())
+	awaitTUNState(t, events, "on")
+	e.tunSession.op.Lock()
+	defer e.tunSession.op.Unlock()
+	if c.calls != 3 || c.attachment == second {
+		t.Fatal("later worker loss remained permanently disabled")
+	}
+}

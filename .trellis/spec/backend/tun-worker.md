@@ -2,7 +2,7 @@
 
 ## 1. Scope / Trigger
 
-Applies to Windows GUI TUN toggles, reconnect resource publication, process entry, named pipes, DNS and route teardown. GUI owns authentication, gVisor, resolver/fake-IP registry and SOCKS/HTTP listeners. Only VPN.exe --tun-worker owns Wintun/system stack/routes/NRPT. Never restart or elevate the GUI to attach TUN. No automatic Worker restart or authentication compensation.
+Applies to Windows GUI TUN toggles, reconnect resource publication, process entry, named pipes, DNS and route teardown. GUI owns authentication, gVisor, resolver/fake-IP registry and SOCKS/HTTP listeners. Only VPN.exe --tun-worker owns Wintun/system stack/routes/NRPT. Never restart or elevate the GUI to attach TUN. Worker transport loss may trigger bounded attachment recovery after confirmed cleanup; never compensate by reauthenticating the VPN.
 
 ## 2. Signatures
 
@@ -31,6 +31,8 @@ type TUNAttachment interface {
 - Spec passes ref/slot/prefixes/names. Slots 0..63; canonical IPv4 prefixes with no default route. Worker rejects duplicate profile/slot and non-increasing policy versions. GUI validates actual IPv4 TCP/UDP destination/port and attachment ref before Dial/DNS. GUI owns domain ACL bindings, never accepts Worker-supplied authorization.
 - loadPolicy saves resourceIPs/resourceDomains before automatic ZJU additions and clones maps. TUN tunView shares resolver/stack but has strict resource dialer. App builds ordinary proxy policy independently of saved TUN intent; Options.TUNEnabled requests startup attachment after proxy setup. Hot toggles never close/replace proxy policy or resolver. DNS returns approved dynamic /32s; Worker commits routes before replying, and never creates /32 where original server prefix covers the address.
 - VPNStatus adds tunState=off/attaching/on/detaching/error and tunError. Running tunMode reports actual attachment; disconnected UI uses saved preference. TUN failure preserves VPN State/Running/IP/duration/resources. Connected hot toggles allowed; initial connecting/stopping blocked; reconnecting can detach only. Save intent first, perform UAC/IPC outside App.mu, rollback only target preference on failure. Delete/failed login/cancel/exit release reservations. Last attachment and reservation releases Worker.
+- Engine retains runtime TUN intent independently of the attachment. Explicit disable and Stop clear intent; policy refresh alone never reenables a detached TUN. Worker loss allows one immediate recovery attempt with a one-minute minimum interval between automatic attempts, with no timer/retry loop. Later independent losses may recover again. Explicit enable resets this limit. Failed elevation remains an error.
+- GUI retains the old Worker process handle and waits up to 45 seconds for exit before notifying attachment loss. Worker cleanup failures propagate as a nonzero exit code. Unconfirmed exit/cleanup blocks relaunch and remains an explicit error; do not overwrite residue with a new attachment.
 - GUI is sole engine.log writer. Worker progress/log events are bounded text sent over IPC; Engine records TUN state and errors with profile identity. Worker stderr uses tun-worker-crash.log. Close-to-tray retains connection/heartbeat; real shutdown/EOF/heartbeat loss/parent death cleans ingress. Startup probes only; authorized Worker cleans confirmed own residue.
 
 ## 4. Validation & Error Matrix
@@ -44,7 +46,7 @@ type TUNAttachment interface {
 | Missing resources or default route | TUN error, no unrestricted VPN forwarding |
 | Exact route or overlapping DNS ownership | TUN conflict, other ingress preserved |
 | Policy update fails | Close only failed ingress before returning error; recovered VPN stays recovered |
-| Worker loss | TUN error; close TUN flows, preserve VPN/proxy; no automatic relaunch |
+| Worker loss | Close TUN flows, preserve VPN/proxy, report interruption; if still desired, attempt one replacement after old Worker exit and successful cleanup, at most once per minute |
 | Cleanup fails | Surface TUN error/residue; do not reattach to conceal failure |
 
 ## 5. Good / Base / Bad Cases

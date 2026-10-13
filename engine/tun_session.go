@@ -7,20 +7,21 @@ import (
 	"github.com/mythologyli/zju-connect/client"
 	"net/netip"
 	"sync"
+	"time"
 
 	"EasyConnectSuite/internal/tunipc"
 )
 
 type tunSession struct {
-	op                sync.Mutex
-	mu                sync.Mutex
-	status            TUNStatus
-	attachment        TUNAttachment
-	backend           *tunBackend
-	cancel            context.CancelFunc
-	spec              TUNSpec
-	desired           bool
-	recoveryAvailable bool
+	op            sync.Mutex
+	mu            sync.Mutex
+	status        TUNStatus
+	attachment    TUNAttachment
+	backend       *tunBackend
+	cancel        context.CancelFunc
+	spec          TUNSpec
+	desired       bool
+	recoveryAfter time.Time
 }
 
 func (e *Engine) TUNState() TUNStatus {
@@ -51,19 +52,19 @@ func (e *Engine) SetTUN(ctx context.Context, enabled bool) error {
 	defer t.op.Unlock()
 	if !enabled {
 		t.desired = false
-		t.recoveryAvailable = false
+		t.recoveryAfter = time.Time{}
 		return e.detachTUN(ctx)
 	}
 	err := e.attachTUN(ctx)
 	if err == nil {
 		t.desired = true
-		t.recoveryAvailable = true
+		t.recoveryAfter = time.Time{}
 	}
 	return err
 }
 
-// attachTUN requires tunSession.op. Automatic recovery consumes a single attempt;
-// only an explicit successful enable arms another attempt.
+// attachTUN requires tunSession.op. Automatic recovery is rate limited separately
+// so a replacement Worker that immediately fails cannot trigger an elevation loop.
 func (e *Engine) attachTUN(ctx context.Context) error {
 	t := &e.tunSession
 	if !e.running.Load() || e.ctx.Err() != nil {
@@ -176,10 +177,10 @@ func (e *Engine) failTUN(cause error, workerLost bool) {
 	t := &e.tunSession
 	cleanupErr := e.detachTUN(context.Background())
 	e.tunStatus("error", errors.Join(cause, cleanupErr))
-	if !workerLost || cleanupErr != nil || !t.desired || !t.recoveryAvailable || e.ctx.Err() != nil {
+	if !workerLost || cleanupErr != nil || !t.desired || time.Now().Before(t.recoveryAfter) || e.ctx.Err() != nil {
 		return
 	}
-	t.recoveryAvailable = false
+	t.recoveryAfter = time.Now().Add(time.Minute)
 	e.logf("TUN Worker lost; attempting one attachment recovery")
 	_ = e.attachTUN(e.ctx) // attachTUN publishes the error if recovery fails.
 }
