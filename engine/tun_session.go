@@ -12,13 +12,15 @@ import (
 )
 
 type tunSession struct {
-	op         sync.Mutex
-	mu         sync.Mutex
-	status     TUNStatus
-	attachment TUNAttachment
-	backend    *tunBackend
-	cancel     context.CancelFunc
-	spec       TUNSpec
+	op                sync.Mutex
+	mu                sync.Mutex
+	status            TUNStatus
+	attachment        TUNAttachment
+	backend           *tunBackend
+	cancel            context.CancelFunc
+	spec              TUNSpec
+	desired           bool
+	recoveryAvailable bool
 }
 
 func (e *Engine) TUNState() TUNStatus {
@@ -48,8 +50,22 @@ func (e *Engine) SetTUN(ctx context.Context, enabled bool) error {
 	t.op.Lock()
 	defer t.op.Unlock()
 	if !enabled {
+		t.desired = false
+		t.recoveryAvailable = false
 		return e.detachTUN(ctx)
 	}
+	err := e.attachTUN(ctx)
+	if err == nil {
+		t.desired = true
+		t.recoveryAvailable = true
+	}
+	return err
+}
+
+// attachTUN requires tunSession.op. Automatic recovery consumes a single attempt;
+// only an explicit successful enable arms another attempt.
+func (e *Engine) attachTUN(ctx context.Context) error {
+	t := &e.tunSession
 	if !e.running.Load() || e.ctx.Err() != nil {
 		return errors.New("VPN 会话不可附着 TUN")
 	}
@@ -99,8 +115,7 @@ func (e *Engine) SetTUN(ctx context.Context, enabled bool) error {
 		if t.attachment != attachment {
 			return
 		}
-		err := errors.Join(errors.New("TUN Worker 连接已断开"), e.detachTUN(context.Background()))
-		e.tunStatus("error", err)
+		e.failTUN(errors.New("TUN Worker 连接已断开"), true)
 	}()
 	return nil
 }
@@ -146,8 +161,25 @@ func (e *Engine) updateTUN(p *connectionPolicy, discover bool) {
 		}
 	}
 	if err != nil {
-		err = errors.Join(err, e.detachTUN(context.Background()))
-		e.tunStatus("error", err)
-		e.logf("TUN policy update failed: %v", err)
+		lost := false
+		select {
+		case <-t.attachment.Done():
+			lost = true
+		default:
+		}
+		e.failTUN(err, lost)
 	}
+}
+
+// Caller holds tunSession.op; cleanup failure must never be hidden by reattach.
+func (e *Engine) failTUN(cause error, workerLost bool) {
+	t := &e.tunSession
+	cleanupErr := e.detachTUN(context.Background())
+	e.tunStatus("error", errors.Join(cause, cleanupErr))
+	if !workerLost || cleanupErr != nil || !t.desired || !t.recoveryAvailable || e.ctx.Err() != nil {
+		return
+	}
+	t.recoveryAvailable = false
+	e.logf("TUN Worker lost; attempting one attachment recovery")
+	_ = e.attachTUN(e.ctx) // attachTUN publishes the error if recovery fails.
 }

@@ -26,21 +26,25 @@ type tunManager struct {
 	mu           sync.Mutex
 	peer         *tunipc.Peer
 	pid          uint32
+	workerDone   chan struct{}
+	recoveryErr  error
 	attachments  map[string]*remoteTUN
 	reservations map[string]bool
 	flows        chan struct{}
 	launch       func(string) (windows.Handle, error)
 }
 type remoteTUN struct {
-	manager *tunManager
-	mu      sync.RWMutex
-	spec    engine.TUNSpec
-	backend engine.TUNBackend
-	ctx     context.Context
-	cancel  context.CancelFunc
-	done    chan struct{}
-	once    sync.Once
-	streams sync.Map
+	manager    *tunManager
+	mu         sync.RWMutex
+	spec       engine.TUNSpec
+	backend    engine.TUNBackend
+	ctx        context.Context
+	cancel     context.CancelFunc
+	done       chan struct{}
+	once       sync.Once
+	streams    sync.Map
+	workerDone <-chan struct{}
+	lossErr    error
 }
 
 func newTUNManager() *tunManager {
@@ -49,7 +53,11 @@ func newTUNManager() *tunManager {
 func (m *tunManager) ensure(ctx context.Context) error {
 	m.mu.Lock()
 	p := m.peer
+	recoveryErr := m.recoveryErr
 	m.mu.Unlock()
+	if recoveryErr != nil {
+		return recoveryErr
+	}
 	if p != nil {
 		select {
 		case <-p.Done():
@@ -93,6 +101,8 @@ func (m *tunManager) ensure(ctx context.Context) error {
 	m.mu.Lock()
 	m.peer = peer
 	m.pid = pid
+	m.workerDone = make(chan struct{})
+	workerDone := m.workerDone
 	m.mu.Unlock()
 	peer.Heartbeat()
 	if _, err = peer.Call(handshake, tunipc.Message{Op: "hello"}); err != nil {
@@ -105,12 +115,13 @@ func (m *tunManager) ensure(ctx context.Context) error {
 	}
 	go func() {
 		defer windows.CloseHandle(handle)
+		defer close(workerDone)
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-peer.Done():
-				m.lost(peer)
+				m.lost(peer, waitTUNWorkerExit(handle))
 				return
 			case <-ticker.C:
 				r, e := windows.WaitForSingleObject(handle, 0)
@@ -122,13 +133,14 @@ func (m *tunManager) ensure(ctx context.Context) error {
 	}()
 	return nil
 }
-func (m *tunManager) lost(peer *tunipc.Peer) {
+func (m *tunManager) lost(peer *tunipc.Peer, cleanupErr error) {
 	m.mu.Lock()
 	if m.peer != peer {
 		m.mu.Unlock()
 		return
 	}
 	m.peer = nil
+	m.recoveryErr = cleanupErr
 	m.reservations = map[string]bool{}
 	list := make([]*remoteTUN, 0, len(m.attachments))
 	for _, a := range m.attachments {
@@ -137,6 +149,9 @@ func (m *tunManager) lost(peer *tunipc.Peer) {
 	m.attachments = map[string]*remoteTUN{}
 	m.mu.Unlock()
 	for _, a := range list {
+		a.mu.Lock()
+		a.lossErr = cleanupErr
+		a.mu.Unlock()
 		a.finish()
 	}
 }
@@ -207,6 +222,7 @@ func (m *tunManager) Attach(ctx context.Context, spec engine.TUNSpec, b engine.T
 	ac, cancel := context.WithCancel(ctx)
 	a := &remoteTUN{manager: m, spec: spec, backend: b, ctx: ac, cancel: cancel, done: make(chan struct{})}
 	m.mu.Lock()
+	a.workerDone = m.workerDone
 	m.attachments[spec.Attachment] = a
 	m.mu.Unlock()
 	_, err := m.request(ctx, tunipc.Message{Op: "attach", Ref: spec.Ref, Spec: &spec})
@@ -242,9 +258,13 @@ func (a *remoteTUN) Update(ctx context.Context, spec engine.TUNSpec) error {
 	a.streams.Range(func(key, value any) bool { key.(io.Closer).Close(); return true })
 	a.mu.Unlock()
 	_, err := a.manager.request(ctx, tunipc.Message{Op: "update", Ref: spec.Ref, Spec: &spec})
+	if err != nil {
+		err = errors.Join(err, a.waitWorkerCleanup(ctx))
+	}
 	return err
 }
 func (a *remoteTUN) Close(ctx context.Context) error {
+	cleanupErr := a.waitWorkerCleanup(ctx)
 	m := a.manager
 	m.op.Lock()
 	defer m.op.Unlock()
@@ -262,7 +282,10 @@ func (a *remoteTUN) Close(ctx context.Context) error {
 		delete(m.attachments, ref.Attachment)
 		m.mu.Unlock()
 	}
-	return errors.Join(err, m.idle(ctx))
+	a.mu.RLock()
+	lossErr := a.lossErr
+	a.mu.RUnlock()
+	return errors.Join(cleanupErr, lossErr, err, m.idle(ctx))
 }
 func (m *tunManager) Close() {
 	m.op.Lock()
@@ -518,7 +541,7 @@ func (w *workerServer) cleanup() error {
 	}
 	return err
 }
-func runTUNWorker(args []string) error {
+func runTUNWorker(args []string) (result error) {
 	if len(args) != 3 || args[0] != "--tun-worker" {
 		return errors.New("invalid TUN Worker arguments")
 	}
@@ -566,6 +589,7 @@ func runTUNWorker(args []string) error {
 		defer w.mu.Unlock()
 		if err := w.cleanup(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
+			result = errors.Join(result, err)
 		}
 	}()
 	for {
@@ -596,4 +620,47 @@ func (w workerLog) Write(data []byte) (int, error) {
 	}
 	err := w.peer.Emit(tunipc.Message{Op: "log", Text: text})
 	return len(data), err
+}
+
+// A dead control pipe does not imply that the old process finished removing
+// routes. Keep its handle until cleanup completes before permitting replacement.
+func waitTUNWorkerExit(handle windows.Handle) error {
+	state, err := windows.WaitForSingleObject(handle, 45000)
+	if err != nil {
+		return fmt.Errorf("wait TUN Worker cleanup: %w", err)
+	}
+	if state != windows.WAIT_OBJECT_0 {
+		return errors.New("TUN Worker cleanup timed out")
+	}
+	var code uint32
+	if err := windows.GetExitCodeProcess(handle, &code); err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("TUN Worker exited with code %d; cleanup is unconfirmed", code)
+	}
+	return nil
+}
+
+func (a *remoteTUN) waitWorkerCleanup(ctx context.Context) error {
+	m := a.manager
+	m.mu.Lock()
+	peer := m.peer
+	m.mu.Unlock()
+	if peer != nil {
+		select {
+		case <-peer.Done():
+		default:
+			return nil
+		}
+	}
+	if a.workerDone == nil {
+		return nil
+	}
+	select {
+	case <-a.workerDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
