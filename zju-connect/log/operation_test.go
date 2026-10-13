@@ -85,6 +85,9 @@ func TestStalledOperationCapturesEvidenceAfterCancellation(t *testing.T) {
 	awaitDiagnostic(t, w, "phase=stack_end")
 	o.Finish("stopped", context.Canceled)
 	data := w.text()
+	if !strings.Contains(data, "goroutine="+o.goroutine) || !strings.Contains(data, "goroutine "+o.goroutine+" [") {
+		t.Fatal("operation caller cannot be matched to captured stack")
+	}
 	for _, marker := range []string{"synthetic%profile", "phase=cancel_requested", "phase=pending stage=wait_synthetic_lock", "root_cause=undetermined", "canceled=true", "[chan receive]", "waitForDiagnosticEvidence(...)", "phase=stack_begin", "truncated=false", "phase=end outcome=failed"} {
 		if !strings.Contains(data, marker) {
 			t.Errorf("missing %q", marker)

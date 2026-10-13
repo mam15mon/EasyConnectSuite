@@ -28,6 +28,7 @@ type Operation struct {
 	id         uint64
 	prefix     string
 	name       string
+	goroutine  string
 	cancelled  <-chan struct{}
 	started    time.Time
 	mu         sync.Mutex
@@ -44,15 +45,18 @@ func BeginOperation(prefix, name string, cancelled <-chan struct{}) *Operation {
 
 func beginOperation(prefix, name string, cancelled <-chan struct{}, threshold, poll time.Duration) *Operation {
 	now := time.Now()
+	// Match this operation's caller to the goroutine header in a later dump.
+	var header [64]byte
+	caller := strings.Fields(string(header[:runtime.Stack(header[:], false)]))[1]
 	o := &Operation{id: nextOperation.Add(1), prefix: prefix, name: name, cancelled: cancelled,
-		started: now, stage: "begin", stageSince: now, done: make(chan struct{}), watchDone: make(chan struct{})}
+		goroutine: caller, started: now, stage: "begin", stageSince: now, done: make(chan struct{}), watchDone: make(chan struct{})}
 	o.write("phase=begin")
 	go o.watch(threshold, poll)
 	return o
 }
 
 func (o *Operation) write(format string, args ...any) {
-	Printf("%soperation=%d name=%s %s", o.prefix, o.id, o.name, fmt.Sprintf(format, args...))
+	Printf("%soperation=%d name=%s goroutine=%s %s", o.prefix, o.id, o.name, o.goroutine, fmt.Sprintf(format, args...))
 }
 
 func (o *Operation) Step(stage string) {
