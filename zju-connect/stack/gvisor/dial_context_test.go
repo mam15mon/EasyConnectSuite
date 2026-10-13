@@ -25,7 +25,7 @@ func TestL3DialTCPHonorsContext(t *testing.T) {
 		finished := make(chan error, 1)
 		go func() {
 			conn, err := s.DialTCP(ctx, &net.TCPAddr{IP: net.IP{192, 0, 2, 1}, Port: 443})
-			if conn != nil {
+			if err == nil {
 				conn.Close()
 			}
 			finished <- err
