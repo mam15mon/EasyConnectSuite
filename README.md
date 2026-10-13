@@ -4,6 +4,8 @@
 
 ## 目录结构
 
+本地 VPN 核心模块名为 `EasyConnectSuite/vpncore`，代码导入统一使用该路径，例如 `EasyConnectSuite/vpncore/client/easyconnect`。根模块通过 `replace EasyConnectSuite/vpncore => ./zju-connect` 使用本地源码；`zju-connect/` 保留为来源目录名，原有许可证与来源说明继续保留。
+
 ```
 EasyConnectSuite/
 ├── main.go            Wails 应用入口、权限及遗留规则清理
