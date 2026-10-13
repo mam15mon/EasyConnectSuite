@@ -55,7 +55,7 @@ func (e *Engine) SetTUN(ctx context.Context, enabled bool) error {
 		t.recoveryAfter = time.Time{}
 		return e.detachTUN(ctx)
 	}
-	err := e.attachTUN(ctx)
+	err := e.attachTUN(ctx, true)
 	if err == nil {
 		t.desired = true
 		t.recoveryAfter = time.Time{}
@@ -65,7 +65,7 @@ func (e *Engine) SetTUN(ctx context.Context, enabled bool) error {
 
 // attachTUN requires tunSession.op. Automatic recovery is rate limited separately
 // so a replacement Worker that immediately fails cannot trigger an elevation loop.
-func (e *Engine) attachTUN(ctx context.Context) error {
+func (e *Engine) attachTUN(ctx context.Context, discover bool) error {
 	t := &e.tunSession
 	if !e.running.Load() || e.ctx.Err() != nil {
 		return errors.New("VPN 会话不可附着 TUN")
@@ -87,10 +87,14 @@ func (e *Engine) attachTUN(ctx context.Context) error {
 	defer stop()
 	t.cancel = cancel
 	t.backend = newTUNBackend(attachCtx, p)
+	previousNames := t.spec.Names
 	t.spec = TUNSpec{Ref: tunipc.Ref{Profile: e.opts.ConnectionID, Session: fmt.Sprint(e.id), Attachment: tunipc.NewName(), Policy: 1}, Slot: e.opts.TUNSlot}
 	t.spec.Prefixes, err = resourcePrefixes(p.ips)
 	if err == nil {
-		t.spec.Names = discoverDNSNamespaces(attachCtx, p)
+		t.spec.Names = previousNames
+		if discover {
+			t.spec.Names = discoverDNSNamespaces(attachCtx, p)
+		}
 		err = t.spec.Validate()
 	}
 	if err == nil {
@@ -182,5 +186,7 @@ func (e *Engine) failTUN(cause error, workerLost bool) {
 	}
 	t.recoveryAfter = time.Now().Add(time.Minute)
 	e.logf("TUN Worker lost; attempting one attachment recovery")
-	_ = e.attachTUN(e.ctx) // attachTUN publishes the error if recovery fails.
+	// Recovery can run inside the VPN relogin callback. A DNS probe here
+	// would depend on the very tunnel rebuild waiting for this callback.
+	_ = e.attachTUN(e.ctx, false) // attachTUN publishes the error if recovery fails.
 }

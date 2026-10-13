@@ -300,3 +300,25 @@ func TestTUNLaterWorkerLossCanRecoverAgain(t *testing.T) {
 		t.Fatal("later worker loss remained permanently disabled")
 	}
 }
+
+func TestTUNRecoveryReusesDNSNamespacesWithoutTunnelProbes(t *testing.T) {
+	e, c, events := recoveryTestEngine(t)
+	vpn := &recordingVPNStack{}
+	p := e.router.current.Load()
+	p.stack = vpn
+	p.useRemoteDNS = true
+	p.dnsName = "10.0.0.53"
+	p.resourceDomains = client.DomainResources{"corp.internal": {{Protocol: "tcp", PortMin: 443, PortMax: 443}}}
+	e.tunSession.spec.Names = []string{"corp.internal", ".corp.internal"}
+	c.attachment.Close(context.Background())
+	awaitTUNState(t, events, "on")
+	e.tunSession.op.Lock()
+	defer e.tunSession.op.Unlock()
+	if vpn.calls != 0 {
+		t.Fatal("automatic attachment probed a tunnel still being rebuilt")
+	}
+	names := e.tunSession.spec.Names
+	if len(names) != 2 || names[0] != "corp.internal" || names[1] != ".corp.internal" {
+		t.Fatalf("known DNS namespaces lost: %v", names)
+	}
+}
