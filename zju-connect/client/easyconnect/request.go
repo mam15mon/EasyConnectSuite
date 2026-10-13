@@ -20,7 +20,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -74,9 +73,8 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
-		debug.PrintStack()
 		return err
 	}
 
@@ -90,18 +88,15 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 		return err
 	}
 
-	log.DebugPrintln("Response:", buf.String())
-
-	vpnMatch := regexp.MustCompile(`<VPNVERSION>(.*)</VPNVERSION>`).FindSubmatch(buf.Bytes())
-	if vpnMatch != nil {
-		log.Printf("VPN server version: %s", string(vpnMatch[1]))
+	c.twfID, err = requiredAuthField(buf.Bytes(), "TwfID")
+	if err != nil {
+		return err
 	}
-
-	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
 	log.Println("Authentication session received")
-
-	rsaKey := string(regexp.MustCompile(`<RSA_ENCRYPT_KEY>(.*)</RSA_ENCRYPT_KEY>`).FindSubmatch(buf.Bytes())[1])
-	log.Printf("RSA key: %s", rsaKey)
+	rsaKey, err := requiredAuthField(buf.Bytes(), "RSA_ENCRYPT_KEY")
+	if err != nil {
+		return err
+	}
 
 	rsaExpMatch := regexp.MustCompile(`<RSA_ENCRYPT_EXP>(.*)</RSA_ENCRYPT_EXP>`).FindSubmatch(buf.Bytes())
 	rsaExp := ""
@@ -111,7 +106,6 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 		log.Printf("Warning: No RSA_ENCRYPT_EXP, using default")
 		rsaExp = "65537"
 	}
-	log.Printf("RSA exp: %s", rsaExp)
 
 	csrfMatch := regexp.MustCompile(`<CSRF_RAND_CODE>(.*)</CSRF_RAND_CODE>`).FindSubmatch(buf.Bytes())
 	csrfCode := ""
@@ -124,9 +118,14 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	}
 
 	pubKey := rsa.PublicKey{}
-	pubKey.E, _ = strconv.Atoi(rsaExp)
+	pubKey.E, err = strconv.Atoi(rsaExp)
+	if err != nil || pubKey.E < 3 || pubKey.E > 1<<31-1 || pubKey.E%2 == 0 {
+		return errors.New("login_auth: invalid RSA exponent")
+	}
 	modulus := big.Int{}
-	modulus.SetString(rsaKey, 16)
+	if _, ok := modulus.SetString(rsaKey, 16); !ok || modulus.Sign() <= 0 {
+		return errors.New("login_auth: invalid RSA modulus")
+	}
 	pubKey.N = &modulus
 
 	encryptedPassword, err := rsa.EncryptPKCS1v15(rand.Reader, &pubKey, []byte(password))
@@ -135,10 +134,12 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	}
 	encryptedPasswordHex := hex.EncodeToString(encryptedPassword)
 
-	rndImgMatch := regexp.MustCompile(`<RndImg>(.*)</RndImg>`).FindSubmatch(buf.Bytes())[1]
-	rndImg := "0"
-	if rndImgMatch != nil {
-		rndImg = string(rndImgMatch)
+	rndImg, err := requiredAuthField(buf.Bytes(), "RndImg")
+	if err != nil {
+		return err
+	}
+	if rndImg != "0" && rndImg != "1" {
+		return errors.New("login_auth: invalid RndImg")
 	}
 
 	randCode := ""
@@ -152,7 +153,7 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 		req.Header.Set("Cookie", "TWFID="+c.twfID)
 		req.Header.Set("User-Agent", "EasyConnect_windows")
 
-		resp, err = c.httpClient.Do(req)
+		resp, err = c.doRequest(req)
 		if err != nil {
 			return err
 		}
@@ -195,19 +196,19 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 	req.Header.Set("User-Agent", "EasyConnect_windows")
 
-	resp, err = c.httpClient.Do(req)
+	resp, err = c.doRequest(req)
 	if err != nil {
 		return err
 	}
 
 	buf.Reset()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 
 	if strings.Contains(buf.String(), "<NextService>auth/sms</NextService>") || strings.Contains(buf.String(), "<NextAuth>2</NextAuth>") {
 		log.Print("SMS code required")
@@ -230,14 +231,14 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	if strings.Contains(buf.String(), "<NextAuth>-1</NextAuth>") || !strings.Contains(buf.String(), "<NextAuth>") {
 		log.Print("No NextAuth found")
 	} else {
-		return errors.New("Not implemented auth: " + buf.String())
+		return authReplyError("unsupported authentication method", buf.Bytes())
 	}
 
 	if !strings.Contains(buf.String(), "<Result>1</Result>") {
 		if strings.Contains(buf.String(), "<Result>0</Result>") {
-			return fmt.Errorf("%w: %s", ErrLoginRejected, buf.String())
+			return fmt.Errorf("%w: %v", ErrLoginRejected, authReplyError("password rejected", buf.Bytes()))
 		}
-		return errors.New("Login failed: " + buf.String())
+		return authReplyError("password login failed", buf.Bytes())
 	}
 
 	twfIDMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
@@ -261,25 +262,23 @@ func (c *Client) loginSMS() error {
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 	req.Header.Set("User-Agent", "EasyConnect_windows")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return err
 	}
 
 	var buf bytes.Buffer
 	buf.Reset()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
-
-	log.DebugPrintf("SMS request response: %s", buf.String())
 
 	if !strings.Contains(buf.String(), "验证码已发送到您的手机") && !strings.Contains(buf.String(), "请输入验证码：") && !strings.Contains(buf.String(), "<USER_PHONE>") {
-		return errors.New("unexpected SMS response: " + buf.String())
+		return authReplyError("SMS request failed", buf.Bytes())
 	}
 
 	log.Printf("SMS code is sent or still valid")
@@ -304,25 +303,22 @@ func (c *Client) loginSMS() error {
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 	req.Header.Set("User-Agent", "EasyConnect_windows")
 
-	resp, err = c.httpClient.Do(req)
+	resp, err = c.doRequest(req)
 	if err != nil {
 		return err
 	}
 
 	buf.Reset()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
-
-	log.DebugPrintf("SMS verification response: %s", buf.String())
 
 	if !strings.Contains(buf.String(), "Auth sms suc") && !strings.Contains(buf.String(), "欢迎访问") {
-		debug.PrintStack()
-		return errors.New("SMS code verification failed: " + buf.String())
+		return authReplyError("SMS verification failed", buf.Bytes())
 	}
 
 	twfIDMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
@@ -366,27 +362,29 @@ func (c *Client) loginTOTP() error {
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 	req.Header.Set("User-Agent", "EasyConnect_windows")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return err
 	}
 
 	var buf bytes.Buffer
 	buf.Reset()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 
 	if !strings.Contains(buf.String(), "Totp auth succ") {
-		debug.PrintStack()
-		return errors.New("TOTP verification failed: " + buf.String())
+		return authReplyError("TOTP verification failed", buf.Bytes())
 	}
 
-	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
+	c.twfID, err = requiredAuthField(buf.Bytes(), "TwfID")
+	if err != nil {
+		return err
+	}
 	log.Print("TOTP verification success")
 
 	return nil
@@ -402,20 +400,20 @@ func (c *Client) loginCert() error {
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 	req.Header.Set("User-Agent", "EasyConnect_windows")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return err
 	}
 
 	var buf bytes.Buffer
 	buf.Reset()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 
 	caCertPool := x509.NewCertPool()
 	ok := caCertPool.AppendCertsFromPEM(buf.Bytes())
@@ -439,27 +437,26 @@ func (c *Client) loginCert() error {
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 	req.Header.Set("User-Agent", "EasyConnect_windows")
 
-	resp, err = c.httpClient.Do(req)
+	resp, err = c.doRequest(req)
 	if err != nil {
 		return err
 	}
 
 	buf.Reset()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 
 	response := buf.String()
 	certSuccess := strings.Contains(response, "<Result>1</Result>") ||
 		strings.Contains(response, "Login successfully") ||
 		strings.Contains(response, "Auth cert suc")
 	if !certSuccess {
-		debug.PrintStack()
-		return errors.New("Cert verification failed: " + response)
+		return authReplyError("certificate verification failed", buf.Bytes())
 	}
 
 	twfIDMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
@@ -487,7 +484,7 @@ func (c *Client) requestConfig() (string, error) {
 	}
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return "", err
 	}
@@ -533,7 +530,7 @@ func (c *Client) requestUpdateSession(ctx context.Context) error {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return safeRequestError(err)
 	}
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
@@ -558,10 +555,10 @@ func (c *Client) requestUpdateSession(ctx context.Context) error {
 		ErrorCode string `xml:"ErrorCode"`
 	}
 	if err := xml.Unmarshal(body, &reply); err != nil {
-		return fmt.Errorf("update_session: parse reply: %w", err)
+		return errors.New("update_session: invalid XML reply")
 	}
 	if reply.Message != "success" || reply.ErrorCode != "1" {
-		return fmt.Errorf("update_session: unexpected reply message=%q error_code=%q", reply.Message, reply.ErrorCode)
+		return authReplyError("update_session rejected", body)
 	}
 	return nil
 }
@@ -576,19 +573,19 @@ func (c *Client) requestResources() (string, error) {
 	}
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return "", err
 	}
 
 	var buf bytes.Buffer
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return "", err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 
 	// EasyConnect Suite fork: persist the raw resource list so an empty
 	// parse result can be diagnosed from the actual server payload.
@@ -642,7 +639,13 @@ func (c *Client) requestToken() error {
 		return err
 	}
 
+	if conn.HandshakeState.ServerHello == nil {
+		return errors.New("tunnel token: missing ServerHello")
+	}
 	sessionID := hex.EncodeToString(conn.HandshakeState.ServerHello.SessionId)
+	if len(sessionID) < 31 || len(c.twfID) != 16 {
+		return errors.New("tunnel token: invalid session ID length")
+	}
 
 	buf := make([]byte, 8)
 	n, err := conn.Read(buf)
@@ -687,7 +690,6 @@ func (c *Client) requestIP() error {
 	}
 
 	log.DebugPrintf("Request IP: wrote %d bytes", n)
-	log.DebugDumpHex(message[:n])
 
 	reply := make([]byte, 0x80)
 	n, err = conn.Read(reply)
@@ -696,13 +698,24 @@ func (c *Client) requestIP() error {
 	}
 
 	log.DebugPrintf("Request IP: read %d bytes", n)
-	log.DebugDumpHex(reply[:n])
 
+	if n < 8 {
+		return io.ErrUnexpectedEOF
+	}
 	if reply[0] != 0x00 {
 		return errors.New("unexpected request IP reply")
 	}
 
-	c.ip = reply[4:8]
+	ip := net.IP(reply[4:8])
+	if ip.IsUnspecified() || ip.IsMulticast() || ip.Equal(net.IPv4bcast) {
+		return errors.New("request IP: invalid IPv4 address")
+	}
+	if c.updateIP != nil {
+		if err := c.updateIP(append(net.IP(nil), ip...)); err != nil {
+			return fmt.Errorf("update tunnel IP: %w", err)
+		}
+	}
+	c.ip = ip
 	c.ipReverse = []byte{c.ip[3], c.ip[2], c.ip[1], c.ip[0]}
 	if c.underlayDialer != nil {
 		c.underlayDialer.ExcludeIP(c.ip)
@@ -745,4 +758,42 @@ func (c *Client) requestIPKeepAliveLoop() {
 			runtime.KeepAlive(conn)
 		}
 	}
+}
+
+// Authentication payloads may contain credentials even on failure. Only trusted
+// stage names and bounded numeric protocol codes may leave this boundary.
+func authReplyError(stage string, body []byte) error {
+	code := regexp.MustCompile(`<(?:ErrorCode|pwpErrorCode)>(-?[0-9]{1,10})</(?:ErrorCode|pwpErrorCode)>`).FindSubmatch(body)
+	if code != nil {
+		return fmt.Errorf("%s: code=%s", stage, code[1])
+	}
+	return errors.New(stage + ": invalid or rejected response")
+}
+
+func requiredAuthField(body []byte, name string) (string, error) {
+	match := regexp.MustCompile(`<` + name + `>([^<]+)</` + name + `>`).FindSubmatch(body)
+	if match == nil {
+		return "", fmt.Errorf("authentication: missing or empty %s", name)
+	}
+	return string(match[1]), nil
+}
+
+func safeRequestError(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return urlErr.Err
+	}
+	return err
+}
+
+func (c *Client) doRequest(req *http.Request) (*http.Response, error) {
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, safeRequestError(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("%s: unexpected HTTP status %d", req.URL.Path, resp.StatusCode)
+	}
+	return resp, nil
 }

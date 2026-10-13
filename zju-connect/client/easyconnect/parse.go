@@ -13,7 +13,6 @@ import (
 )
 
 func (c *Client) parseLineListFromConfig(config string) error {
-	log.DebugPrintf("Config: %s", config)
 
 	log.Println("Parsing line list from config...")
 
@@ -21,7 +20,7 @@ func (c *Client) parseLineListFromConfig(config string) error {
 
 	err := doc.ReadFromString(config)
 	if err != nil {
-		return err
+		return errors.New("invalid resource/config XML or address set")
 	}
 
 	conf := doc.SelectElement("Conf")
@@ -63,7 +62,6 @@ func (c *Client) parseLineListFromConfig(config string) error {
 }
 
 func (c *Client) parseResources(resources string) error {
-	log.DebugPrintf("Resources: %s", resources)
 
 	log.Println("Parsing resources...")
 
@@ -71,7 +69,7 @@ func (c *Client) parseResources(resources string) error {
 
 	err := doc.ReadFromString(resources)
 	if err != nil {
-		return err
+		return errors.New("invalid resource/config XML or address set")
 	}
 
 	ipSetBuilder := netaddr.IPSetBuilder{}
@@ -79,7 +77,11 @@ func (c *Client) parseResources(resources string) error {
 	c.domainResources = make(client.DomainResources)
 	c.dnsResource = make(map[string][]net.IP)
 
-	element := doc.SelectElement("Resource").SelectElement("Rcs")
+	resource := doc.SelectElement("Resource")
+	if resource == nil {
+		return errors.New("no Resource element found")
+	}
+	element := resource.SelectElement("Rcs")
 	if element == nil {
 		return errors.New("no Rcs element found")
 	}
@@ -88,7 +90,14 @@ func (c *Client) parseResources(resources string) error {
 	log.Printf("Resource list: %d Rc entries from server", len(rcEntries))
 
 	for _, rc := range rcEntries {
-		if rc.SelectAttr("type").Value == "1" || rc.SelectAttr("type").Value == "2" {
+		kind := rc.SelectAttr("type")
+		if kind == nil {
+			return errors.New("resource Rc missing type")
+		}
+		if kind.Value == "1" || kind.Value == "2" {
+			if rc.SelectAttr("proto") == nil {
+				return errors.New("resource Rc missing proto")
+			}
 			var protocol string
 			protoStr := rc.SelectAttr("proto").Value
 			if protoStr == "-1" {
@@ -211,9 +220,9 @@ func (c *Client) parseResources(resources string) error {
 		}
 	}
 
-	element = doc.SelectElement("Resource").SelectElement("Dns")
+	element = resource.SelectElement("Dns")
 	if element == nil {
-		return errors.New("no Rcs element found")
+		return errors.New("no Dns element found")
 	}
 
 	dnsListStr := element.SelectAttr("data")
@@ -242,7 +251,7 @@ func (c *Client) parseResources(resources string) error {
 
 	c.ipSet, err = ipSetBuilder.IPSet()
 	if err != nil {
-		return err
+		return errors.New("invalid resource/config XML or address set")
 	}
 
 	dnsServerStr := element.SelectAttr("dnsserver")
@@ -250,6 +259,7 @@ func (c *Client) parseResources(resources string) error {
 		return errors.New("no Dns dnsserver attribute found")
 	}
 
+	c.dnsServer = ""
 	c.dnsServers = c.dnsServers[:0]
 	for _, server := range strings.Split(dnsServerStr.Value, ";") {
 		if server != "" {

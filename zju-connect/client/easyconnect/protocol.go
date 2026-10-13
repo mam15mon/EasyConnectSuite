@@ -130,7 +130,6 @@ func (c *Client) RecvConn() (*tls.UConn, error) {
 		return nil, err
 	}
 	log.DebugPrintf("Recv handshake: wrote %d bytes", n)
-	log.DebugDumpHex(message[:n])
 
 	reply := make([]byte, 1500)
 	n, err = conn.Read(reply)
@@ -138,8 +137,10 @@ func (c *Client) RecvConn() (*tls.UConn, error) {
 		return nil, err
 	}
 	log.DebugPrintf("Recv handshake: read %d bytes", n)
-	log.DebugDumpHex(reply[:n])
 
+	if n == 0 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	if reply[0] != 0x01 {
 		return nil, errors.New("unexpected recv handshake reply")
 	}
@@ -204,7 +205,6 @@ func (c *Client) SendConn() (*tls.UConn, error) {
 		return nil, err
 	}
 	log.DebugPrintf("Send handshake: wrote %d bytes", n)
-	log.DebugDumpHex(message[:n])
 
 	reply := make([]byte, 1500)
 	n, err = conn.Read(reply)
@@ -213,8 +213,10 @@ func (c *Client) SendConn() (*tls.UConn, error) {
 		return nil, err
 	}
 	log.DebugPrintf("Send handshake: read %d bytes", n)
-	log.DebugDumpHex(reply[:n])
 
+	if n == 0 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	switch reply[0] {
 	case 0x02:
 		succeeded = true
