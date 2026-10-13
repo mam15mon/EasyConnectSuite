@@ -2,12 +2,15 @@ package easyconnect
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	stdlog "log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +24,10 @@ import (
 )
 
 func TestSetupReauthenticatesAfterShutdown(t *testing.T) {
+	var logs bytes.Buffer
+	previous := stdlog.Writer()
+	stdlog.SetOutput(&logs)
+	t.Cleanup(func() { stdlog.SetOutput(previous) })
 	c, logins, expired, rejected := reloginGateway(t, "")
 	if err := c.Setup(); err != nil {
 		t.Fatal(err)
@@ -35,6 +42,12 @@ func TestSetupReauthenticatesAfterShutdown(t *testing.T) {
 	}
 	if logins.Load() != 2 || c.twfID == oldID || *c.token == oldToken || c.requestIPConn == oldIPConn {
 		t.Fatal("reconnect did not replace authentication, token and IP connection")
+	}
+	for _, secret := range []string{"mock-user", "mock-password", oldID, c.twfID,
+		hex.EncodeToString(oldToken[:]), hex.EncodeToString(c.token[:])} {
+		if strings.Contains(logs.String(), secret) {
+			t.Fatal("authentication or reconnect logs exposed private fields")
+		}
 	}
 	if _, err := oldIPConn.Write([]byte{0}); err == nil {
 		t.Fatal("old IP connection remains open")
