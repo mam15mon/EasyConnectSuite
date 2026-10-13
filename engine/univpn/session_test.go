@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"net"
 	"net/netip"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -138,6 +139,24 @@ func newGateway(t *testing.T, reject, mismatch bool) *mockGateway {
 func (g *mockGateway) options() Options {
 	return Options{Server: g.listener.Addr().String(), Domain: "localhost",
 		Username: "mockuser", Password: "p&+%", TLSConfig: &tls.Config{RootCAs: g.roots}}
+}
+
+func TestSetupReportsProtocolStagesWithoutAuthenticationData(t *testing.T) {
+	g := newGateway(t, false, false)
+	opts := g.options()
+	var stages []string
+	opts.OnStage = func(stage string) { stages = append(stages, stage) }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s, err := Dial(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	want := []string{"control_tcp_dial", "control_tls_handshake", "first_connect_reply", "authentication_reply", "virtual_ip_resources_reply", "data_tcp_dial", "data_tls_handshake", "data_bind_reply", "ready"}
+	if !reflect.DeepEqual(stages, want) {
+		t.Fatalf("stages = %v", stages)
+	}
 }
 
 func (g *mockGateway) send(conn net.Conn, command byte, body []byte) error {
