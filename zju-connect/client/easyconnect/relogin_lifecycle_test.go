@@ -42,6 +42,9 @@ func TestCloseCancelsReauthenticationAndWaitingKeepalive(t *testing.T) {
 	}
 	keepaliveDone := make(chan error, 1)
 	go func() { keepaliveDone <- c.requestUpdateSession(c.lifecycleCtx) }()
+	sendDone, recvDone := make(chan error, 1), make(chan error, 1)
+	go func() { _, err := c.SendConn(); sendDone <- err }()
+	go func() { _, err := c.RecvConn(); recvDone <- err }()
 	closed := make(chan struct{})
 	go func() { c.Close(); close(closed) }()
 	select {
@@ -62,6 +65,16 @@ func TestCloseCancelsReauthenticationAndWaitingKeepalive(t *testing.T) {
 	}
 	if keepaliveRequests.Load() != 0 {
 		t.Fatal("keepalive sent a request during incomplete authentication")
+	}
+	for _, done := range []chan error{sendDone, recvDone} {
+		select {
+		case err := <-done:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("tunnel handshake cancellation = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("tunnel handshake did not stop after Close")
+		}
 	}
 	if err := c.Setup(); !errors.Is(err, context.Canceled) {
 		t.Fatalf("closed client setup = %v", err)

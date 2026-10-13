@@ -92,6 +92,11 @@ func (c *Client) tlsConn(ctx context.Context) (*tls.UConn, error) {
 
 // RecvConn create a special TLS connection to receive data from the VPN server
 func (c *Client) RecvConn() (*tls.UConn, error) {
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
+	if err := c.lifecycleCtx.Err(); err != nil {
+		return nil, err
+	}
 	if c.token == nil {
 		return nil, errors.New("token is nil")
 	}
@@ -160,6 +165,11 @@ func (c *Client) RecvConn() (*tls.UConn, error) {
 // Anything other than the legacy 0x02 success marker is converted into a
 // typed error so the caller can decide policy (retry / re-login / exit).
 func (c *Client) SendConn() (*tls.UConn, error) {
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
+	if err := c.lifecycleCtx.Err(); err != nil {
+		return nil, err
+	}
 	if c.token == nil {
 		return nil, errors.New("token is nil")
 	}
