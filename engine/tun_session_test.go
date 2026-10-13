@@ -14,15 +14,16 @@ import (
 )
 
 type testAttachment struct {
-	once    sync.Once
-	done    chan struct{}
-	updates int
-	failure error
+	once     sync.Once
+	done     chan struct{}
+	updates  int
+	failure  error
+	closeErr error
 }
 
 func (a *testAttachment) Close(context.Context) error {
 	a.once.Do(func() { close(a.done) })
-	return nil
+	return a.closeErr
 }
 func (a *testAttachment) Update(context.Context, TUNSpec) error { a.updates++; return a.failure }
 func (a *testAttachment) Done() <-chan struct{}                 { return a.done }
@@ -30,11 +31,13 @@ func (a *testAttachment) Done() <-chan struct{}                 { return a.done 
 type testController struct {
 	attachment *testAttachment
 	entered    chan struct{}
+	calls      int
+	attachErr  error
 }
 
 func TestTUNWorkerLossAndUpdateFailureLeaveVPNRunning(t *testing.T) {
 	for _, update := range []bool{false, true} {
-		events := make(chan TUNStatus, 8)
+		events := make(chan TUNStatus, 32)
 		c := &testController{}
 		e := &Engine{id: 22, opts: Options{ConnectionID: "profile", TUNController: c, OnTUNStatus: func(s TUNStatus) { events <- s }}}
 		e.ctx, e.cancel = context.WithCancel(context.Background())
@@ -69,6 +72,10 @@ func TestTUNWorkerLossAndUpdateFailureLeaveVPNRunning(t *testing.T) {
 }
 
 func (c *testController) Attach(ctx context.Context, s TUNSpec, b TUNBackend) (TUNAttachment, error) {
+	c.calls++
+	if c.attachErr != nil {
+		return nil, c.attachErr
+	}
 	if c.entered != nil {
 		close(c.entered)
 		<-ctx.Done()
@@ -167,5 +174,111 @@ func TestTUNViewExcludesProxyAugmentationAndSharesResolver(t *testing.T) {
 	}
 	if _, err = v.tunDialer.DialIPPort(context.Background(), "tcp", "10.0.0.1:443"); err == nil {
 		t.Fatal("proxy-only resource authorized by TUN")
+	}
+}
+
+func recoveryTestEngine(t *testing.T) (*Engine, *testController, chan TUNStatus) {
+	t.Helper()
+	events := make(chan TUNStatus, 64)
+	c := &testController{}
+	e := &Engine{id: 31, opts: Options{ConnectionID: "recovery", TUNController: c, OnTUNStatus: func(s TUNStatus) { events <- s }}}
+	e.ctx, e.cancel = context.WithCancel(context.Background())
+	e.running.Store(true)
+	e.router.current.Store(&connectionPolicy{resourceIPs: []client.IPResource{}, resourceDomains: client.DomainResources{}})
+	if err := e.SetTUN(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	for len(events) > 0 {
+		<-events
+	}
+	t.Cleanup(e.Stop)
+	return e, c, events
+}
+func awaitTUNState(t *testing.T, events <-chan TUNStatus, state string) {
+	t.Helper()
+	timer := time.NewTimer(3 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case s := <-events:
+			if s.State == state {
+				return
+			}
+		case <-timer.C:
+			t.Fatalf("TUN did not reach %s", state)
+		}
+	}
+}
+func TestTUNLossRecoversOnceAndRefreshesPolicy(t *testing.T) {
+	e, c, events := recoveryTestEngine(t)
+	first := c.attachment
+	first.Close(context.Background())
+	awaitTUNState(t, events, "on")
+	e.tunSession.op.Lock()
+	second := c.attachment
+	if second == first || c.calls != 2 || e.tunSession.backend.ctx.Err() != nil {
+		t.Fatal("TUN not rebuilt")
+	}
+	e.tunSession.op.Unlock()
+	e.updateTUN(e.router.current.Load(), true)
+	if second.updates != 1 {
+		t.Fatal("recovered TUN missed resource update")
+	}
+	second.Close(context.Background())
+	awaitTUNState(t, events, "error")
+	e.tunSession.op.Lock()
+	defer e.tunSession.op.Unlock()
+	if c.calls != 2 || e.tunSession.attachment != nil || !e.Running() {
+		t.Fatal("recovery loop or VPN shutdown")
+	}
+}
+func TestTUNDisabledDoesNotRecoverOnPolicyRefresh(t *testing.T) {
+	e, c, _ := recoveryTestEngine(t)
+	if err := e.SetTUN(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	e.updateTUN(e.router.current.Load(), true)
+	e.tunSession.op.Lock()
+	defer e.tunSession.op.Unlock()
+	if c.calls != 1 || e.tunSession.attachment != nil || e.tunSession.desired {
+		t.Fatal("explicit disable lost")
+	}
+}
+func TestTUNCleanupFailurePreventsRecovery(t *testing.T) {
+	e, c, events := recoveryTestEngine(t)
+	c.attachment.closeErr = errors.New("route removal failed")
+	c.attachment.Close(context.Background())
+	awaitTUNState(t, events, "error")
+	e.tunSession.op.Lock()
+	defer e.tunSession.op.Unlock()
+	if c.calls != 1 || e.tunSession.attachment != nil {
+		t.Fatal("cleanup failure concealed by recovery")
+	}
+}
+func TestTUNRecoveryFailureDoesNotLoop(t *testing.T) {
+	e, c, events := recoveryTestEngine(t)
+	c.attachErr = errors.New("elevation canceled")
+	c.attachment.Close(context.Background())
+	awaitTUNState(t, events, "attaching")
+	awaitTUNState(t, events, "error")
+	e.updateTUN(e.router.current.Load(), true)
+	e.tunSession.op.Lock()
+	defer e.tunSession.op.Unlock()
+	if c.calls != 2 || e.tunSession.attachment != nil {
+		t.Fatal("failed recovery retried")
+	}
+}
+func TestStopCancelsPendingTUNRecovery(t *testing.T) {
+	e, c, _ := recoveryTestEngine(t)
+	c.entered = make(chan struct{})
+	c.attachment.Close(context.Background())
+	select {
+	case <-c.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("recovery did not start")
+	}
+	e.Stop()
+	if e.Running() || e.tunSession.attachment != nil {
+		t.Fatal("Stop retained recovering TUN")
 	}
 }
