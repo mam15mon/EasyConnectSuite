@@ -503,7 +503,7 @@ document.getElementById('modal-close-btn').addEventListener('click', closeModal)
 document.getElementById('btn-modal-cancel').addEventListener('click', closeModal);
 
 document.getElementById('btn-modal-save').addEventListener('click', async () => {
-	const existingProfile = cachedProfiles.find(profile => profile.id === formId.value.trim());
+  const existingProfile = cachedProfiles.find(profile => profile.id === formId.value.trim());
   const p = {
     id: formId.value.trim(),
     protocol: formProtocol.value,
