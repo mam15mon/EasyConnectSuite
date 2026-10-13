@@ -503,6 +503,7 @@ document.getElementById('modal-close-btn').addEventListener('click', closeModal)
 document.getElementById('btn-modal-cancel').addEventListener('click', closeModal);
 
 document.getElementById('btn-modal-save').addEventListener('click', async () => {
+	const existingProfile = cachedProfiles.find(profile => profile.id === formId.value.trim());
   const p = {
     id: formId.value.trim(),
     protocol: formProtocol.value,
@@ -518,8 +519,8 @@ document.getElementById('btn-modal-save').addEventListener('click', async () => 
     enable2FA: formProtocol.value === "easyconnect" && formEnable2FA.checked,
     totpSecret: formTotp.value.trim(),
     bindInterface: formNic.value,
-    tunMode: !!cachedProfiles.find(profile => profile.id === formId.value.trim())?.tunMode,
-    disableProxy: !!cachedProfiles.find(profile => profile.id === formId.value.trim())?.disableProxy,
+    tunMode: existingProfile ? !!existingProfile.tunMode : true,
+    disableProxy: existingProfile ? !!existingProfile.disableProxy : true,
     disableZjuConfig: true,
     disableKeepAlive: formDisableKeepAlive.checked,
     keepAliveUrl: formEnableKeepAlive.checked ? formKeepAliveUrl.value.trim() : '',

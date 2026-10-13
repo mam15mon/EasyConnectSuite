@@ -128,6 +128,8 @@ func (a *App) initDefaultConfig() {
 		Enable2FA:        false,
 		TotpSecret:       "",
 		BindInterface:    "",
+		TUNMode:          true,
+		DisableProxy:     true,
 		DisableZjuConfig: true,
 	}
 
