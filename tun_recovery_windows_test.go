@@ -104,3 +104,30 @@ func TestWorkerLossPreservesCleanupErrorAndBlocksRelaunch(t *testing.T) {
 		t.Fatal("lost flows retained")
 	}
 }
+
+type failedCleanupIngress struct{ failure error }
+
+func (i *failedCleanupIngress) Close() error { return i.failure }
+func (i *failedCleanupIngress) UpdateSpec(engine.TUNSpec) error {
+	return errors.New("policy update failed")
+}
+func TestWorkerRetainsCleanupFailureUntilExit(t *testing.T) {
+	for _, op := range []string{"update", "detach", "shutdown"} {
+		t.Run(op, func(t *testing.T) {
+			failure := errors.New("route cleanup failed")
+			ref := tunipc.Ref{Profile: "p", Session: "s", Attachment: "a", Policy: 1}
+			spec := engine.TUNSpec{Ref: ref}
+			w := &workerServer{authenticated: true, closing: make(chan struct{}), entries: map[string]*workerEntry{"a": {spec: spec, ingress: &failedCleanupIngress{failure: failure}, backend: &workerBackend{ref: ref}}}}
+			if op == "update" {
+				spec.Policy++
+			}
+			_, err := w.handle(context.Background(), tunipc.Message{Op: op, Ref: spec.Ref, Spec: &spec})
+			if !errors.Is(err, failure) {
+				t.Fatalf("operation lost cleanup cause: %v", err)
+			}
+			if err := w.cleanup(); !errors.Is(err, failure) {
+				t.Fatalf("exit concealed previous cleanup failure: %v", err)
+			}
+		})
+	}
+}

@@ -416,6 +416,7 @@ type workerServer struct {
 	closing       chan struct{}
 	once          sync.Once
 	authenticated bool
+	cleanupErr    error
 }
 type workerBackend struct {
 	mu     sync.RWMutex
@@ -495,7 +496,9 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 			return tunipc.Message{}, err
 		}
 		if ctx.Err() != nil {
-			return tunipc.Message{}, errors.Join(ctx.Err(), ingress.Close())
+			cleanupErr := ingress.Close()
+			w.cleanupErr = errors.Join(w.cleanupErr, cleanupErr)
+			return tunipc.Message{}, errors.Join(ctx.Err(), cleanupErr)
 		}
 		w.entries[m.Ref.Attachment] = &workerEntry{spec: *m.Spec, ingress: ingress, backend: backend}
 		delete(w.reservations, m.Ref.Profile)
@@ -505,7 +508,9 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 			return tunipc.Message{}, errors.New("obsolete TUN update")
 		}
 		if err := entry.ingress.UpdateSpec(*m.Spec); err != nil {
-			err = errors.Join(err, entry.ingress.Close())
+			cleanupErr := entry.ingress.Close()
+			w.cleanupErr = errors.Join(w.cleanupErr, cleanupErr)
+			err = errors.Join(err, cleanupErr)
 			delete(w.entries, m.Ref.Attachment)
 			return tunipc.Message{}, err
 		}
@@ -522,6 +527,7 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 			return tunipc.Message{}, errors.New("obsolete TUN detach")
 		}
 		err := entry.ingress.Close()
+		w.cleanupErr = errors.Join(w.cleanupErr, err)
 		delete(w.entries, m.Ref.Attachment)
 		return tunipc.Message{}, err
 	case "shutdown":
@@ -534,11 +540,12 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 	return tunipc.Message{}, nil
 }
 func (w *workerServer) cleanup() error {
-	var err error
+	err := w.cleanupErr
 	for id, e := range w.entries {
 		err = errors.Join(err, e.ingress.Close())
 		delete(w.entries, id)
 	}
+	w.cleanupErr = err
 	return err
 }
 func runTUNWorker(args []string) (result error) {
@@ -653,9 +660,6 @@ func (a *remoteTUN) waitWorkerCleanup(ctx context.Context) error {
 		default:
 			return nil
 		}
-	}
-	if a.workerDone == nil {
-		return nil
 	}
 	select {
 	case <-a.workerDone:
