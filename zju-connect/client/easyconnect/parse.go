@@ -24,12 +24,17 @@ func (c *Client) parseLineListFromConfig(config string) error {
 		return err
 	}
 
-	element := doc.SelectElement("Conf").SelectElement("Mline")
+	conf := doc.SelectElement("Conf")
+	if conf == nil {
+		return errors.New("no Conf element found")
+	}
+	element := conf.SelectElement("Mline")
 	if element == nil {
 		return errors.New("no Mline element found")
 	}
 
-	if element.SelectAttr("enable") == nil && element.SelectAttr("enable").Value != "1" {
+	enabled := element.SelectAttr("enable")
+	if enabled == nil || enabled.Value != "1" {
 		return errors.New("server disable Mline")
 	}
 

@@ -66,8 +66,10 @@ type Client struct {
 	tlsKeyLogWriter   io.Writer
 	rawRequestTimeout time.Duration
 
-	twfID string
-	token *[48]byte
+	twfID        string
+	token        *[48]byte
+	setupMu      sync.Mutex
+	setupStarted bool
 
 	lineList []string
 
@@ -201,9 +203,29 @@ func (c *Client) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, erro
 }
 
 func (c *Client) Setup() error {
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
+	if err := c.lifecycleCtx.Err(); err != nil {
+		return err
+	}
 	if c.underlayDialer == nil {
 		return errors.New("underlay dialer is required")
 	}
+	// Only the first setup may use a supplied session. Reconnect must complete
+	// authentication again, including retries after a partially failed login.
+	if c.setupStarted {
+		log.Println("EasyConnect reconnect: establishing a fresh authenticated session")
+		c.twfID = ""
+		c.token = nil
+		c.lineList = nil
+		c.requestIPConnMu.Lock()
+		if c.requestIPConn != nil {
+			_ = c.requestIPConn.Close()
+			c.requestIPConn = nil
+		}
+		c.requestIPConnMu.Unlock()
+	}
+	c.setupStarted = true
 	if err := c.ensureSession(); err != nil {
 		return err
 	}

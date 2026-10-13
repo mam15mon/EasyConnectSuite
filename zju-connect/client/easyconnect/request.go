@@ -98,7 +98,7 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	}
 
 	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
-	log.Printf("TWFID: %s", c.twfID)
+	log.Println("Authentication session received")
 
 	rsaKey := string(regexp.MustCompile(`<RSA_ENCRYPT_KEY>(.*)</RSA_ENCRYPT_KEY>`).FindSubmatch(buf.Bytes())[1])
 	log.Printf("RSA key: %s", rsaKey)
@@ -118,7 +118,6 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	password := c.password
 	if csrfMatch != nil {
 		csrfCode = string(csrfMatch[1])
-		log.Printf("CSRF Code: %s", csrfCode)
 		password += "_" + csrfCode
 	} else {
 		log.Printf("Warning: No CSRF rand code")
@@ -244,7 +243,7 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	twfIDMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
 	if twfIDMatch != nil {
 		c.twfID = string(twfIDMatch[1])
-		log.Printf("Update TWFID: %s", c.twfID)
+		log.Println("Authentication session updated")
 	}
 
 	log.Printf("TWFID has been authorized")
@@ -329,7 +328,7 @@ func (c *Client) loginSMS() error {
 	twfIDMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
 	if twfIDMatch != nil {
 		c.twfID = string(twfIDMatch[1])
-		log.Printf("Update TWFID: %s", c.twfID)
+		log.Println("Authentication session updated")
 	}
 	log.Print("SMS code verification success")
 
@@ -466,7 +465,7 @@ func (c *Client) loginCert() error {
 	twfIDMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
 	if twfIDMatch != nil {
 		c.twfID = string(twfIDMatch[1])
-		log.Printf("Update TWFID: %s", c.twfID)
+		log.Println("Authentication session updated")
 	}
 
 	if strings.Contains(response, "<pwpErrorCode>16</pwpErrorCode>") {
@@ -492,16 +491,16 @@ func (c *Client) requestConfig() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("request config: unexpected HTTP status %d", resp.StatusCode)
+	}
 
 	var buf bytes.Buffer
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return "", err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
-
 	return buf.String(), nil
 }
 
@@ -511,6 +510,10 @@ func (c *Client) requestConfig() (string, error) {
 // the session, which the tunnel layer surfaces as a "broken pipe" →
 // "unexpected handshake reply" kick cascade.
 func (c *Client) requestUpdateSession(ctx context.Context) error {
+	// Keepalive must not observe a partially updated authentication session or
+	// race with certificate authentication replacing the HTTP transport.
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
 	u := url.URL{
 		Scheme: "https",
 		Host:   c.server,
@@ -640,7 +643,6 @@ func (c *Client) requestToken() error {
 	}
 
 	sessionID := hex.EncodeToString(conn.HandshakeState.ServerHello.SessionId)
-	log.Printf("Server session ID: %s", sessionID)
 
 	buf := make([]byte, 8)
 	n, err := conn.Read(buf)
@@ -650,7 +652,7 @@ func (c *Client) requestToken() error {
 
 	c.token = (*[48]byte)([]byte(sessionID[:31] + "\x00" + c.twfID))
 
-	log.Printf("Token: %s", hex.EncodeToString(c.token[:]))
+	log.Println("Tunnel token received")
 
 	return nil
 }
