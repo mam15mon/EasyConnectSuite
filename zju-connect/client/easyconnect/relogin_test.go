@@ -39,9 +39,12 @@ func TestSetupReauthenticatesAfterShutdown(t *testing.T) {
 	if _, err := oldIPConn.Write([]byte{0}); err == nil {
 		t.Fatal("old IP connection remains open")
 	}
-	conn, err := c.SendConn()
+	conn, err := c.NewL3Conn()
 	if err != nil {
 		t.Fatalf("new session tunnel: %v", err)
+	}
+	if _, err := conn.Write([]byte{0x45, 0, 0, 20}); err != nil {
+		t.Fatalf("rebuilt tunnel write: %v", err)
 	}
 	conn.Close()
 
@@ -113,7 +116,7 @@ func reloginGateway(t *testing.T, sessionID string) (*Client, *atomic.Int32, *at
 				if err != nil {
 					return
 				}
-				if first[0] == 0 || first[0] == 5 {
+				if first[0] == 0 || first[0] == 5 || first[0] == 6 {
 					packet := make([]byte, 64)
 					if _, err := io.ReadFull(reader, packet); err != nil {
 						return
@@ -124,6 +127,9 @@ func reloginGateway(t *testing.T, sessionID string) (*Client, *atomic.Int32, *at
 						return
 					}
 					reply := []byte{0, 0, 0, 0, 10, 90, 0, 2}
+					if packet[0] == 6 {
+						reply[0] = 1
+					}
 					if packet[0] == 5 {
 						reply[0] = 2
 						if expired.Load() && logins.Load() == 1 {

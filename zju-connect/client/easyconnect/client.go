@@ -129,6 +129,8 @@ func NewClient(options Options) *Client {
 func (c *Client) Close() {
 	c.closeOnce.Do(func() {
 		c.lifecycleCancel()
+		c.setupMu.Lock()
+		defer c.setupMu.Unlock()
 		c.httpClient.CloseIdleConnections()
 		c.requestIPConnMu.Lock()
 		if c.requestIPConn != nil {
