@@ -5,8 +5,8 @@ import (
 	"net"
 	"testing"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/resolve"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/resolve"
 )
 
 func TestDialTCPAllowsTCPPrefL3FallbackInTCPOnlyMode(t *testing.T) {

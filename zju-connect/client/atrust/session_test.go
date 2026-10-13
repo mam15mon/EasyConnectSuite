@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client/atrust/auth"
+	"EasyConnectSuite/vpncore/client/atrust/auth"
 )
 
 func TestSessionRefreshPublishesAndPersists(t *testing.T) {

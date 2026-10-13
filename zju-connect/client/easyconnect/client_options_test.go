@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mythologyli/zju-connect/client/authchallenge"
-	"github.com/mythologyli/zju-connect/underlay"
+	"EasyConnectSuite/vpncore/client/authchallenge"
+	"EasyConnectSuite/vpncore/underlay"
 )
 
 func TestNewClientMapsOptions(t *testing.T) {

@@ -6,7 +6,7 @@ package lifecycle
 import (
 	"context"
 
-	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"EasyConnectSuite/vpncore/internal/hook_func"
 )
 
 // TerminalFunc is a cleanup hook executed once on engine shutdown.

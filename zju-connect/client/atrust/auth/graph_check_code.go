@@ -9,7 +9,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 
-	"github.com/mythologyli/zju-connect/client/authchallenge"
+	"EasyConnectSuite/vpncore/client/authchallenge"
 )
 
 type graphCheckCodePayload struct {

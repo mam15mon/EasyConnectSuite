@@ -3,7 +3,7 @@ package easyconnect
 import (
 	"testing"
 
-	"github.com/mythologyli/zju-connect/client"
+	"EasyConnectSuite/vpncore/client"
 )
 
 func TestParseResourcesPreservesMultipleRulesForDomain(t *testing.T) {

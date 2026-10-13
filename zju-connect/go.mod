@@ -1,4 +1,4 @@
-module github.com/mythologyli/zju-connect
+module EasyConnectSuite/vpncore
 
 go 1.25.6
 

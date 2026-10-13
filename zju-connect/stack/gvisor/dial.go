@@ -4,7 +4,7 @@ import (
 	"context"
 	"net"
 
-	"github.com/mythologyli/zju-connect/resolve"
+	"EasyConnectSuite/vpncore/resolve"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"

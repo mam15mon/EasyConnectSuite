@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"EasyConnectSuite/vpncore/internal/platformdialer"
+	"EasyConnectSuite/vpncore/log"
 	tun "github.com/mythologyli/sing-tun"
-	"github.com/mythologyli/zju-connect/internal/platformdialer"
-	"github.com/mythologyli/zju-connect/log"
 	"github.com/sagernet/sing/common/logger"
 )
 

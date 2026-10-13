@@ -4,7 +4,7 @@ import (
 	"context"
 	"net"
 
-	"github.com/mythologyli/zju-connect/resolve"
+	"EasyConnectSuite/vpncore/resolve"
 	"inet.af/netaddr"
 )
 

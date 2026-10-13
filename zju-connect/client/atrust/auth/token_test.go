@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/mythologyli/zju-connect/client/authchallenge"
+	"EasyConnectSuite/vpncore/client/authchallenge"
 )
 
 func TestAuthStepFromTokenService(t *testing.T) {

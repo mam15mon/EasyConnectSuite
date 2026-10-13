@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/dial"
+	"EasyConnectSuite/vpncore/dial"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

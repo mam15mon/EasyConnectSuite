@@ -7,9 +7,9 @@ import (
 	"io"
 	"net"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/hook_func"
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/internal/hook_func"
+	"EasyConnectSuite/vpncore/log"
 )
 
 func handleTCPForwardingRequest(dialContext client.DialContextFunc, conn net.Conn, remoteAddress string) {

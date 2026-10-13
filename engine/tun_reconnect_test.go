@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/resolve"
+	"EasyConnectSuite/vpncore/stack"
 	"github.com/miekg/dns"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/resolve"
-	"github.com/mythologyli/zju-connect/stack"
 )
 
 type pendingTUNStack struct {

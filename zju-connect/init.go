@@ -10,14 +10,14 @@ import (
 	"regexp"
 	"strings"
 
+	"EasyConnectSuite/vpncore/client/atrust"
+	"EasyConnectSuite/vpncore/configs"
 	"github.com/knadh/koanf/parsers/toml/v2"
 	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/posflag"
 	"github.com/knadh/koanf/providers/structs"
 	"github.com/knadh/koanf/v2"
-	"github.com/mythologyli/zju-connect/client/atrust"
-	"github.com/mythologyli/zju-connect/configs"
 	"github.com/spf13/pflag"
 )
 
@@ -596,7 +596,7 @@ func initialize(args []string) int {
 
 	if err := validateConnectConfig(conf); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, "Please see: https://github.com/mythologyli/zju-connect")
+		fmt.Fprintln(os.Stderr, "Please see: https://EasyConnectSuite/vpncore")
 		fmt.Fprintln(os.Stderr, "\nUsage:")
 		flags.PrintDefaults()
 		return 1

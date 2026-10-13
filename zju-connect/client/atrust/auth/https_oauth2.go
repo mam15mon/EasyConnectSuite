@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/mythologyli/zju-connect/client/authchallenge"
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/client/authchallenge"
+	"EasyConnectSuite/vpncore/log"
 )
 
 type HTTPSOauth2Login struct {

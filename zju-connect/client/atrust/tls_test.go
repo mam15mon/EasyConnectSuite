@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mythologyli/zju-connect/underlay"
+	"EasyConnectSuite/vpncore/underlay"
 )
 
 func TestTunnelTLSConfigMatchesOfficialTransport(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"image/png"
 	"testing"
 
-	"github.com/mythologyli/zju-connect/client/authchallenge"
+	"EasyConnectSuite/vpncore/client/authchallenge"
 )
 
 func buildPNG(t *testing.T, w, h int) []byte {

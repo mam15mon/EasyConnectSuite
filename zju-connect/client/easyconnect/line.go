@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/ping"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/internal/ping"
 )
 
 const pingNum = 3

@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/log"
 	"github.com/beevik/etree"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/log"
 	"inet.af/netaddr"
 )
 

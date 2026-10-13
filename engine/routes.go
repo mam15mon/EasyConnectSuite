@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mythologyli/zju-connect/client"
+	"EasyConnectSuite/vpncore/client"
 )
 
 type routeResult struct {

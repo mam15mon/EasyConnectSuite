@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"EasyConnectSuite/internal/tunipc"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/resolve"
 	"github.com/miekg/dns"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/resolve"
 )
 
 type TUNSpec = tunipc.Spec

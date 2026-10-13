@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"EasyConnectSuite/vpncore/log"
 	"github.com/miekg/dns"
-	"github.com/mythologyli/zju-connect/log"
 	"golang.org/x/net/publicsuffix"
 	"golang.org/x/sync/errgroup"
 )

@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/ippool"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/stack"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/internal/ippool"
+	"EasyConnectSuite/vpncore/log"
+	"EasyConnectSuite/vpncore/stack"
 	"github.com/patrickmn/go-cache"
 )
 

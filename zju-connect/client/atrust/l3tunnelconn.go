@@ -20,8 +20,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mythologyli/zju-connect/internal/zctcpip"
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/internal/zctcpip"
+	"EasyConnectSuite/vpncore/log"
 )
 
 const (

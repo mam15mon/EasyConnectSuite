@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/log"
 )
 
 type PasswordLogin struct {

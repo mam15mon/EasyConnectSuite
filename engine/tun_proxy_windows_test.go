@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/dial"
-	"github.com/mythologyli/zju-connect/resolve"
-	"github.com/mythologyli/zju-connect/service"
-	"github.com/mythologyli/zju-connect/stack"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/dial"
+	"EasyConnectSuite/vpncore/resolve"
+	"EasyConnectSuite/vpncore/service"
+	"EasyConnectSuite/vpncore/stack"
 )
 
 type echoVPNStack struct {

@@ -7,10 +7,10 @@ import (
 	"net"
 	"strings"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/ipresource"
-	"github.com/mythologyli/zju-connect/internal/zctcpip"
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/internal/ipresource"
+	"EasyConnectSuite/vpncore/internal/zctcpip"
+	"EasyConnectSuite/vpncore/log"
 )
 
 func (t *L3Tunnel) processIPV4(packet zctcpip.IPv4Packet) error {

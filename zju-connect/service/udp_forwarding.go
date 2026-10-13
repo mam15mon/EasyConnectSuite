@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mythologyli/zju-connect/internal/hook_func"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/stack"
+	"EasyConnectSuite/vpncore/internal/hook_func"
+	"EasyConnectSuite/vpncore/log"
+	"EasyConnectSuite/vpncore/stack"
 )
 
 const BufferSize = 40960

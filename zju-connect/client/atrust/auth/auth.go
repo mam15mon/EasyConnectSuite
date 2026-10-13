@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/client/authchallenge"
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/client/authchallenge"
+	"EasyConnectSuite/vpncore/log"
 )
 
 const (

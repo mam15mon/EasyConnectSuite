@@ -13,7 +13,7 @@ import (
 
 	"EasyConnectSuite/engine"
 
-	"github.com/mythologyli/zju-connect/configs"
+	"EasyConnectSuite/vpncore/configs"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 

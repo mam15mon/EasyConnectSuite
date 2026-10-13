@@ -5,11 +5,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/ipresource"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/resolve"
-	"github.com/mythologyli/zju-connect/stack"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/internal/ipresource"
+	"EasyConnectSuite/vpncore/log"
+	"EasyConnectSuite/vpncore/resolve"
+	"EasyConnectSuite/vpncore/stack"
 )
 
 import (

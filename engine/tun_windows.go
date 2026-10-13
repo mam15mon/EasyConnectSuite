@@ -20,9 +20,9 @@ import (
 	"time"
 
 	"EasyConnectSuite/internal/tunipc"
+	"EasyConnectSuite/vpncore/log"
 	"github.com/miekg/dns"
 	stun "github.com/mythologyli/sing-tun"
-	"github.com/mythologyli/zju-connect/log"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"

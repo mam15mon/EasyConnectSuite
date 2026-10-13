@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/log"
 )
 
 var enhancedAuthServices = map[string]struct{}{

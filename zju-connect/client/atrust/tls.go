@@ -7,7 +7,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/mythologyli/zju-connect/client"
+	"EasyConnectSuite/vpncore/client"
 )
 
 func tlsConfig(config *tls.Config, keyLogWriter io.Writer) *tls.Config {

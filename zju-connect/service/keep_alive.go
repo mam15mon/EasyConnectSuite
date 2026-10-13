@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/log"
 )
 
 const (

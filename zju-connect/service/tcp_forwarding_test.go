@@ -7,11 +7,11 @@ import (
 	"net"
 	"testing"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/dial"
-	"github.com/mythologyli/zju-connect/internal/ippool"
-	"github.com/mythologyli/zju-connect/internal/zcdns"
-	"github.com/mythologyli/zju-connect/resolve"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/dial"
+	"EasyConnectSuite/vpncore/internal/ippool"
+	"EasyConnectSuite/vpncore/internal/zcdns"
+	"EasyConnectSuite/vpncore/resolve"
 )
 
 func TestHandleTCPForwardingRequestUsesResourceAwareDialer(t *testing.T) {

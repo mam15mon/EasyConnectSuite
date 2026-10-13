@@ -9,9 +9,9 @@ import (
 	"net"
 	"testing"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/client/atrust"
-	"github.com/mythologyli/zju-connect/internal/zctcpip"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/client/atrust"
+	"EasyConnectSuite/vpncore/internal/zctcpip"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )

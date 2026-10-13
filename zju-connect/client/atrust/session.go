@@ -6,8 +6,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client/atrust/auth"
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/client/atrust/auth"
+	"EasyConnectSuite/vpncore/log"
 )
 
 func (c *Client) sessionSID() (string, error) {

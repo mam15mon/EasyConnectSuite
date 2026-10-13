@@ -1,8 +1,8 @@
 package service
 
 import (
+	"EasyConnectSuite/vpncore/dial"
 	"bufio"
-	"github.com/mythologyli/zju-connect/dial"
 	"io"
 	"net"
 	"net/http"

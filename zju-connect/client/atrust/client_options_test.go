@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mythologyli/zju-connect/underlay"
+	"EasyConnectSuite/vpncore/underlay"
 )
 
 func TestNewClientMapsOptions(t *testing.T) {

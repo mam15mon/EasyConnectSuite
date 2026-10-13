@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mythologyli/zju-connect/client/authchallenge"
-	zlog "github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/client/authchallenge"
+	zlog "EasyConnectSuite/vpncore/log"
 )
 
 func TestAuthenticationFailuresDoNotExposePayloads(t *testing.T) {

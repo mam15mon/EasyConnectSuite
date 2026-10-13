@@ -4,7 +4,7 @@ import (
 	"context"
 	"net"
 
-	"github.com/mythologyli/zju-connect/resolve"
+	"EasyConnectSuite/vpncore/resolve"
 )
 
 func (s *Stack) DialTCP(ctx context.Context, addr *net.TCPAddr) (net.Conn, error) {

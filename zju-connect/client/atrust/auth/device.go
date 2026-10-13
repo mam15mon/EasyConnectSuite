@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/log"
 )
 
 type QueryDeviceResult struct {

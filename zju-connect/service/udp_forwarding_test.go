@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	stackpkg "github.com/mythologyli/zju-connect/stack"
+	stackpkg "EasyConnectSuite/vpncore/stack"
 )
 
 type udpForwardTestStack struct {

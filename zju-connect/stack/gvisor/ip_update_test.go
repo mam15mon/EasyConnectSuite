@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client"
+	"EasyConnectSuite/vpncore/client"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 

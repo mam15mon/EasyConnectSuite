@@ -17,10 +17,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/ipresource"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/resolve"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/internal/ipresource"
+	"EasyConnectSuite/vpncore/log"
+	"EasyConnectSuite/vpncore/resolve"
 )
 
 type tcpTunnelConn struct {

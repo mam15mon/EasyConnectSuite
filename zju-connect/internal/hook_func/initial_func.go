@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/mythologyli/zju-connect/configs"
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/configs"
+	"EasyConnectSuite/vpncore/log"
 	netstat "github.com/shirou/gopsutil/v4/net"
 )
 

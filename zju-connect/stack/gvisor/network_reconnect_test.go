@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client/easyconnect"
-	"github.com/mythologyli/zju-connect/internal/hook_func"
+	"EasyConnectSuite/vpncore/client/easyconnect"
+	"EasyConnectSuite/vpncore/internal/hook_func"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 

@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/mythologyli/zju-connect/client"
+	"EasyConnectSuite/vpncore/client"
 )
 
 type fakeRoutes struct {

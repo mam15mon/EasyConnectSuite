@@ -4,9 +4,9 @@ import (
 	"context"
 	"net"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/ippool"
-	"github.com/mythologyli/zju-connect/internal/zcdns"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/internal/ippool"
+	"EasyConnectSuite/vpncore/internal/zcdns"
 )
 
 type Stack interface {

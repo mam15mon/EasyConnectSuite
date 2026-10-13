@@ -7,12 +7,12 @@ import (
 	"sort"
 	"sync/atomic"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/configs"
-	"github.com/mythologyli/zju-connect/dial"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/resolve"
-	"github.com/mythologyli/zju-connect/stack"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/configs"
+	"EasyConnectSuite/vpncore/dial"
+	"EasyConnectSuite/vpncore/log"
+	"EasyConnectSuite/vpncore/resolve"
+	"EasyConnectSuite/vpncore/stack"
 	"inet.af/netaddr"
 )
 

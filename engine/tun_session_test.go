@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/configs"
-	"github.com/mythologyli/zju-connect/resolve"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/configs"
+	"EasyConnectSuite/vpncore/resolve"
 )
 
 type testAttachment struct {

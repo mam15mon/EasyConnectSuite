@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/internal/ping"
+	"EasyConnectSuite/vpncore/internal/ping"
 )
 
 func TestParseResourceSeparatesWANAndLANNodes(t *testing.T) {

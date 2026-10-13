@@ -7,10 +7,10 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/ippool"
-	"github.com/mythologyli/zju-connect/internal/zcdns"
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/internal/ippool"
+	"EasyConnectSuite/vpncore/internal/zcdns"
+	"EasyConnectSuite/vpncore/log"
 	"golang.org/x/net/ipv4"
 )
 

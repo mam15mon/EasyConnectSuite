@@ -5,11 +5,11 @@ import (
 	"net"
 	"testing"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/ippool"
-	"github.com/mythologyli/zju-connect/internal/ipresource"
-	"github.com/mythologyli/zju-connect/internal/zcdns"
-	"github.com/mythologyli/zju-connect/resolve"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/internal/ippool"
+	"EasyConnectSuite/vpncore/internal/ipresource"
+	"EasyConnectSuite/vpncore/internal/zcdns"
+	"EasyConnectSuite/vpncore/resolve"
 )
 
 func TestMatchesIPResourcePreservesRangePortAndProtocolRules(t *testing.T) {

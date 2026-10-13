@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/log"
 	"github.com/things-go/go-socks5/statute"
 )
 

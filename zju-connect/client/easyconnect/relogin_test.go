@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	clientpkg "github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/underlay"
+	clientpkg "EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/underlay"
 )
 
 func TestSetupReauthenticatesAfterShutdown(t *testing.T) {

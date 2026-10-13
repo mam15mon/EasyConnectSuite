@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/ipresource"
-	"github.com/mythologyli/zju-connect/resolve"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/internal/ipresource"
+	"EasyConnectSuite/vpncore/resolve"
 )
 
 func TestTCPTunnelReadDecodesDownstreamFramesAcrossBufferSizes(t *testing.T) {

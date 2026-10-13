@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/internal/hook_func"
-	"github.com/mythologyli/zju-connect/client"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/internal/hook_func"
 )
 
 func TestFatalCallbackCanAcquireReconnectLock(t *testing.T) {

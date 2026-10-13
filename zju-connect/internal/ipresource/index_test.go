@@ -5,7 +5,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/mythologyli/zju-connect/client"
+	"EasyConnectSuite/vpncore/client"
 )
 
 func TestIndexPreservesFirstMatchingResource(t *testing.T) {

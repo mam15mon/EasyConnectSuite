@@ -14,13 +14,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/client/atrust/auth"
-	"github.com/mythologyli/zju-connect/client/authchallenge"
-	"github.com/mythologyli/zju-connect/internal/ipresource"
-	"github.com/mythologyli/zju-connect/internal/keylog"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/underlay"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/client/atrust/auth"
+	"EasyConnectSuite/vpncore/client/authchallenge"
+	"EasyConnectSuite/vpncore/internal/ipresource"
+	"EasyConnectSuite/vpncore/internal/keylog"
+	"EasyConnectSuite/vpncore/log"
+	"EasyConnectSuite/vpncore/underlay"
 	"inet.af/netaddr"
 )
 

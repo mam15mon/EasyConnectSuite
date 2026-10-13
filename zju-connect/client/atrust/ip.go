@@ -10,7 +10,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/log"
 )
 
 func parseIPAuthResponse(data []byte) error {

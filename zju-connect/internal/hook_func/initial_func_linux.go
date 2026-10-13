@@ -4,8 +4,8 @@ import (
 	"context"
 	"os/user"
 
-	"github.com/mythologyli/zju-connect/configs"
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/configs"
+	"EasyConnectSuite/vpncore/log"
 )
 
 func init() {

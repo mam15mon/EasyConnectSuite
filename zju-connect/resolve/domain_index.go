@@ -3,7 +3,7 @@ package resolve
 import (
 	"strings"
 
-	"github.com/mythologyli/zju-connect/client"
+	"EasyConnectSuite/vpncore/client"
 )
 
 type domainResourceEntry struct {

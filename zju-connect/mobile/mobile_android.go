@@ -4,10 +4,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/mythologyli/zju-connect/client/easyconnect"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/stack/tun"
-	"github.com/mythologyli/zju-connect/underlay"
+	"EasyConnectSuite/vpncore/client/easyconnect"
+	"EasyConnectSuite/vpncore/log"
+	"EasyConnectSuite/vpncore/stack/tun"
+	"EasyConnectSuite/vpncore/underlay"
 )
 
 var vpnClient *easyconnect.Client

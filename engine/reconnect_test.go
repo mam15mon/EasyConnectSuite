@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/lifecycle"
+	"EasyConnectSuite/vpncore/lifecycle"
 )
 
 func TestTunnelFatalReturnsBeforeClosingNetworkStack(t *testing.T) {

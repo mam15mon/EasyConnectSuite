@@ -10,13 +10,13 @@ import (
 	"strconv"
 	"testing"
 
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/dial"
+	"EasyConnectSuite/vpncore/resolve"
 	"github.com/miekg/dns"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/dial"
-	"github.com/mythologyli/zju-connect/resolve"
 	M "github.com/sagernet/sing/common/metadata"
 
-	"github.com/mythologyli/zju-connect/stack"
+	"EasyConnectSuite/vpncore/stack"
 )
 
 func TestTUNVirtualAddressesStayInUpperHalfAndOutsideFakeIPPool(t *testing.T) {

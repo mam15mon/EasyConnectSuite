@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mythologyli/zju-connect/dial"
-	"github.com/mythologyli/zju-connect/internal/hook_func"
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/dial"
+	"EasyConnectSuite/vpncore/internal/hook_func"
+	"EasyConnectSuite/vpncore/log"
 	"github.com/shadowsocks/go-shadowsocks2/core"
 	"github.com/shadowsocks/go-shadowsocks2/socks"
 )

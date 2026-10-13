@@ -1,11 +1,11 @@
 package engine
 
 import (
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/log"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/log"
 	"net/netip"
 	"sync"
 	"time"

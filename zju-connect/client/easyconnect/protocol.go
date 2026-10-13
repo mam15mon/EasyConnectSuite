@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/log"
 	"github.com/refraction-networking/utls"
 )
 

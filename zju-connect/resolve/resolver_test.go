@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client"
+	"EasyConnectSuite/vpncore/client"
 	"github.com/patrickmn/go-cache"
 )
 

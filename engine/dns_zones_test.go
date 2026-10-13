@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/stack"
 	"github.com/miekg/dns"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/stack"
 )
 
 type zoneDNSStack struct {

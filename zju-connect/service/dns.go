@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"net"
 
+	"EasyConnectSuite/vpncore/internal/hook_func"
+	"EasyConnectSuite/vpncore/log"
+	"EasyConnectSuite/vpncore/resolve"
 	"github.com/miekg/dns"
-	"github.com/mythologyli/zju-connect/internal/hook_func"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/resolve"
 )
 
 type DNSServer struct {

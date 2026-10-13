@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client/authchallenge"
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/client/authchallenge"
+	"EasyConnectSuite/vpncore/log"
 	"github.com/pquerna/otp/totp"
 )
 

@@ -23,9 +23,9 @@ import (
 	"time"
 
 	"EasyConnectSuite/engine/topsec"
-	"github.com/mythologyli/zju-connect/client/easyconnect"
-	"github.com/mythologyli/zju-connect/configs"
-	"github.com/mythologyli/zju-connect/stack/gvisor"
+	"EasyConnectSuite/vpncore/client/easyconnect"
+	"EasyConnectSuite/vpncore/configs"
+	"EasyConnectSuite/vpncore/stack/gvisor"
 )
 
 // The mock uses independent headers and the existing IPv4 echo endpoint. It

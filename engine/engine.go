@@ -16,14 +16,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client"
-	easyconnectclient "github.com/mythologyli/zju-connect/client/easyconnect"
-	"github.com/mythologyli/zju-connect/configs"
-	"github.com/mythologyli/zju-connect/lifecycle"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/mythologyli/zju-connect/service"
-	"github.com/mythologyli/zju-connect/stack/gvisor"
-	"github.com/mythologyli/zju-connect/underlay"
+	"EasyConnectSuite/vpncore/client"
+	easyconnectclient "EasyConnectSuite/vpncore/client/easyconnect"
+	"EasyConnectSuite/vpncore/configs"
+	"EasyConnectSuite/vpncore/lifecycle"
+	"EasyConnectSuite/vpncore/log"
+	"EasyConnectSuite/vpncore/service"
+	"EasyConnectSuite/vpncore/stack/gvisor"
+	"EasyConnectSuite/vpncore/underlay"
 )
 
 // Status phases reported through Options.OnStatus.

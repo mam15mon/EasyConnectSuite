@@ -5,10 +5,10 @@ import (
 	"net"
 	"testing"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/client/atrust"
-	"github.com/mythologyli/zju-connect/client/easyconnect"
-	"github.com/mythologyli/zju-connect/underlay"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/client/atrust"
+	"EasyConnectSuite/vpncore/client/easyconnect"
+	"EasyConnectSuite/vpncore/underlay"
 )
 
 type externalUnderlay struct{}

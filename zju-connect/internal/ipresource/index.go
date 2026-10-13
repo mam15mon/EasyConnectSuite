@@ -5,7 +5,7 @@ import (
 	"net"
 	"sort"
 
-	"github.com/mythologyli/zju-connect/client"
+	"EasyConnectSuite/vpncore/client"
 )
 
 type indexedResource struct {

@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/internal/ipresource"
-	"github.com/mythologyli/zju-connect/internal/zctcpip"
-	zlog "github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/internal/ipresource"
+	"EasyConnectSuite/vpncore/internal/zctcpip"
+	zlog "EasyConnectSuite/vpncore/log"
 )
 
 func newSessionTestClient() *Client {

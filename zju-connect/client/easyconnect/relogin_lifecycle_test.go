@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mythologyli/zju-connect/underlay"
+	"EasyConnectSuite/vpncore/underlay"
 )
 
 func TestCloseCancelsReauthenticationAndWaitingKeepalive(t *testing.T) {

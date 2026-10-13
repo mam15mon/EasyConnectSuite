@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mythologyli/zju-connect/internal/zctcpip"
+	"EasyConnectSuite/vpncore/internal/zctcpip"
 )
 
 const (

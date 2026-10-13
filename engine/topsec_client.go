@@ -12,10 +12,10 @@ import (
 	"sync/atomic"
 
 	"EasyConnectSuite/engine/topsec"
-	"github.com/mythologyli/zju-connect/client"
-	"github.com/mythologyli/zju-connect/client/easyconnect"
-	"github.com/mythologyli/zju-connect/configs"
-	"github.com/mythologyli/zju-connect/log"
+	"EasyConnectSuite/vpncore/client"
+	"EasyConnectSuite/vpncore/client/easyconnect"
+	"EasyConnectSuite/vpncore/configs"
+	"EasyConnectSuite/vpncore/log"
 	"inet.af/netaddr"
 )
 
