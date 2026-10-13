@@ -237,7 +237,8 @@ func Start(opts Options) (_ *Engine, err error) {
 	vpnStack.SetupIPPool(policy.resolver.IPPool)
 	vpnStack.SetupRelogin(func() (err error) {
 		trace := log.BeginOperation(e.logPrefix(), "relogin_resources", e.ctx.Done())
-		defer func() { trace.Finish("returned", err) }()
+		outcome := "interrupted"
+		defer func() { trace.Finish(outcome, err) }()
 		trace.Step("status_callback")
 		e.emitStatus(PhaseReconnecting, "连接中断，正在自动重新登录...")
 		trace.Step("authentication")
@@ -268,6 +269,7 @@ func Start(opts Options) (_ *Engine, err error) {
 			e.opts.OnResources(next.entries)
 		}
 
+		outcome = "returned"
 		return nil
 	})
 	vpnStack.SetupRecovered(func() {
@@ -498,12 +500,14 @@ func (e *Engine) execTerminal() {
 
 func (e *Engine) registerTerminal(name string, f lifecycle.TerminalFunc) {
 	cleanup := f
-	f = func(ctx context.Context) error {
+	f = func(ctx context.Context) (err error) {
 		started := time.Now()
 		diagnostic := log.BeginOperation(e.logPrefix(), "cleanup_"+name, ctx.Done())
+		outcome := "interrupted"
+		defer func() { diagnostic.Finish(outcome, err) }()
 		e.logf("cleanup start step=%s", name)
-		err := cleanup(ctx)
-		diagnostic.Finish("returned", err)
+		err = cleanup(ctx)
+		outcome = "returned"
 		e.logf("cleanup complete step=%s elapsed=%s cause=%v", name, time.Since(started).Round(time.Millisecond), err)
 		return err
 	}

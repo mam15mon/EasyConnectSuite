@@ -88,6 +88,9 @@ func (o *Operation) Finish(outcome string, err error) {
 		}
 		var netErr net.Error
 		timeout := errors.As(err, &netErr) && netErr.Timeout()
+		if err != nil {
+			outcome = "failed"
+		}
 		o.write("phase=end outcome=%s stage=%s elapsed=%s stage_elapsed=%s canceled=%t timeout=%t error_type=%T cause=%v",
 			outcome, stage, time.Since(o.started).Round(time.Millisecond), time.Since(since).Round(time.Millisecond), o.isCancelled(), timeout, err, err)
 	})
