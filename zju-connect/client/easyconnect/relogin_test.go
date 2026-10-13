@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	clientpkg "github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/underlay"
 )
 
@@ -32,6 +33,11 @@ func TestSetupReauthenticatesAfterShutdown(t *testing.T) {
 	if err := c.Setup(); err != nil {
 		t.Fatal(err)
 	}
+	oldIP, _ := c.IP()
+	var updated net.IP
+	if !clientpkg.RegisterIPUpdateHandler(c, func(ip net.IP) error { updated = append(net.IP(nil), ip...); return nil }) {
+		t.Fatal("IP update hook unavailable")
+	}
 	oldID, oldToken, oldIPConn := c.twfID, *c.token, c.requestIPConn
 	expired.Store(true)
 	if _, err := c.SendConn(); !errors.Is(err, ErrSangforShutdown) {
@@ -42,6 +48,10 @@ func TestSetupReauthenticatesAfterShutdown(t *testing.T) {
 	}
 	if logins.Load() != 2 || c.twfID == oldID || *c.token == oldToken || c.requestIPConn == oldIPConn {
 		t.Fatal("reconnect did not replace authentication, token and IP connection")
+	}
+	newIP, _ := c.IP()
+	if newIP.Equal(oldIP) || !newIP.Equal(updated) {
+		t.Fatalf("IP update not published: old=%s new=%s callback=%s", oldIP, newIP, updated)
 	}
 	for _, secret := range []string{"mock-user", "mock-password", oldID, c.twfID,
 		hex.EncodeToString(oldToken[:]), hex.EncodeToString(c.token[:])} {
@@ -139,7 +149,7 @@ func reloginGateway(t *testing.T, sessionID string) (*Client, *atomic.Int32, *at
 						t.Error("binary handshake used a stale session")
 						return
 					}
-					reply := []byte{0, 0, 0, 0, 10, 90, 0, 2}
+					reply := []byte{0, 0, 0, 0, 10, 90, 0, byte(logins.Load() + 2)}
 					if packet[0] == 6 {
 						reply[0] = 1
 					}
@@ -205,4 +215,21 @@ func reloginGateway(t *testing.T, sessionID string) (*Client, *atomic.Int32, *at
 		TestMultiLine: true, UnderlayDialer: newTestUnderlay(t, underlay.Options{AutoDetect: false})})
 	t.Cleanup(c.Close)
 	return c, &logins, &expired, &rejected
+}
+
+func TestSetupDoesNotPublishIPWhenStackUpdateFails(t *testing.T) {
+	c, _, _, _ := reloginGateway(t, "")
+	if err := c.Setup(); err != nil {
+		t.Fatal(err)
+	}
+	previous, _ := c.IP()
+	failure := errors.New("stack address update rejected")
+	c.SetIPUpdateHandler(func(net.IP) error { return failure })
+	if err := c.Setup(); !errors.Is(err, failure) {
+		t.Fatalf("update error = %v", err)
+	}
+	current, _ := c.IP()
+	if !current.Equal(previous) || c.requestIPConn != nil {
+		t.Fatal("failed IP update published a new session")
+	}
 }
