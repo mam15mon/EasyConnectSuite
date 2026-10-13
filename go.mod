@@ -3,9 +3,9 @@ module EasyConnectSuite
 go 1.25.6
 
 require (
+	EasyConnectSuite/vpncore v0.0.0-00010101000000-000000000000
 	github.com/miekg/dns v1.1.72
 	github.com/mythologyli/sing-tun v0.0.0-20260201144630-c04d9db95dc7
-	EasyConnectSuite/vpncore v0.0.0-00010101000000-000000000000
 	github.com/sagernet/sing v0.7.18
 	github.com/wailsapp/wails/v2 v2.12.0
 	golang.org/x/sys v0.45.0
