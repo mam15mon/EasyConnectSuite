@@ -28,3 +28,4 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 - 用户在当前会话已经授权的安装、配置或开发工作，直接推进，不重复索取任务创建或实现许可。
 - 原有深信服配置需要保持兼容。协议支持范围、构建成功、模拟测试和真实网关验证分别记录。
 - 凭据、令牌、真实用户配置和私有日志不得写入任务资料或 Git。
+- 后续新增或修改认证、连接、重连、TUN、IPC 和清理等关键流程时，必须同步提供可定位的日志：连接/操作身份、步骤、耗时、错误及取消状态；阻塞路径需要自动保留受限且脱敏的线程证据。只记录已观察到的事实，不把推测写成已确认根因。具体契约见 `.trellis/spec/backend/logging-guidelines.md`。
