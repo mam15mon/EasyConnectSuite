@@ -4,7 +4,7 @@
 
 ## 使用方式
 
-1. 从托盘退出旧的 EasyConnectGUI 实例，再运行新版本。
+1. 从托盘退出旧的 VPN 实例，再运行新版本。
 2. 编辑配置，选择实际联网的出口网卡，例如 `WLAN`。自动选择也可使用，但多 VPN 同时运行时建议明确指定出口。
 3. 开启 TUN 时由系统 UAC 为独立无窗口 `VPN.exe --tun-worker` 授权。主 GUI 不退出、不重新登录，取消授权会还原该配置的开关。Worker 存活期间由多条 TUN 共用；最后一条 TUN 和准备预约释放后退出，下次启动仍可能弹 UAC。
 4. 未连接时开启只保存偏好并准备 Worker，点击连接后附着真实网卡；已连接时直接附着或分离。TUN 错误在连接设置中单独显示，VPN 及本地代理继续运行。
@@ -58,7 +58,7 @@ Get-DnsClientNrptRule | Where-Object Comment -match '^EasyConnectSuite resource 
 
 使用实际开放的业务端口验证，而不是 ping，例如 `Test-NetConnection <内网IP> -Port <业务端口>`。同时确认 aTrust 的独立资源和 Clash 的普通代理流量仍可使用。断开后再查看，确认本程序的路由和标记规则已经清理。
 
-日志位于 `%APPDATA%\EasyConnectVPN\logs\engine.log`，多连接共享此进程日志。代理端口失败作为所属 VPN 错误返回；TUN 附着和系统清理失败保留独立 TUN 错误。Worker 不直接写 engine.log，崩溃输出单独位于 tun-worker-crash.log。
+日志位于 `%APPDATA%\VPN\logs\engine.log`，多连接共享此进程日志。代理端口失败作为所属 VPN 错误返回；TUN 附着和系统清理失败保留独立 TUN 错误。Worker 不直接写 engine.log，崩溃输出单独位于 tun-worker-crash.log。
 
 如果强制结束进程后遗留了本程序的 DNS 标记，可在管理员 PowerShell 中清理：
 

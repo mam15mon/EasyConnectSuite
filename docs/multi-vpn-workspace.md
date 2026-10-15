@@ -28,7 +28,7 @@ SHA-256：`3C759BAC1AFE0FDB59524773DE564CE82DC0B680D3C124FD14A01A524B99A63A`。
 
 ## 稳定性诊断
 
-完整日志在 `%APPDATA%/EasyConnectVPN/logs/engine.log`，单文件约 8 MiB，保留一份 `engine.log.old`，总量约 16 MiB。所有协议的引擎阶段与清理记录带 PID、引擎编号、配置 ID 和协议；TopSAP 带 PID、配置 ID 和自身会话编号。
+完整日志在 `%APPDATA%/VPN/logs/engine.log`，单文件约 8 MiB，保留一份 `engine.log.old`，总量约 16 MiB。所有协议的引擎阶段与清理记录带 PID、引擎编号、配置 ID 和协议；TopSAP 带 PID、配置 ID 和自身会话编号。
 
 - 连接：认证、资源加载、数据 TLS、ACK、进入连接状态，启动失败阶段及原因。
 - 停止：单条断开、全部断开、程序退出明确区分；不可恢复的数据通道错误保留原因。

@@ -1,6 +1,6 @@
 # Logging
 
-The zju-connect engine uses its log package and the standard Go logger. engine.startLogCapture registers with the process-wide engineLogs hub, which owns shared rotating files and sends lines to OnLog callbacks. Removing one engine must not restore logger output or close files still used by another. Never call standard log.SetOutput while holding the hub lock. GUI connections share APPDATA/EasyConnectVPN/logs/engine.log; it is a combined process log.
+The zju-connect engine uses its log package and the standard Go logger. engine.startLogCapture registers with the process-wide engineLogs hub, which owns shared rotating files and sends lines to OnLog callbacks. Removing one engine must not restore logger output or close files still used by another. Never call standard log.SetOutput while holding the hub lock. GUI connections share APPDATA/VPN/logs/engine.log; it is a combined process log. setupNamedCrashLog also directs the standard logger to the existing crash file before engine capture starts, so startup and final shutdown evidence remains available outside engine capture. App.shutdown uses app_shutdown stages stop_status_ticker, disconnect_all, close_tun_worker and remove_tray; pending operations reuse the bounded observer. Final app shutdown lines after the last engine closes are in crash.log.
 
 engine.rotatingWriter caps engine.log at 8 MiB and retains one .old generation (about 16 MiB total). Reuse this pattern for engine integration rather than adding a logging service.
 

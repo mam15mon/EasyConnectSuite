@@ -1,4 +1,4 @@
-# VPN Suite
+# VPN
 
 支持深信服 EasyConnect、华为／联软 UniVPN 及天融信 TopSAP 标准模式协议子集的第三方 Windows 图形客户端。一个 EXE 可同时连接多个配置，分别管理连接状态、资源、本地代理和 TUN。EasyConnect 引擎基于 [zju-connect](https://github.com/mythologyli/zju-connect)(上游 commit `4031c52`)，UniVPN 和 TopSAP 使用 Go 协议核心；**引擎源码直接编译进 GUI 进程**，无需 OpenConnect 或 Python 子进程。支持范围见 [UniVPN 接入说明](docs/univpn-go.md)及 [TopSAP 测试版说明](docs/topsec-go.md)；TopSAP 的新版 EXE 仍待真实网关验证。
 
@@ -59,6 +59,10 @@ upx -t build/bin/VPN.exe
 默认生成 `build/bin/VPN.exe`，当前验收包保持未压缩。可选 UPX 命令直接压缩该文件；`--ultra-brute` 会尝试更多压缩组合，构建耗时更长。
 
 `vpn_profiles.json` 配置与原 EasyConnectGUI 完全兼容,可直接复用。
+
+程序文件、Windows 产品名称和窗口标题均为 `VPN`。默认配置存储在 `%APPDATA%\VPN\vpn_profiles.json`，运行日志在 `%APPDATA%\VPN\logs`，WebView 缓存在 `%APPDATA%\VPN\webview`；已有的 EXE 同目录配置继续兼容。首次启动前会将旧 `%APPDATA%\EasyConnectVPN` 目录整体改名为 `VPN`，保留配置和历史日志；新旧目录同时存在或迁移失败时明确报错，不覆盖任一目录。
+
+窗口 X 只隐藏窗口并保留托盘和连接；托盘“退出程序（断开全部）”交给 Wails 发起真正退出。退出清理只执行一次，完成所有连接和 Worker 的清理后再移除托盘；退出期间禁止新连接和重新唤醒窗口。
 
 ## 同时连接多个 VPN
 

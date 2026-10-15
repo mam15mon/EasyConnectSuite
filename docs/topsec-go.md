@@ -43,4 +43,4 @@ TopSAP 标准模式现已接入同一 Windows EXE。协议核心在 `engine/tops
 
 历史 workspace-v4 交付文件 SHA-256：`8F0FE78754989EC427853D6804B0DECDC0E2A06C8583E3AEFF6609CCF74AABB5`。
 
-日志位置：`%APPDATA%/EasyConnectVPN/logs/engine.log`，8 MiB 轮转并保留 `.old`。TopSAP 行包含 PID、配置 ID、进程内会话编号、认证/完整配置/数据 TLS/隧道 ACK 阶段、HTTP 状态和耗时、Ret、资源数量；首次收发、每分钟收发累计/增量与最后活动时间、关闭字节统计可确认隧道是否有实际数据。失败阶段及注销结果同样落盘。密码、用户名、S_CODE、cookie、会话令牌和数据包内容不写入日志。
+日志位置：`%APPDATA%/VPN/logs/engine.log`，8 MiB 轮转并保留 `.old`。TopSAP 行包含 PID、配置 ID、进程内会话编号、认证/完整配置/数据 TLS/隧道 ACK 阶段、HTTP 状态和耗时、Ret、资源数量；首次收发、每分钟收发累计/增量与最后活动时间、关闭字节统计可确认隧道是否有实际数据。失败阶段及注销结果同样落盘。密码、用户名、S_CODE、cookie、会话令牌和数据包内容不写入日志。
