@@ -10,7 +10,7 @@ UniVPN Go 核心已接入 GUI、gVisor TCP/UDP、本地 SOCKS5/HTTP 代理及 Wi
 
 认证诊断版本为未压缩的 `EasyConnectGUI-multi-vpn-authdiag.exe`，保留证书开关和多连接功能。它修正了把所有非零认证结果说成“密码错误”的提示，改为显示服务器原始返回码（十进制／十六进制）。官方 UniVPN 10781.16.0.0729 能正常登录而本程序拒绝认证的情况仍在排查；没有验证过的返回码含义不会猜测。认证拒绝仍立即停止，不自动切换认证域或重复尝试报文。该版本完成的是诊断信息修复，尚未证明真实网关兼容性问题已解决。
 
-实际诊断界面返回 `2 / 0x00000002`，此前 engine.log 只记录到认证阶段，未保存这个拒绝码。官方成功日志的认证域与网关一致，MAC 字段为 14 位大写 `XXXX-XXXX-XXXX`；Go 原来采用 17 位冒号格式。当前 `authfix` 版本按同源工作 Python 原型修正稳定 MAC 的生成与编码，并在 `%APPDATA%/EasyConnectVPN/logs/engine.log` 保存数字拒绝码，不记录账号、密码、令牌或认证报文。返回码 2 的含义没有确认，真实登录仍需用新版本验证，没有自动尝试其他 MAC、认证域或协议。
+实际诊断界面返回 `2 / 0x00000002`，此前 engine.log 只记录到认证阶段，未保存这个拒绝码。官方成功日志的认证域与网关一致，MAC 字段为 14 位大写 `XXXX-XXXX-XXXX`；Go 原来采用 17 位冒号格式。当前 `authfix` 版本按同源工作 Python 原型修正稳定 MAC 的生成与编码，并在 `%APPDATA%/VPN/logs/engine.log` 保存数字拒绝码，不记录账号、密码、令牌或认证报文。返回码 2 的含义没有确认，真实登录仍需用新版本验证，没有自动尝试其他 MAC、认证域或协议。
 
 该版本为 20,519,424 字节，SHA256 `030142FD02B0EDCF5D53EC689134938FCB66D8F32B8709D96CC2E9171BCF586D`。完整 AUTH 字段的独立字面量样例、TLS 模拟认证、失败日志持久化、`go test -race ./... -count=1 -timeout=75s`、`go vet ./...` 和 Wails 生产构建通过；Wails 显示 Compress=false，未运行 UPX。
 
