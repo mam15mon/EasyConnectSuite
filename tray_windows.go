@@ -220,7 +220,7 @@ func showTrayMenu(app *App, hwnd uintptr, pt POINT) {
 		showTrayWorkspace(app)
 	case 1004:
 		go func() {
-			app.shutdown(app.ctx)
+			log.Printf("[VPN pid=%d] tray action=quit", os.Getpid())
 			if app.ctx != nil {
 				wailsruntime.Quit(app.ctx)
 			}

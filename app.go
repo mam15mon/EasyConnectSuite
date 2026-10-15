@@ -14,6 +14,7 @@ import (
 	"EasyConnectSuite/engine"
 
 	"EasyConnectSuite/vpncore/configs"
+	vpnlog "EasyConnectSuite/vpncore/log"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -79,6 +80,7 @@ type App struct {
 	tunManager   tunControl
 	modeOps      map[string]bool
 	shuttingDown bool
+	shutdownOnce sync.Once
 	startTime    time.Time
 	tickerCancel context.CancelFunc
 	configPath   string
@@ -208,20 +210,30 @@ func (a *App) startup(ctx context.Context) {
 
 // shutdown cleans up resources
 func (a *App) shutdown(ctx context.Context) {
-	a.mu.Lock()
-	a.shuttingDown = true
-	a.mu.Unlock()
-	RemoveTrayIcon()
-	if a.tickerCancel != nil {
-		a.tickerCancel()
-	}
-	_ = a.stopAllConnections("app_shutdown")
-	a.mu.Lock()
-	manager := a.tunManager
-	a.mu.Unlock()
-	if manager != nil {
-		manager.Close()
-	}
+	a.shutdownOnce.Do(func() {
+		diagnostic := vpnlog.BeginOperation(fmt.Sprintf("[VPN pid=%d] ", os.Getpid()), "app_shutdown", nil)
+		outcome := "interrupted"
+		defer func() { diagnostic.Finish(outcome, nil) }()
+		a.mu.Lock()
+		a.shuttingDown = true
+		a.mu.Unlock()
+		diagnostic.Step("stop_status_ticker")
+		if a.tickerCancel != nil {
+			a.tickerCancel()
+		}
+		diagnostic.Step("disconnect_all")
+		_ = a.stopAllConnections("app_shutdown")
+		a.mu.Lock()
+		manager := a.tunManager
+		a.mu.Unlock()
+		diagnostic.Step("close_tun_worker")
+		if manager != nil {
+			manager.Close()
+		}
+		diagnostic.Step("remove_tray")
+		RemoveTrayIcon()
+		outcome = "returned"
+	})
 }
 
 // GetAppConfig returns all profiles and active ID
