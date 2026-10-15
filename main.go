@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"fmt"
+	stdlog "log"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -54,6 +55,7 @@ func setupNamedCrashLog(filename string) {
 	}
 	_, _ = f.WriteString(fmt.Sprintf("\n=== application started %s ===\n", time.Now().Format(time.RFC3339)))
 	_ = winsys.SetStdHandle(winsys.STD_ERROR_HANDLE, winsys.Handle(f.Fd()))
+	stdlog.SetOutput(f)
 }
 
 func main() {
@@ -99,6 +101,7 @@ func main() {
 			app,
 		},
 		Windows: &windows.Options{
+			WebviewUserDataPath:  filepath.Join(applicationDataDir(), "webview"),
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
 			DisableWindowIcon:    false,
