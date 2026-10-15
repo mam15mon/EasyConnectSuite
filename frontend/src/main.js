@@ -211,7 +211,7 @@ document.getElementById('item-http').addEventListener('click', () => {
   if (httpPortVal.innerText !== '已关闭') copyToClipboard(httpPortVal.innerText, 'HTTP 代理');
 });
 document.getElementById('log-path-hint').addEventListener('click', () => {
-  copyToClipboard('%APPDATA%\\EasyConnectVPN\\logs', '日志目录');
+  copyToClipboard('%APPDATA%\\VPN\\logs', '日志目录');
 });
 
 // ---------- 弹窗元素 ----------

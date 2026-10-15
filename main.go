@@ -14,7 +14,6 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed all:frontend/dist
@@ -24,7 +23,7 @@ var assets embed.FS
 // windowsgui app stderr is invalid by default, so a Go panic anywhere in
 // any goroutine would otherwise kill the process silently and leave no
 // trace. With this in place the runtime panic dump lands in
-// %APPDATA%\EasyConnectVPN\logs\crash.log.
+// %APPDATA%\VPN\logs\crash.log.
 func setupCrashLog() {
 	setupNamedCrashLog("crash.log")
 }
@@ -36,7 +35,7 @@ func setupNamedCrashLog(filename string) {
 
 	logDir := ""
 	if appData := os.Getenv("APPDATA"); appData != "" {
-		logDir = filepath.Join(appData, "EasyConnectVPN", "logs")
+		logDir = applicationLogDir()
 		if err := os.MkdirAll(logDir, 0755); err != nil {
 			return
 		}
@@ -66,11 +65,17 @@ func main() {
 		}
 		return
 	}
+	if err := migrateLegacyStorage(); err != nil {
+		message, _ := winsys.UTF16PtrFromString(err.Error())
+		title, _ := winsys.UTF16PtrFromString("VPN 启动失败")
+		_, _ = winsys.MessageBox(0, message, title, winsys.MB_OK|winsys.MB_ICONERROR)
+		return
+	}
 	setupCrashLog()
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:             "VPN Suite · VPN 工作台",
+		Title:             "VPN",
 		Width:             1080,
 		Height:            820,
 		MinWidth:          840,
@@ -81,10 +86,7 @@ func main() {
 			OnSecondInstanceLaunch: func(data options.SecondInstanceData) {
 				// 再次双击 exe 时,把已运行实例的窗口唤到前台,
 				// 而不是悄悄再起一个连不上端口的实例
-				if app.ctx != nil {
-					wailsRuntime.WindowShow(app.ctx)
-					wailsRuntime.WindowUnminimise(app.ctx)
-				}
+				showTrayWorkspace(app)
 			},
 		},
 		AssetServer: &assetserver.Options{

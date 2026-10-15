@@ -23,7 +23,7 @@ func (a *App) GetProfileLogs(id string) ([]string, error) {
 		return nil, fmt.Errorf("服务器配置不存在")
 	}
 	marker := fmt.Sprintf("profile=%q", id)
-	path := filepath.Join(os.Getenv("APPDATA"), "EasyConnectVPN", "logs", "engine.log")
+	path := filepath.Join(applicationLogDir(), "engine.log")
 	lines := make([]string, 0, 200)
 	for _, filename := range []string{path + ".old", path} {
 		file, err := os.Open(filename)

@@ -96,7 +96,7 @@ func NewApp() *App {
 	if _, err := os.Stat(configPath); err != nil {
 		appData := os.Getenv("APPDATA")
 		if appData != "" {
-			appDir := filepath.Join(appData, "EasyConnectVPN")
+			appDir := applicationDataDir()
 			_ = os.MkdirAll(appDir, 0755)
 			configPath = filepath.Join(appDir, "vpn_profiles.json")
 		}
@@ -190,6 +190,10 @@ func (a *App) startup(ctx context.Context) {
 				return
 			case <-ticker.C:
 				a.mu.Lock()
+				if a.shuttingDown {
+					a.mu.Unlock()
+					return
+				}
 				for id, c := range a.connections {
 					if c.status.Running && !c.started.IsZero() {
 						c.status.Duration = int64(time.Since(c.started).Seconds())
@@ -504,7 +508,7 @@ func (a *App) handleEngineStatus(s engine.Status) {
 	applyEngineStatus(&a.status, &a.startTime, &a.resources, s)
 
 	a.syncTrayTooltipLocked()
-	if a.ctx != nil {
+	if a.ctx != nil && !a.shuttingDown {
 		runtime.EventsEmit(a.ctx, "vpn-status", a.status)
 	}
 }

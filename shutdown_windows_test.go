@@ -36,6 +36,8 @@ func TestShutdownRetainsTrayUntilCleanupAndRunsOnce(t *testing.T) {
 	}); got != "OK" {
 		t.Fatal(got)
 	}
+	// Shutdown must not send events to the frontend after its message loop exits.
+	a.ctx = context.Background()
 
 	var logs bytes.Buffer
 	previousWriter := log.Writer()

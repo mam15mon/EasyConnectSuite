@@ -1,7 +1,10 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "EasyConnectGUI",
+  "name": "VPN",
   "outputfilename": "VPN",
+  "info": {
+    "productName": "VPN"
+  },
   "frontend:install": "npm install",
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",

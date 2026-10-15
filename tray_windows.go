@@ -135,9 +135,8 @@ func trayWndProc(hwnd uintptr, msg uint32, wParam uintptr, lParam uintptr) uintp
 	if msg == WM_TRAYICON {
 		switch lParam {
 		case WM_LBUTTONUP, WM_LBUTTONDBLCLK:
-			if globalTrayApp != nil && globalTrayApp.ctx != nil {
-				wailsruntime.WindowShow(globalTrayApp.ctx)
-				wailsruntime.WindowUnminimise(globalTrayApp.ctx)
+			if globalTrayApp != nil {
+				showTrayWorkspace(globalTrayApp)
 			}
 			return 0
 		case WM_RBUTTONUP:
@@ -220,6 +219,13 @@ func showTrayMenu(app *App, hwnd uintptr, pt POINT) {
 		showTrayWorkspace(app)
 	case 1004:
 		go func() {
+			app.mu.Lock()
+			if app.shuttingDown {
+				app.mu.Unlock()
+				return
+			}
+			app.shuttingDown = true
+			app.mu.Unlock()
 			log.Printf("[VPN pid=%d] tray action=quit", os.Getpid())
 			if app.ctx != nil {
 				wailsruntime.Quit(app.ctx)
@@ -249,7 +255,9 @@ func showTrayMenu(app *App, hwnd uintptr, pt POINT) {
 }
 
 func showTrayWorkspace(app *App) {
-	if app.ctx != nil {
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	if app.ctx != nil && !app.shuttingDown {
 		wailsruntime.WindowShow(app.ctx)
 		wailsruntime.WindowUnminimise(app.ctx)
 	}

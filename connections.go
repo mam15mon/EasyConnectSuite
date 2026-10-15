@@ -84,7 +84,7 @@ func (a *App) selectConnectionLocked() {
 }
 func (a *App) emitConnectionLocked(status VPNStatus, resources []engine.ResourceEntry) {
 	a.syncTrayTooltipLocked()
-	if a.ctx != nil {
+	if a.ctx != nil && !a.shuttingDown {
 		runtime.EventsEmit(a.ctx, "vpn-status", status)
 		runtime.EventsEmit(a.ctx, "vpn-resources", map[string]any{"profileId": status.ProfileID, "entries": resources})
 		runtime.EventsEmit(a.ctx, "vpn-connections", a.connectionStatusesLocked())
@@ -223,7 +223,7 @@ func (a *App) startConnectionID(id string, start func(engine.Options) (vpnEngine
 		a.status = c.status
 	}
 	a.emitConnectionLocked(c.status, nil)
-	logDir := filepath.Join(os.Getenv("APPDATA"), "EasyConnectVPN", "logs")
+	logDir := applicationLogDir()
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		delete(a.connections, p.ID)
 		cancel()

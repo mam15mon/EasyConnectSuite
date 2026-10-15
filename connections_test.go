@@ -357,7 +357,7 @@ func TestLogDirectoryFailureRetainsOtherSelectedConnection(t *testing.T) {
 	before, resources := a.GetStatus(), a.GetVPNResources()
 	blocked := t.TempDir()
 	t.Setenv("APPDATA", blocked)
-	if err := os.WriteFile(filepath.Join(blocked, "EasyConnectVPN"), []byte("blocked"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(blocked, "VPN"), []byte("blocked"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if got := a.startConnectionID("b", func(engine.Options) (vpnEngine, error) {
@@ -390,7 +390,7 @@ func TestSelectedLogDirectoryFailureClearsResources(t *testing.T) {
 	a := multiTestApp(t)
 	a.status = disconnectedStatus(a.GetActiveProfile())
 	a.resources = []engine.ResourceEntry{{Target: "obsolete"}}
-	if err := os.WriteFile(filepath.Join(blocked, "EasyConnectVPN"), []byte("blocked"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(blocked, "VPN"), []byte("blocked"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	result := a.startConnectionID("a", func(engine.Options) (vpnEngine, error) { t.Fatal("unexpected engine start"); return nil, nil })
