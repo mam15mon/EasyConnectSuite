@@ -61,7 +61,7 @@ func StartTUNIngress(spec TUNSpec, service TUNBackend, progress func(string, str
 		return nil, err
 	}
 	if !windows.GetCurrentProcessToken().IsElevated() {
-		return nil, fmt.Errorf("请以管理员身份运行 EasyConnectGUI 后启用 TUN")
+		return nil, fmt.Errorf("请以管理员身份运行 VPN 后启用 TUN")
 	}
 	if err := spec.Validate(); err != nil {
 		return nil, err
