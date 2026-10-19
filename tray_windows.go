@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	vpnlog "EasyConnectSuite/vpncore/log"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -114,11 +115,13 @@ type NOTIFYICONDATA struct {
 }
 
 var (
-	globalTrayApp  *App
-	globalTrayHwnd uintptr
-	globalNID      NOTIFYICONDATA
-	trayIconMu     sync.Mutex
-	trayClosed     bool
+	globalTrayApp     *App
+	globalTrayHwnd    uintptr
+	globalNID         NOTIFYICONDATA
+	trayIconMu        sync.Mutex
+	trayClosed        bool
+	showTrayWindow    = wailsruntime.WindowShow
+	restoreTrayWindow = wailsruntime.WindowUnminimise
 )
 
 func trayWndProc(hwnd uintptr, msg uint32, wParam uintptr, lParam uintptr) uintptr {
@@ -255,12 +258,23 @@ func showTrayMenu(app *App, hwnd uintptr, pt POINT) {
 }
 
 func showTrayWorkspace(app *App) {
+	diagnostic := vpnlog.BeginOperation(fmt.Sprintf("[VPN pid=%d] ", os.Getpid()), "tray_workspace", nil)
+	outcome := "skipped"
+	defer func() { diagnostic.Finish(outcome, nil) }()
+	diagnostic.Step("wait_app_lock")
 	app.mu.Lock()
-	defer app.mu.Unlock()
-	if app.ctx != nil && !app.shuttingDown {
-		wailsruntime.WindowShow(app.ctx)
-		wailsruntime.WindowUnminimise(app.ctx)
+	ctx, shuttingDown := app.ctx, app.shuttingDown
+	app.mu.Unlock()
+	if ctx == nil || shuttingDown {
+		return
 	}
+	// Window restoration can synchronously reenter trayWndProc on this thread.
+	// Never hold the application lock across either native window operation.
+	diagnostic.Step("window_show")
+	showTrayWindow(ctx)
+	diagnostic.Step("window_restore")
+	restoreTrayWindow(ctx)
+	outcome = "shown"
 }
 
 // StartTray initializes Windows system tray icon

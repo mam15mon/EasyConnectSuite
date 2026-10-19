@@ -13,3 +13,9 @@ For Go behavior changes:
 - Distinguish compilation, mock integration, real TUN/routing tests and live gateway compatibility.
 
 Frontend checks are in ../frontend/index.md. build/bin outputs are ignored. Record source revisions, licenses and reproducible native build steps. Do not claim a live connection without testing an authorized gateway.
+
+## Windows workspace reentry
+
+Window show/restore calls may synchronously dispatch another tray callback on the same OS thread. `showTrayWorkspace` must snapshot the Wails context and shutdown state under `App.mu`, then release it before calling either native window action. Holding the mutex through `WindowUnminimise` can reenter the same function and deadlock the tray, status ticker and reconnect callbacks. A second EXE launch uses this same workspace entry point.
+
+`tray_workspace` operations use the existing bounded observer with `wait_app_lock`, `window_show` and `window_restore` stages and a final shown/skipped outcome. Tests in `tray_workspace_windows_test.go` simulate synchronous reentry from both window actions, verify tray/status reads remain available and check completed diagnostic evidence. Preserve the no-context and shutdown guards. Mock callbacks establish lock safety; real tray clicks and gateway reconnects require separate verification.
