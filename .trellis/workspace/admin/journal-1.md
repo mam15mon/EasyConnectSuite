@@ -377,3 +377,29 @@ Actual diagnostic result is AUTH code 2; no verified semantic mapping. Observed 
 ### Next Steps
 
 - 真实网关、跨管理员账户授权及完整休眠/系统故障矩阵未执行，保留验收边界；TopSAP 实网任务保持独立。
+
+
+## Session 14: 修复 EasyConnect 重连与停止锁死
+<!-- trellis-session: v=2 fp=fe7592f42c9cff7d -->
+
+**Date**: 2026-10-28
+**Task**: 修复 EasyConnect 重连与停止锁死
+**Branch**: `main`
+
+### Summary
+
+定位重连回调内同步关闭 gVisor TCP 流的端点锁循环及 TUN 请求持锁跨网络问题；独立关闭旧流，校验异步结果版本与取消状态，补充诊断和回归。根 test/vet/race、相关内嵌包 test/vet、Windows 构建通过，修复版保存桌面，未中断旧进程或执行真实双机网关复测。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f6cb184` | fix: release TUN request locks and retire streams outside relogin |
+| `9885de4` | fix: reject stale TUN pipe acceptance and verify cleanup evidence |
+| `2e998a5` | test: reproduce TUN reconnect and stop lock cycles |
+| `8ceaa80` | docs: record TUN relogin lock contract and verified checks |
+| `0d0846a` | docs: record reconnect repair executable delivery |
+
+### Status
+
+[OK] **Completed**
