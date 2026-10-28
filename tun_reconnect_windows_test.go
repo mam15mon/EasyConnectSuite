@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"sync"
 	"testing"
@@ -29,6 +30,7 @@ func reconnectAttachment(t *testing.T, backend engine.TUNBackend) *remoteTUN {
 	left, right := net.Pipe()
 	m := newTUNManager()
 	m.peer = tunipc.NewPeer(left, m.handle, nil)
+	peer := m.peer
 	worker := tunipc.NewPeer(right, func(context.Context, tunipc.Message) (tunipc.Message, error) {
 		return tunipc.Message{}, nil
 	}, nil)
@@ -36,7 +38,7 @@ func reconnectAttachment(t *testing.T, backend engine.TUNBackend) *remoteTUN {
 	a := &remoteTUN{manager: m, backend: backend, ctx: ctx, cancel: cancel, done: make(chan struct{}),
 		spec: engine.TUNSpec{Ref: tunipc.Ref{Profile: "reconnect%profile", Session: "session", Attachment: "attachment", Policy: 1}}}
 	m.attachments[a.spec.Attachment] = a
-	t.Cleanup(func() { a.finish(); m.peer.Close(); worker.Close() })
+	t.Cleanup(func() { a.finish(); peer.Close(); worker.Close() })
 	return a
 }
 
@@ -146,8 +148,8 @@ func TestRemoteTUNControlDoesNotWaitForPendingRequest(t *testing.T) {
 				}
 				if op == "dial" {
 					right.SetReadDeadline(time.Now().Add(time.Second))
-					if _, err := right.Read(make([]byte, 1)); err == nil {
-						t.Error("obsolete connection remained usable")
+					if _, err := right.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+						t.Errorf("obsolete connection was not closed: %v", err)
 					}
 				}
 			})

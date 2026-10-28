@@ -19,6 +19,7 @@ import (
 
 	"EasyConnectSuite/engine"
 	"EasyConnectSuite/internal/tunipc"
+	vpnlog "EasyConnectSuite/vpncore/log"
 	"golang.org/x/sys/windows"
 )
 
@@ -246,20 +247,56 @@ func (m *tunManager) Attach(ctx context.Context, spec engine.TUNSpec, b engine.T
 func (a *remoteTUN) Done() <-chan struct{} { return a.done }
 func (a *remoteTUN) finish() {
 	a.once.Do(func() {
+		a.mu.Lock()
 		a.cancel()
-		a.streams.Range(func(key, value any) bool { key.(io.Closer).Close(); return true })
+		var streams []io.Closer
+		a.streams.Range(func(key, value any) bool {
+			streams = append(streams, key.(io.Closer))
+			a.streams.Delete(key)
+			return true
+		})
+		a.mu.Unlock()
+		for _, stream := range streams {
+			stream.Close()
+		}
 		close(a.done)
 	})
 }
-func (a *remoteTUN) Update(ctx context.Context, spec engine.TUNSpec) error {
+func (a *remoteTUN) Update(ctx context.Context, spec engine.TUNSpec) (err error) {
+	prefix := fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q policy=%d] ", os.Getpid(), spec.Profile, spec.Session, spec.Attachment, spec.Policy)
+	trace := vpnlog.BeginOperation(prefix, "attachment_update", ctx.Done())
+	defer func() { trace.Finish("returned", err) }()
+	trace.Step("wait_manager_operation_lock")
 	a.manager.op.Lock()
 	defer a.manager.op.Unlock()
+	trace.Step("wait_attachment_lock")
 	a.mu.Lock()
 	a.spec = spec
-	a.streams.Range(func(key, value any) bool { key.(io.Closer).Close(); return true })
+	var streams []io.Closer
+	a.streams.Range(func(key, value any) bool {
+		streams = append(streams, key.(io.Closer))
+		a.streams.Delete(key)
+		return true
+	})
 	a.mu.Unlock()
-	_, err := a.manager.request(ctx, tunipc.Message{Op: "update", Ref: spec.Ref, Spec: &spec})
+	// Relogin may run inside WritePackets with a TCP endpoint lock held.
+	// Let that call return before Close tries to acquire the same lock.
+	if len(streams) > 0 {
+		go func() {
+			cleanup := vpnlog.BeginOperation(prefix, "retired_stream_close", a.ctx.Done())
+			var closeErr error
+			defer func() { cleanup.Finish("closed", closeErr) }()
+			vpnlog.Printf("%sretired_streams=%d", prefix, len(streams))
+			for _, stream := range streams {
+				cleanup.Step("stream_close")
+				closeErr = errors.Join(closeErr, stream.Close())
+			}
+		}()
+	}
+	trace.Step("worker_update_reply")
+	_, err = a.manager.request(ctx, tunipc.Message{Op: "update", Ref: spec.Ref, Spec: &spec})
 	if err != nil {
+		trace.Step("worker_cleanup_wait")
 		err = errors.Join(err, a.waitWorkerCleanup(ctx))
 	}
 	return err
@@ -313,12 +350,24 @@ func (m *tunManager) handle(ctx context.Context, msg tunipc.Message) (tunipc.Mes
 		return tunipc.Message{}, errors.New("unknown TUN attachment")
 	}
 	a.mu.RLock()
-	defer a.mu.RUnlock()
 	if a.spec.Ref != msg.Ref || a.ctx.Err() != nil {
+		a.mu.RUnlock()
 		return tunipc.Message{}, errors.New("obsolete TUN attachment")
 	}
+	a.mu.RUnlock()
+	// Dial/DNS can synchronously trigger a relogin and policy update.
+	// Snapshot identity here and validate it again before publishing results.
 	if msg.Op == "dns" {
 		data, routes, err := a.backend.DNS(ctx, msg.Data)
+		a.mu.RLock()
+		obsolete := a.spec.Ref != msg.Ref || a.ctx.Err() != nil
+		a.mu.RUnlock()
+		if obsolete {
+			return tunipc.Message{}, errors.New("obsolete TUN attachment")
+		}
+		if ctx.Err() != nil {
+			return tunipc.Message{}, ctx.Err()
+		}
 		return tunipc.Message{Data: data, Routes: routes}, err
 	}
 	select {
@@ -338,16 +387,21 @@ func (m *tunManager) handle(ctx context.Context, msg tunipc.Message) (tunipc.Mes
 		<-m.flows
 		return tunipc.Message{}, err
 	}
-	a.streams.Store(upstream, true)
-	a.streams.Store(listener, true)
-	if a.ctx.Err() != nil {
+	a.mu.RLock()
+	obsolete := a.spec.Ref != msg.Ref || a.ctx.Err() != nil
+	if obsolete || ctx.Err() != nil {
+		a.mu.RUnlock()
 		upstream.Close()
 		listener.Close()
-		a.streams.Delete(upstream)
-		a.streams.Delete(listener)
 		<-m.flows
+		if ctx.Err() != nil {
+			return tunipc.Message{}, ctx.Err()
+		}
 		return tunipc.Message{}, net.ErrClosed
 	}
+	a.streams.Store(upstream, true)
+	a.streams.Store(listener, true)
+	a.mu.RUnlock()
 	go func() {
 		defer func() {
 			upstream.Close()
