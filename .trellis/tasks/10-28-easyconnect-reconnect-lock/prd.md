@@ -1,19 +1,12 @@
-# 修复 EasyConnect 重连触发的 TUN 连接锁死
+# EasyConnect 重连与停止锁死修复
 
-## Goal
+## 目标
+- 网关终止旧会话后，成功认证的重连能够继续重建隧道。
+- TUN 更新、停止不等待仍在网络调用中的旧请求。
+- 过期请求不发布数据管道、DNS 结果或动态路由。
 
-缩短 TUN 请求持锁范围，验证重连更新和停止不等待阻塞网络请求
+## 约束
+最小修改；保持认证、重试、配置及 IPC 格式兼容；不添加兜底机制；不保存私有日志和凭据。
 
-## Requirements
-
-- TBD
-
-## Acceptance Criteria
-
-- [ ] TBD
-
-## Notes
-
-- Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
-- Lightweight tasks can remain PRD-only.
-- For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
+## 验收
+回归测试覆盖同步发包触发更新时旧流关闭阻塞、未完成 Dial/DNS 与更新/停止并发、过期结果丢弃以及诊断日志。运行根模块 test/vet/race、相关内嵌模块测试并构建 Windows EXE；模拟和构建不代表真实网关验证。
