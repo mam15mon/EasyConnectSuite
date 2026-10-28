@@ -417,11 +417,14 @@ func (m *tunManager) handle(ctx context.Context, msg tunipc.Message) (tunipc.Mes
 			return
 		}
 		defer conn.Close()
-		a.streams.Store(conn, true)
-		defer a.streams.Delete(conn)
-		if a.ctx.Err() != nil {
+		a.mu.RLock()
+		if a.spec.Ref != msg.Ref || a.ctx.Err() != nil {
+			a.mu.RUnlock()
 			return
 		}
+		a.streams.Store(conn, true)
+		a.mu.RUnlock()
+		defer a.streams.Delete(conn)
 		tunipc.Relay(tunipc.NewDataConn(conn, msg.Network == "udp"), upstream, msg.Network == "udp")
 	}()
 	return tunipc.Message{Pipe: name}, nil
