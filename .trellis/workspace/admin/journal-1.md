@@ -403,3 +403,27 @@ Actual diagnostic result is AUTH code 2; no verified semantic mapping. Observed 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 15: 修复 TUN DNS 探测与重连锁循环
+<!-- trellis-session: v=2 fp=6484b20856ed73da -->
+
+**Date**: 2026-10-30
+**Task**: 修复 TUN DNS 探测与重连锁循环
+**Branch**: `main`
+
+### Summary
+
+DNS 探测移出 TUN 操作锁；初次附着静态域名后后台发现；核对 policy/backend/ref 防止迟到覆盖。回归先红后绿，根 test/vet/race 与 Windows 构建通过，交付独立桌面修复包。真实双机回归待运行新版验证，未中断在用 VPN。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fe910c8` | fix: 释放 TUN 操作锁后探测 DNS 并丢弃过期结果 |
+| `6cfbc35` | test: 验证初次附着锁外发现与迟到回调隔离 |
+| `9e00f6e` | docs: 固化 DNS 探测锁约束与修复版验证记录 |
+
+### Status
+
+[OK] **Completed**
