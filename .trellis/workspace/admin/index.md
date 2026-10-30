@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
+- **Total Sessions**: 16
 - **Last Active**: 2026-10-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~429 | Active |
+| `journal-1.md` | ~453 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-10-30 | 增加一键连接全部 VPN | `dcb6438`, `45b5634`, `9f1a35a` | `main` |
 | 15 | 2026-10-30 | 修复 TUN DNS 探测与重连锁循环 | `fe910c8`, `6cfbc35`, `9e00f6e` | `main` |
 | 14 | 2026-10-28 | 修复 EasyConnect 重连与停止锁死 | `f6cb184`, `9885de4`, `2e998a5`, `8ceaa80`, `0d0846a` | `main` |
 | 13 | 2026-10-12 | 独立 TUN Worker 验收与交付 | `532ef77`, `9b039cf`, `aca4fcf` | `codex/tun-worker-helper` |

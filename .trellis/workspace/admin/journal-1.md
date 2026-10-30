@@ -427,3 +427,27 @@ DNS 探测移出 TUN 操作锁；初次附着静态域名后后台发现；核�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 16: 增加一键连接全部 VPN
+<!-- trellis-session: v=2 fp=8c2e5cf9d13e140c -->
+
+**Date**: 2026-10-30
+**Task**: 增加一键连接全部 VPN
+**Branch**: `main`
+
+### Summary
+
+增加连接全部按钮，逐配置并发准备 TUN，跳过运行及处理中项，隔离单项失败。13 项 Node 测试、前端与 Windows 构建通过，840x660 模拟界面点击验证从 2 条在线到 4 条在线。交付桌面独立新版，包含 DNS 重连修复，未启动真实 VPN。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dcb6438` | feat: 一键并发连接全部未运行的 VPN 配置 |
+| `45b5634` | test: 用明确启动信号验证批量连接并发 |
+| `9f1a35a` | build: 更新一键连接全部的前端产物 |
+
+### Status
+
+[OK] **Completed**
