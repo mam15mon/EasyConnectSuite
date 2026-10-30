@@ -9,9 +9,9 @@ import (
 )
 
 func TestProfileLogsAreBoundedScopedAndReadBothGenerations(t *testing.T) {
-	t.Setenv("APPDATA", t.TempDir())
+	setTestStorage(t)
 	a := multiTestApp(t)
-	dir := filepath.Join(os.Getenv("APPDATA"), "VPN", "logs")
+	dir := applicationLogDir()
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}

@@ -251,7 +251,7 @@ func TestEditingStoppedProfileUpdatesStatusMetadata(t *testing.T) {
 }
 
 func TestLateStartupFailureRetainsReplacementConnection(t *testing.T) {
-	t.Setenv("APPDATA", t.TempDir())
+	setTestStorage(t)
 	a := multiTestApp(t)
 	entered, release := make(chan struct{}), make(chan struct{})
 	finished := make(chan string, 1)
@@ -305,7 +305,7 @@ func TestLateStartupFailureRetainsReplacementConnection(t *testing.T) {
 }
 
 func TestLogDirectoryFailureRetainsOtherSelectedConnection(t *testing.T) {
-	t.Setenv("APPDATA", t.TempDir())
+	setTestStorage(t)
 	a := multiTestApp(t)
 	if got := a.startConnectionID("a", func(o engine.Options) (vpnEngine, error) {
 		o.OnStatus(engine.Status{Phase: engine.PhaseConnected, ClientIP: "192.0.2.1"})
@@ -315,8 +315,7 @@ func TestLogDirectoryFailureRetainsOtherSelectedConnection(t *testing.T) {
 	}
 	defer a.StopAllVPN()
 	before, resources := a.GetStatus(), a.GetVPNResources()
-	blocked := t.TempDir()
-	t.Setenv("APPDATA", blocked)
+	blocked := setTestStorage(t)
 	if err := os.WriteFile(filepath.Join(blocked, "VPN"), []byte("blocked"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +334,7 @@ func TestLogDirectoryFailureRetainsOtherSelectedConnection(t *testing.T) {
 	if got := a.StopProfileVPN("b"); got != "Not running" {
 		t.Fatal(got)
 	}
-	t.Setenv("APPDATA", t.TempDir())
+	setTestStorage(t)
 	if got := a.startConnectionID("b", func(o engine.Options) (vpnEngine, error) {
 		o.OnStatus(engine.Status{Phase: engine.PhaseConnected})
 		return &fakeVPNEngine{opts: o}, nil
@@ -345,8 +344,7 @@ func TestLogDirectoryFailureRetainsOtherSelectedConnection(t *testing.T) {
 }
 
 func TestSelectedLogDirectoryFailureClearsResources(t *testing.T) {
-	blocked := t.TempDir()
-	t.Setenv("APPDATA", blocked)
+	blocked := setTestStorage(t)
 	a := multiTestApp(t)
 	a.status = disconnectedStatus(a.GetActiveProfile())
 	a.resources = []engine.ResourceEntry{{Target: "obsolete"}}
