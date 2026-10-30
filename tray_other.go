@@ -8,4 +8,3 @@ func StartTray(_ *App, _ context.Context) {}
 func RemoveTrayIcon()                     {}
 func showTrayWorkspace(_ *App)            {}
 func UpdateTrayTooltip(string)            {}
-func (a *App) logPowerEvent(uintptr) bool { return false }
