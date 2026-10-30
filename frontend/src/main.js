@@ -212,7 +212,7 @@ document.getElementById('item-http').addEventListener('click', () => {
   if (httpPortVal.innerText !== '已关闭') copyToClipboard(httpPortVal.innerText, 'HTTP 代理');
 });
 document.getElementById('log-path-hint').addEventListener('click', () => {
-  copyToClipboard('%APPDATA%\\VPN\\logs', '日志目录');
+  copyToClipboard(platformInfo.logDir, '日志目录');
 });
 
 // ---------- 弹窗元素 ----------
@@ -240,6 +240,7 @@ const formKeepAliveUrl = document.getElementById('form-keepalive-url');
 const formDisableKeepAlive = document.getElementById('form-disable-keepalive');
 
 let cachedProfiles = [];
+let platformInfo = {tunSupported: true, logDir: '%APPDATA%\\VPN\\logs'};
 let connectionStatuses = [];
 let activeProfile = null;
 let modeSaving = false;
@@ -360,7 +361,7 @@ function updateStatusUI(status) {
   document.getElementById('btn-error-details').hidden = status.state !== 'error' && !status.tunError;
   stateNote.title = stateNote.innerText;
   tunModeToggle.checked = !!(status.running ? status.tunMode : activeProfile?.tunMode);
-  tunModeToggle.disabled = modeSaving || pendingActions.has(activeProfile?.id) || selectionPending || !activeProfile || status.tunState === "attaching" || status.tunState === "detaching" || (status.running && status.state !== "connected" && !(status.stage === "重连中" && status.tunMode));
+  tunModeToggle.disabled = (!platformInfo.tunSupported && !tunModeToggle.checked) || modeSaving || pendingActions.has(activeProfile?.id) || selectionPending || !activeProfile || status.tunState === "attaching" || status.tunState === "detaching" || (status.running && status.state !== "connected" && !(status.stage === "重连中" && status.tunMode));
   proxyModeToggle.checked = !(status.running ? status.disableProxy : activeProfile?.disableProxy);
   proxyModeToggle.disabled = modeSaving || pendingActions.has(activeProfile?.id) || selectionPending || status.running || !activeProfile;
   proxyModeNote.title = status.running
@@ -368,7 +369,7 @@ function updateStatusUI(status) {
     : 'SOCKS5 / HTTP，可与 TUN 同时开启';
   profileSelect.disabled = modeSaving;
   btnToggle.disabled = modeSaving || !activeProfile || (pendingActions.has(activeProfile?.id) && status.state !== 'connecting');
-  const tunMessage = status.tunError || (modeSaving || status.tunState === 'attaching' ? '正在附着 TUN 或等待系统 UAC 授权…' : status.tunState === 'detaching' ? '正在清理 TUN 网卡和路由…' : '系统流量按服务器授权资源进入 VPN，开关不会重新登录。');
+  const tunMessage = !platformInfo.tunSupported ? 'macOS TUN 尚未实现，请使用本地代理。' : status.tunError || (modeSaving || status.tunState === 'attaching' ? '正在附着 TUN 或等待系统 UAC 授权…' : status.tunState === 'detaching' ? '正在清理 TUN 网卡和路由…' : '系统流量按服务器授权资源进入 VPN，开关不会重新登录。');
   tunModeNote.title = tunMessage;
   tunModeNote.querySelector('small').textContent = tunMessage;
   updateInfoFields(status);
@@ -518,8 +519,8 @@ document.getElementById('btn-modal-save').addEventListener('click', async () => 
     enable2FA: formProtocol.value === "easyconnect" && formEnable2FA.checked,
     totpSecret: formTotp.value.trim(),
     bindInterface: formNic.value,
-    tunMode: existingProfile ? !!existingProfile.tunMode : true,
-    disableProxy: existingProfile ? !!existingProfile.disableProxy : true,
+    tunMode: existingProfile ? !!existingProfile.tunMode : platformInfo.tunSupported,
+    disableProxy: existingProfile ? !!existingProfile.disableProxy : platformInfo.tunSupported,
     disableZjuConfig: true,
     disableKeepAlive: formDisableKeepAlive.checked,
     keepAliveUrl: formEnableKeepAlive.checked ? formKeepAliveUrl.value.trim() : '',
@@ -730,6 +731,7 @@ document.getElementById('btn-refresh-resources').addEventListener('click', () =>
 async function loadPreviewData() {
   const { installPreview } = await import('./preview.mjs');
   installPreview(receiveStatus);
+  platformInfo = await window.go.main.App.GetPlatformInfo();
   document.getElementById('preview-indicator').hidden = false;
   detectedInterfaces = await window.go.main.App.GetInterfaces();
   await refreshProfiles();
@@ -765,6 +767,8 @@ async function initApp() {
 
   try {
     if (window.go && window.go.main && window.go.main.App) {
+      platformInfo = await window.go.main.App.GetPlatformInfo();
+      if (!platformInfo.tunSupported) document.querySelector('.workspace-footer').textContent = '关闭窗口将断开连接并退出。';
       detectedInterfaces = await window.go.main.App.GetInterfaces();
       await refreshProfiles();
 

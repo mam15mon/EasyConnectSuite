@@ -45,7 +45,24 @@ func (a *App) SetTUNMode(enabled bool) error {
 }
 
 func (a *App) SetProfileTUNMode(id string, enabled bool) error {
-	return errors.New("macOS TUN 尚未实现")
+	if enabled {
+		return errors.New("macOS TUN 尚未实现")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for i := range a.appConfig.Profiles {
+		if a.appConfig.Profiles[i].ID == id {
+			previous := a.appConfig.Profiles[i].TUNMode
+			a.appConfig.Profiles[i].TUNMode = false
+			if err := a.saveConfigFile(); err != nil {
+				a.appConfig.Profiles[i].TUNMode = previous
+				return err
+			}
+			a.selectConnectionLocked()
+			return nil
+		}
+	}
+	return errors.New("服务器配置不存在")
 }
 
 func (a *App) setProfileTUNMode(id string, enabled bool, manager tunControl) error {

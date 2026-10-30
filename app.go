@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,15 @@ type Profile struct {
 type AppConfig struct {
 	ActiveProfileID string    `json:"activeProfileId"`
 	Profiles        []Profile `json:"profiles"`
+}
+
+type PlatformInfo struct {
+	TUNSupported bool   `json:"tunSupported"`
+	LogDir       string `json:"logDir"`
+}
+
+func (a *App) GetPlatformInfo() PlatformInfo {
+	return PlatformInfo{TUNSupported: runtime.GOOS == "windows", LogDir: applicationLogDir()}
 }
 
 // VPNStatus contains current connection status
