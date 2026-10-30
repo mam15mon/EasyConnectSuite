@@ -34,7 +34,7 @@ function workspace(api = {}) {
     renderResources(rows) { state.rendered = rows; }, showToast(message) { state.notifications.push(message); },
   };
   vm.createContext(state);
-  vm.runInContext(['selectProfile','refreshResources','toggleConnection','refreshConnections','receiveStatus'].map(productionFunction).join('\n'), state);
+  vm.runInContext(['canStartConnection','connectAll','selectProfile','refreshResources','toggleConnection','refreshConnections','receiveStatus'].map(productionFunction).join('\n'), state);
   return state;
 }
 
@@ -178,4 +178,60 @@ test('preview resource API uses explicit ID and rejects unknown profiles', async
   assert.equal((await api.GetAppConfig()).activeProfileId,selected);
   assert.equal((await api.GetProfileVPNResources('easy')).length,0);
   await assert.rejects(api.GetProfileVPNResources('unknown'),/服务器配置不存在/);
+});
+
+
+test('connect all starts TUN profiles concurrently and repeated clicks skip pending work', async () => {
+  const preparation=deferred(), login=deferred();
+  const prepared=[], started=[];
+  const state=workspace({
+    SetProfileTUNMode:async id=>{prepared.push(id);await preparation.promise;},
+    StartProfileVPN:async id=>{started.push(id);await login.promise;return 'OK';},
+    GetConnections:async()=>state.connectionStatuses,
+    GetStatus:async()=>state.currentStatus, GetProfileVPNResources:async()=>[],
+  });
+  state.cachedProfiles.forEach(p=>p.tunMode=true);
+  const batch=state.connectAll();
+  assert.deepEqual(prepared,['a','b']);
+  assert.equal(state.modeSaving,false);
+  await state.connectAll();
+  assert.deepEqual(prepared,['a','b']);
+  preparation.resolve();
+  await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(started,['a','b']);
+  await state.connectAll();
+  assert.deepEqual(started,['a','b']);
+  login.resolve(); await batch;
+  assert.equal(state.pendingActions.size,0);
+});
+
+test('connect all skips running and pending profiles and isolates a rejected TUN preparation', async () => {
+  const calls=[], stopped=[];
+  const state=workspace({
+    SetProfileTUNMode:async id=>{if(id==='a')throw new Error('UAC canceled');},
+    StartProfileVPN:async id=>{calls.push(id);return 'OK';},
+    StopProfileVPN:async id=>{stopped.push(id);return 'OK';},
+    GetConnections:async()=>state.connectionStatuses,
+  });
+  state.cachedProfiles.push({id:'c',name:'C'},{id:'d',name:'D'},{id:'e',name:'E'});
+  state.cachedProfiles[0].tunMode=true;
+  state.connectionStatuses=[{profileId:'c',running:true,state:'connected'},{profileId:'d',running:true,state:'connecting'}];
+  state.pendingActions.add('e');
+  await state.connectAll();
+  assert.deepEqual(calls,['b']);
+  assert.deepEqual(stopped,[]);
+  assert.ok(state.notifications.some(message=>message.includes('A')&&message.includes('UAC canceled')));
+  assert.equal(state.pendingActions.has('e'),true);
+  assert.equal(state.pendingActions.has('a'),false);
+});
+
+test('connect all ignores empty lists and explicit mode changes in progress', async () => {
+  const calls=[];
+  const state=workspace({StartProfileVPN:async id=>{calls.push(id);return 'OK';}});
+  state.modeSaving=true;
+  await state.connectAll();
+  state.modeSaving=false;
+  state.cachedProfiles=[];
+  await state.connectAll();
+  assert.deepEqual(calls,[]);
 });

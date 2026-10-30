@@ -15,7 +15,7 @@ app.innerHTML = `
       <div class="section-head"><h1 id="connections-heading">我的连接 <span id="profile-count" class="panel-count-badge">0</span></h1><button class="add-connection" id="btn-new-profile" aria-label="新建 VPN" title="新建 VPN"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button></div>
       <div class="view-filters" aria-label="连接筛选"><button class="active" data-connection-filter="all" aria-pressed="true">全部</button><button data-connection-filter="running" aria-pressed="false">运行中</button></div>
       <div class="connection-list" id="connection-list" aria-label="VPN 连接列表"></div>
-      <div class="sidebar-footer"><button class="btn-plain danger" id="btn-stop-all" disabled>断开全部连接</button><button class="log-directory" id="log-path-hint" title="复制日志目录">日志目录</button><span id="preview-indicator" hidden>演示模式 · 模拟数据</span></div>
+      <div class="sidebar-footer"><button class="btn-plain" id="btn-start-all" disabled>连接全部</button><button class="btn-plain danger" id="btn-stop-all" disabled>断开全部连接</button><button class="log-directory" id="log-path-hint" title="复制日志目录">日志目录</button><span id="preview-indicator" hidden>演示模式 · 模拟数据</span></div>
     </aside>
     <section class="detail-workspace" aria-labelledby="detail-name">
       <div class="detail-header"><div><h2 id="detail-name">选择一条 VPN</h2><span id="detail-gateway" class="subtle"></span></div><div class="detail-actions"><button class="btn-plain" id="btn-edit-profile">编辑</button><button class="btn-icon danger" id="btn-del-profile" aria-label="删除当前配置" title="删除当前配置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg></button><button class="master-switch" id="btn-toggle"><span id="btn-label">连接</span></button></div></div>
@@ -328,8 +328,8 @@ function updateStatusUI(status) {
   document.getElementById('detail-name').textContent = activeProfile?.name || '选择一条 VPN';
   document.getElementById('detail-gateway').textContent = activeProfile ? `${protocolNames[activeProfile.protocol || 'easyconnect']} / ${activeProfile.server}:${activeProfile.port}` : '';
   document.getElementById('resource-owner').textContent = activeProfile ? `${activeProfile.name} 的授权资源` : '选择连接后查看资源';
-  document.getElementById('btn-edit-profile').disabled = !activeProfile || !!status.running || modeSaving;
-  document.getElementById('btn-del-profile').disabled = !activeProfile || !!status.running || modeSaving;
+  document.getElementById('btn-edit-profile').disabled = !activeProfile || !!status.running || modeSaving || pendingActions.has(activeProfile?.id);
+  document.getElementById('btn-del-profile').disabled = !activeProfile || !!status.running || modeSaving || pendingActions.has(activeProfile?.id);
 
   if (status.state === 'connected') {
     btnLabel.innerText = '断开连接';
@@ -361,9 +361,9 @@ function updateStatusUI(status) {
 
   stateNote.title = stateNote.innerText;
   tunModeToggle.checked = !!(status.running ? status.tunMode : activeProfile?.tunMode);
-  tunModeToggle.disabled = modeSaving || selectionPending || !activeProfile || status.tunState === "attaching" || status.tunState === "detaching" || (status.running && status.state !== "connected" && !(status.stage === "重连中" && status.tunMode));
+  tunModeToggle.disabled = modeSaving || pendingActions.has(activeProfile?.id) || selectionPending || !activeProfile || status.tunState === "attaching" || status.tunState === "detaching" || (status.running && status.state !== "connected" && !(status.stage === "重连中" && status.tunMode));
   proxyModeToggle.checked = !(status.running ? status.disableProxy : activeProfile?.disableProxy);
-  proxyModeToggle.disabled = modeSaving || selectionPending || status.running || !activeProfile;
+  proxyModeToggle.disabled = modeSaving || pendingActions.has(activeProfile?.id) || selectionPending || status.running || !activeProfile;
   proxyModeNote.title = status.running
     ? '断开连接后可切换本地代理'
     : 'SOCKS5 / HTTP，可与 TUN 同时开启';
@@ -577,6 +577,16 @@ proxyModeToggle.addEventListener('change', async () => {
   }
 });
 
+function canStartConnection(id) {
+  return !pendingActions.has(id) && !connectionStatuses.some(s => s.profileId === id && s.running);
+}
+
+async function connectAll() {
+  if (modeSaving) return;
+  const targets = cachedProfiles.filter(p => canStartConnection(p.id));
+  await Promise.all(targets.map(p => toggleConnection(p.id)));
+}
+
 async function toggleConnection(id) {
   if (!id || modeSaving) return;
   const profile = cachedProfiles.find(p => p.id === id);
@@ -595,11 +605,7 @@ async function toggleConnection(id) {
       if (res !== 'OK') throw new Error(res);
     } else {
       if (profile.tunMode) {
-        modeSaving = true;
-        updateStatusUI(currentStatus);
-        try {
-          await window.go.main.App.SetProfileTUNMode(id, true);
-        } finally { modeSaving = false; }
+        await window.go.main.App.SetProfileTUNMode(id, true);
       }
       receiveStatus({profileId:id, activeProfile:profile.name, protocol:profile.protocol || 'easyconnect', running:true, state:'connecting', stage:'准备中', message:'正在准备连接…', tunMode:false, tunState:"off", disableProxy:!!profile.disableProxy});
       const res = await window.go.main.App.StartProfileVPN(id);
@@ -804,7 +810,9 @@ function renderConnections() {
   const errorSummary = document.getElementById('global-errors');
   errorSummary.hidden = !errors;
   errorSummary.textContent = `${errors} 条异常`;
-  document.getElementById('btn-stop-all').disabled = modeSaving || !connectionStatuses.some(s => s.running);
+  document.getElementById('btn-start-all').disabled = modeSaving || !cachedProfiles.some(p => canStartConnection(p.id));
+  const preparing = [...pendingActions].some(id => !connectionStatuses.some(s => s.profileId === id && s.running));
+  document.getElementById('btn-stop-all').disabled = modeSaving || preparing || !connectionStatuses.some(s => s.running);
   for (const profile of cachedProfiles) {
     const status = connectionStatuses.find(s => s.profileId === profile.id) || {state:'disconnected', running:false};
     if (connectionFilter === 'running' && !status.running) continue;
@@ -878,6 +886,7 @@ for (const button of document.querySelectorAll('[data-connection-filter]')) {
     renderConnections();
   });
 }
+document.getElementById('btn-start-all').addEventListener('click', connectAll);
 document.getElementById('btn-stop-all').addEventListener('click', async () => {
   if (!confirm('断开所有正在运行的 VPN？')) return;
   try { await window.go.main.App.StopAllVPN(); await refreshProfiles(); }
