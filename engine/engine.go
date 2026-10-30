@@ -240,21 +240,24 @@ func Start(opts Options) (_ *Engine, err error) {
 		outcome := "interrupted"
 		defer func() { trace.Finish(outcome, err) }()
 		trace.Step("status_callback")
-		e.emitStatus(PhaseReconnecting, "连接中断，正在自动重新登录...")
+		e.emitStatusFull(Status{Phase: PhaseReconnecting, Stage: "认证中", Message: "连接中断，正在自动重新登录…"})
 		trace.Step("authentication")
 		if err := vpnClient.Setup(); err != nil {
 			return err
 		}
 		e.logf("reconnect authentication complete; loading resources")
+		e.emitStatusFull(Status{Phase: PhaseReconnecting, Stage: "加载资源", Message: "重新登录成功，正在加载访问规则…"})
 		trace.Step("resource_load")
 		next, err := loadPolicy(conf, vpnClient, vpnStack)
 		if err != nil {
 			return err
 		}
 		e.logf("reconnect TUN policy update started")
+		e.emitStatusFull(Status{Phase: PhaseReconnecting, Stage: "更新 TUN", Message: "正在更新 TUN 分流配置…"})
 		trace.Step("tun_update")
 		e.updateTUN(next, false)
 		e.logf("reconnect TUN policy update complete")
+		e.emitStatusFull(Status{Phase: PhaseReconnecting, Stage: "更新资源", Message: "正在发布资源并清理旧解析器…"})
 		trace.Step("policy_publish")
 		previous := e.router.current.Swap(next)
 		vpnStack.SetupIPPool(next.resolver.IPPool)
@@ -269,6 +272,7 @@ func Start(opts Options) (_ *Engine, err error) {
 			e.opts.OnResources(next.entries)
 		}
 
+		e.emitStatusFull(Status{Phase: PhaseReconnecting, Stage: "重建隧道", Message: "资源已更新，正在重建传输通道…"})
 		outcome = "returned"
 		return nil
 	})

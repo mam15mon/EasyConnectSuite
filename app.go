@@ -49,23 +49,25 @@ type AppConfig struct {
 
 // VPNStatus contains current connection status
 type VPNStatus struct {
-	ProfileID     string `json:"profileId"`
-	Protocol      string `json:"protocol"`
-	Running       bool   `json:"running"`
-	Stage         string `json:"stage"`
-	Message       string `json:"message"`
-	State         string `json:"state"` // "disconnected", "connecting", "connected", "error"
-	ActiveProfile string `json:"activeProfile"`
-	ClientIP      string `json:"clientIp"`
-	DNS           string `json:"dns"`
-	SocksPort     string `json:"socksPort"`
-	HTTPPort      string `json:"httpPort"`
-	TUNMode       bool   `json:"tunMode"`
-	TUNState      string `json:"tunState"`
-	TUNError      string `json:"tunError"`
-	DisableProxy  bool   `json:"disableProxy"`
-	Duration      int64  `json:"duration"` // uptime seconds
-	LastError     string `json:"lastError"`
+	ProfileID      string `json:"profileId"`
+	Protocol       string `json:"protocol"`
+	Running        bool   `json:"running"`
+	Stage          string `json:"stage"`
+	StageDetail    string `json:"stageDetail"`
+	StageStartedAt int64  `json:"stageStartedAt"` // current stage start, Unix milliseconds
+	Message        string `json:"message"`
+	State          string `json:"state"` // "disconnected", "connecting", "connected", "error"
+	ActiveProfile  string `json:"activeProfile"`
+	ClientIP       string `json:"clientIp"`
+	DNS            string `json:"dns"`
+	SocksPort      string `json:"socksPort"`
+	HTTPPort       string `json:"httpPort"`
+	TUNMode        bool   `json:"tunMode"`
+	TUNState       string `json:"tunState"`
+	TUNError       string `json:"tunError"`
+	DisableProxy   bool   `json:"disableProxy"`
+	Duration       int64  `json:"duration"` // uptime seconds
+	LastError      string `json:"lastError"`
 }
 
 // App struct — the VPN engine now runs in-process (no embedded
@@ -530,7 +532,9 @@ func (a *App) getActiveProfileLocked() Profile {
 }
 
 func applyEngineStatus(status *VPNStatus, startTime *time.Time, resources *[]engine.ResourceEntry, s engine.Status) {
+	previousState, previousStage, previousDetail := status.State, status.Stage, status.StageDetail
 	status.Stage = s.Stage
+	status.StageDetail = s.Stage
 	status.Message = s.Message
 	switch s.Phase {
 	case engine.PhaseConnecting:
@@ -570,6 +574,14 @@ func applyEngineStatus(status *VPNStatus, startTime *time.Time, resources *[]eng
 		status.LastError = s.Message
 		(*startTime) = time.Time{}
 		(*resources) = nil
+	}
+	if status.State == "connecting" {
+		if status.StageStartedAt == 0 || previousState != status.State || previousStage != status.Stage || previousDetail != status.StageDetail {
+			status.StageStartedAt = time.Now().UnixMilli()
+		}
+	} else {
+		status.StageStartedAt = 0
+		status.StageDetail = ""
 	}
 
 }

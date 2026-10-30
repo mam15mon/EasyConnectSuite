@@ -217,6 +217,7 @@ func (a *App) startConnectionID(id string, start func(engine.Options) (vpnEngine
 	c.status.Running = true
 	c.status.State = "connecting"
 	c.status.Stage = "准备中"
+	c.status.StageStartedAt = time.Now().UnixMilli()
 	c.status.Message = "正在准备连接…"
 	a.connections[p.ID] = c
 	if p.ID == a.appConfig.ActiveProfileID {

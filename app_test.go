@@ -138,3 +138,28 @@ func TestReconnectingMessageIsProgressAndFailureRemainsAnError(t *testing.T) {
 		t.Fatalf("failure did not clear connection progress: %+v", status)
 	}
 }
+
+func TestStageClockPreservesReconnectCompatibility(t *testing.T) {
+	app := &App{}
+	app.handleEngineStatus(engine.Status{Phase: engine.PhaseReconnecting, Stage: "认证中"})
+	if s := app.GetStatus(); s.Stage != "重连中" || s.StageDetail != "认证中" || s.StageStartedAt == 0 {
+		t.Fatalf("missing reconnect stage: %+v", s)
+	}
+	app.mu.Lock()
+	app.status.StageStartedAt = 123
+	app.mu.Unlock()
+	app.handleEngineStatus(engine.Status{Phase: engine.PhaseReconnecting, Stage: "认证中", Message: "still authenticating"})
+	if s := app.GetStatus(); s.StageStartedAt != 123 {
+		t.Fatal("same stage reset clock")
+	}
+	app.handleEngineStatus(engine.Status{Phase: engine.PhaseReconnecting, Stage: "重建隧道"})
+	if s := app.GetStatus(); s.StageStartedAt <= 123 || s.StageDetail != "重建隧道" {
+		t.Fatalf("stage change did not reset clock: %+v", s)
+	}
+	for _, phase := range []string{engine.PhaseConnected, engine.PhaseError, engine.PhaseDisconnected} {
+		app.handleEngineStatus(engine.Status{Phase: phase})
+		if s := app.GetStatus(); s.StageStartedAt != 0 || s.StageDetail != "" {
+			t.Fatalf("terminal state retained timer: %+v", s)
+		}
+	}
+}
