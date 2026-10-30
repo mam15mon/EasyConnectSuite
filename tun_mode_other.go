@@ -50,6 +50,12 @@ func (a *App) SetProfileTUNMode(id string, enabled bool) error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.starting || a.shuttingDown || a.modeOps[id] {
+		return errors.New("该配置正在连接、断开或切换 TUN，请稍候")
+	}
+	if c := a.connections[id]; c != nil && (c.stopping || c.status.Running) {
+		return errors.New("请先断开该配置再修改 TUN")
+	}
 	for i := range a.appConfig.Profiles {
 		if a.appConfig.Profiles[i].ID == id {
 			previous := a.appConfig.Profiles[i].TUNMode
