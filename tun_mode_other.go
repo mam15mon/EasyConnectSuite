@@ -24,7 +24,7 @@ func (unsupportedTUNManager) Prepare(context.Context, string) error {
 	return errors.New("macOS TUN 尚未实现")
 }
 func (unsupportedTUNManager) Release(context.Context, string) error {
-	return errors.New("macOS TUN 尚未实现")
+	return nil
 }
 func (unsupportedTUNManager) Close() {}
 

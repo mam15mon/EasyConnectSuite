@@ -49,3 +49,11 @@ func TestMacCanDisableImportedTUN(t *testing.T) {
 		t.Fatalf("disabled setting not persisted: %s", data)
 	}
 }
+
+func TestMacCanDeleteStoppedProfileAfterTUNManagerCreated(t *testing.T) {
+	a := multiTestApp(t)
+	a.tunManager = newTUNManager()
+	if !a.DeleteProfile("b") {
+		t.Fatal("inactive profile deletion failed")
+	}
+}
