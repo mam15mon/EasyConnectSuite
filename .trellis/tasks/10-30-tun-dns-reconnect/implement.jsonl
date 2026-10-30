@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/tun-worker.md","reason":"TUN 生命周期与并发约束"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"阻塞路径可观测性"}

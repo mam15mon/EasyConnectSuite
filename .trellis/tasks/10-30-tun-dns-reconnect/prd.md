@@ -1,19 +1,5 @@
-# 修复 TUN DNS 探测与重连锁循环
+# TUN DNS 重连锁循环
 
-## Goal
+用户授权修复双端登录后持续重连。已观察到 DNS 探测持 TUN 操作锁等待 gVisor，而同步重连回调等待相同 TUN 锁。取消仍不能返回。保留协议、自动重连策略与 IPC。
 
-将 DNS 探测移出 TUN 操作锁，拒绝过期结果，验证重连与清理不再互等。
-
-## Requirements
-
-- TBD
-
-## Acceptance Criteria
-
-- [ ] TBD
-
-## Notes
-
-- Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
-- Lightweight tasks can remain PRD-only.
-- For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
+验收：DNS 探测阻塞期间重连资源更新、断开/Stop 可完成；旧 attachment、旧策略、已取消的结果不得发布；初次附着也不得持锁探测；根 test/vet/race 和 Windows 构建通过。真实双机需独立验证。
