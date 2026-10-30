@@ -182,11 +182,11 @@ test('preview resource API uses explicit ID and rejects unknown profiles', async
 
 
 test('connect all starts TUN profiles concurrently and repeated clicks skip pending work', async () => {
-  const preparation=deferred(), login=deferred();
+  const preparation=deferred(), login=deferred(), bothStarted=deferred();
   const prepared=[], started=[];
   const state=workspace({
     SetProfileTUNMode:async id=>{prepared.push(id);await preparation.promise;},
-    StartProfileVPN:async id=>{started.push(id);await login.promise;return 'OK';},
+    StartProfileVPN:async id=>{started.push(id);if(started.length===2)bothStarted.resolve();await login.promise;return 'OK';},
     GetConnections:async()=>state.connectionStatuses,
     GetStatus:async()=>state.currentStatus, GetProfileVPNResources:async()=>[],
   });
@@ -197,7 +197,7 @@ test('connect all starts TUN profiles concurrently and repeated clicks skip pend
   await state.connectAll();
   assert.deepEqual(prepared,['a','b']);
   preparation.resolve();
-  await Promise.resolve(); await Promise.resolve();
+  await bothStarted.promise;
   assert.deepEqual(started,['a','b']);
   await state.connectAll();
   assert.deepEqual(started,['a','b']);
