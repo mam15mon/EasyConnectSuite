@@ -5,22 +5,22 @@ package main
 import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
-	"golang.org/x/sys/windows"
+	winsys "golang.org/x/sys/windows"
 	"os"
 	"path/filepath"
 )
 
 func setStdErrHandle(f *os.File) {
-	_ = windows.SetStdHandle(windows.STD_ERROR_HANDLE, windows.Handle(f.Fd()))
+	_ = winsys.SetStdHandle(winsys.STD_ERROR_HANDLE, winsys.Handle(f.Fd()))
 }
 
 func applicationStorageRoot() string   { return os.Getenv("APPDATA") }
 func configureDefaultProfile(*Profile) {}
 
 func showStartupError(err error) {
-	message, _ := windows.UTF16PtrFromString(err.Error())
-	title, _ := windows.UTF16PtrFromString("VPN 启动失败")
-	_, _ = windows.MessageBox(0, message, title, windows.MB_OK|windows.MB_ICONERROR)
+	message, _ := winsys.UTF16PtrFromString(err.Error())
+	title, _ := winsys.UTF16PtrFromString("VPN 启动失败")
+	_, _ = winsys.MessageBox(0, message, title, winsys.MB_OK|winsys.MB_ICONERROR)
 }
 
 func configurePlatformOptions(app *options.App) {
