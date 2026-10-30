@@ -1451,3 +1451,14 @@ input[role="switch"]:disabled {
     transition: none !important;
   }
 }
+
+.connection-details {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--blue);
+  font-size: 11px;
+  cursor: pointer;
+}
+.connection-details:hover { text-decoration: underline; }
+.logs-panel .resource-heading { flex-wrap: wrap; }

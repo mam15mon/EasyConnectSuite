@@ -1,5 +1,6 @@
 import './style.css';
 import { matchesResource } from './resource-filter.mjs';
+import { connectionFeedback, buildDiagnostics } from './connection-feedback.mjs';
 
 const PREVIEW = new URLSearchParams(location.search).has('preview');
 
@@ -21,8 +22,8 @@ app.innerHTML = `
       <div class="detail-header"><div><h2 id="detail-name">选择一条 VPN</h2><span id="detail-gateway" class="subtle"></span></div><div class="detail-actions"><button class="btn-plain" id="btn-edit-profile">编辑</button><button class="btn-icon danger" id="btn-del-profile" aria-label="删除当前配置" title="删除当前配置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg></button><button class="master-switch" id="btn-toggle"><span id="btn-label">连接</span></button></div></div>
       <select class="profile-select" id="profile-select" aria-label="切换查看的 VPN" hidden></select>
       <div class="hero-status-bar">
-        <div class="status-strip"><span class="connection-state" id="state-word">未连接</span><span class="detail-duration">时长 <span id="uptime-display">00:00:00</span></span></div>
-        <p class="state-note" id="state-note">选择或新建配置后连接。</p>
+        <div class="status-strip"><span class="connection-state" id="state-word">未连接</span><span class="detail-duration"><span id="duration-label">本次运行</span> <span id="uptime-display">00:00:00</span></span></div>
+        <p class="state-note" id="state-note">选择或新建配置后连接。</p><button class="btn-plain" id="btn-error-details" hidden>查看错误详情</button>
       </div>
       <div class="telemetry-grid">
         <button class="telemetry-item" id="item-client-ip" title="复制虚拟 IP"><span class="telemetry-label">虚拟 IP</span><span class="telemetry-val pending" id="client-ip-val">—</span></button>
@@ -50,7 +51,7 @@ app.innerHTML = `
         </div>
       </section>
       <section class="workspace-page logs-panel" id="page-logs" role="tabpanel" aria-labelledby="tab-logs" hidden>
-        <div class="resource-heading"><span>当前配置的最近 200 条记录</span><button class="btn-plain" id="btn-refresh-logs">刷新记录</button></div><p class="page-description">记录阶段、停止原因、重连与收发统计。完整日志保存在日志目录。</p>
+        <div class="resource-heading"><span>当前配置的最近 200 条记录</span><button class="btn-plain" id="btn-copy-diagnostics">复制脱敏诊断</button><button class="btn-plain" id="btn-refresh-logs">刷新记录</button></div><p class="page-description">记录阶段、停止原因、重连与收发统计。完整日志保存在日志目录；复制诊断仅包含阶段、耗时和错误类型。</p>
         <pre id="profile-log-output" class="profile-log-output" tabindex="0" aria-label="当前 VPN 运行日志">连接后显示运行记录。</pre>
       </section>
       <footer class="workspace-footer">关闭窗口后，连接继续在托盘运行。</footer>
@@ -251,6 +252,7 @@ let selectionPending = false;
 let selectionQueue = Promise.resolve();
 let resourceRequest = 0;
 const pendingActions = new Set();
+const preparingConnections = new Map();
 const actionVersions = new Map();
 const profileResources = new Map();
 let workspacePage = 'resources';
@@ -261,7 +263,7 @@ const protocolNames = { easyconnect: 'EasyConnect', univpn: 'UniVPN', topsec: 'T
 function receiveStatus(status) {
   const index = connectionStatuses.findIndex(s => s.profileId === status.profileId);
   const previous = connectionStatuses[index];
-  const changed = !previous || previous.state !== status.state || previous.stage !== status.stage || previous.message !== status.message;
+  const changed = !previous || previous.state !== status.state || previous.stage !== status.stage || previous.stageDetail !== status.stageDetail || previous.message !== status.message;
   if (index >= 0) connectionStatuses[index] = status;
   else if (cachedProfiles.some(p => p.id === status.profileId)) connectionStatuses.push(status);
   if (!status.running) {
@@ -320,9 +322,11 @@ function updateInfoFields(status) {
 function updateStatusUI(status) {
   if (status.profileId && status.profileId !== activeProfile?.id) return;
   currentStatus = status;
-  uptimeDisplay.innerText = formatSeconds(status.duration || 0);
+  const feedback = connectionFeedback(status, preparingConnections.get(activeProfile?.id));
+  uptimeDisplay.innerText = feedback.seconds === null ? '—' : formatSeconds(feedback.seconds);
+  document.getElementById('duration-label').textContent = feedback.timeLabel;
   document.body.dataset.state = status.state;
-  const word = status.state === 'connecting' ? (status.stage || '连接中') : (STATE_WORDS[status.state] || '未连接');
+  const word = feedback.label;
   stateWord.innerText = word;
   stateWord.className = `connection-state ${status.state}`;
   document.getElementById('detail-name').textContent = activeProfile?.name || '选择一条 VPN';
@@ -356,9 +360,11 @@ function updateStatusUI(status) {
     stateNote.innerText = activeProfile
       ? `准备连接节点「${activeProfile.name}」（${activeProfile.server}:${activeProfile.port}）`
       : '通道未建立';
-    uptimeDisplay.innerText = '00:00:00';
+    if (!feedback.waiting) uptimeDisplay.innerText = '00:00:00';
   }
 
+  if (preparingConnections.has(activeProfile?.id)) stateNote.innerText = feedback.note;
+  document.getElementById('btn-error-details').hidden = status.state !== 'error' && !status.tunError;
   stateNote.title = stateNote.innerText;
   tunModeToggle.checked = !!(status.running ? status.tunMode : activeProfile?.tunMode);
   tunModeToggle.disabled = modeSaving || pendingActions.has(activeProfile?.id) || selectionPending || !activeProfile || status.tunState === "attaching" || status.tunState === "detaching" || (status.running && status.state !== "connected" && !(status.stage === "重连中" && status.tunMode));
@@ -605,9 +611,13 @@ async function toggleConnection(id) {
       if (res !== 'OK') throw new Error(res);
     } else {
       if (profile.tunMode) {
-        await window.go.main.App.SetProfileTUNMode(id, true);
+        preparingConnections.set(id, Date.now());
+        renderConnections();
+        if (id === activeProfile?.id) updateStatusUI(currentStatus);
+        try { await window.go.main.App.SetProfileTUNMode(id, true); }
+        finally { preparingConnections.delete(id); }
       }
-      receiveStatus({profileId:id, activeProfile:profile.name, protocol:profile.protocol || 'easyconnect', running:true, state:'connecting', stage:'准备中', message:'正在准备连接…', tunMode:false, tunState:"off", disableProxy:!!profile.disableProxy});
+      receiveStatus({profileId:id, activeProfile:profile.name, protocol:profile.protocol || 'easyconnect', running:true, state:'connecting', stage:'准备中', stageStartedAt:Date.now(), message:'正在准备连接…', tunMode:false, tunState:"off", disableProxy:!!profile.disableProxy});
       const res = await window.go.main.App.StartProfileVPN(id);
       if (actionVersions.get(id) !== actionVersion) return;
       if (res !== 'OK') {
@@ -821,10 +831,11 @@ function renderConnections() {
       row = document.createElement('div');
       row.className = 'connection-row';
       row.dataset.profileId = profile.id;
-      row.innerHTML = '<div class="connection-identity"><button class="connection-name" data-profile-action="select"></button><div class="connection-meta"><span class="protocol-tag"></span><span class="connection-gateway"></span></div></div><button class="connection-action" data-profile-action="toggle"></button><div class="connection-status-line"><span class="connection-state"></span><span class="connection-time"></span></div>';
+      row.innerHTML = '<div class="connection-identity"><button class="connection-name" data-profile-action="select"></button><div class="connection-meta"><span class="protocol-tag"></span><span class="connection-gateway"></span></div></div><button class="connection-action" data-profile-action="toggle"></button><div class="connection-status-line"><span class="connection-state"></span><span class="connection-time"></span><button class="connection-details" data-profile-action="logs" hidden>查看详情</button></div>';
     }
     row.classList.toggle('selected', profile.id === activeProfile?.id);
-    const state = status.state === 'connecting' ? (status.stage || '连接中') : STATE_WORDS[status.state] || '未连接';
+    const feedback = connectionFeedback(status, preparingConnections.get(profile.id));
+    const state = feedback.label;
     const name = row.querySelector('.connection-name');
     name.textContent = profile.name;
     name.setAttribute('aria-label', `查看 ${profile.name}`);
@@ -841,7 +852,10 @@ function renderConnections() {
     stateLabel.textContent = state;
     stateLabel.className = `connection-state ${status.state}`;
     stateLabel.title = status.lastError || status.message || state;
-    row.querySelector('.connection-time').textContent = status.running ? formatSeconds(status.duration || 0) : status.state === 'error' ? '查看详情' : '';
+    row.querySelector('.connection-time').textContent = feedback.waiting ? `已等 ${feedback.seconds === null ? '—' : formatSeconds(feedback.seconds)}` : status.running ? formatSeconds(status.duration || 0) : '';
+    const details = row.querySelector('.connection-details');
+    details.hidden = status.state !== 'error' && !status.tunError;
+    details.setAttribute('aria-label', `查看 ${profile.name} 的错误详情`);
     for (const button of row.querySelectorAll('[data-profile-action]')) {
       button.dataset.profileId = profile.id;
       button.disabled = modeSaving || (button.dataset.profileAction === 'toggle' && pendingActions.has(profile.id) && status.state !== 'connecting');
@@ -868,6 +882,7 @@ function renderConnections() {
 document.getElementById('connection-list').addEventListener('click', event => {
   const row = event.target.closest('.connection-row');
   if (!row || modeSaving) return;
+  if (event.target.closest('[data-profile-action="logs"]')) { openConnectionLogs(row.dataset.profileId); return; }
   const action = event.target.closest('[data-profile-action="toggle"]');
   if (action) {
     if (!action.disabled) toggleConnection(row.dataset.profileId);
@@ -892,6 +907,36 @@ document.getElementById('btn-stop-all').addEventListener('click', async () => {
   try { await window.go.main.App.StopAllVPN(); await refreshProfiles(); }
   catch (err) { showToast(String(err)); }
 });
+
+async function openConnectionLogs(id) {
+  if (modeSaving || !cachedProfiles.some(p => p.id === id)) return;
+  const selected = selectProfile(id);
+  const version = selectionVersion;
+  await selected;
+  if (version !== selectionVersion || activeProfile?.id !== id) return;
+  activateWorkspacePage('logs');
+  document.getElementById('tab-logs').focus();
+}
+document.getElementById('btn-error-details').addEventListener('click', () => openConnectionLogs(activeProfile?.id));
+
+async function copyDiagnostics() {
+  if (!activeProfile) return;
+  const id = activeProfile.id, version = selectionVersion;
+  const button = document.getElementById('btn-copy-diagnostics');
+  button.disabled = true;
+  try {
+    const lines = await window.go.main.App.GetProfileLogs(id);
+    if (id !== activeProfile?.id || version !== selectionVersion) return;
+    const status = connectionStatuses.find(s => s.profileId === id) || {state:'disconnected'};
+    await navigator.clipboard.writeText(buildDiagnostics(status, lines));
+    showToast('已复制脱敏诊断摘要');
+  } catch (err) { showToast(`复制诊断失败：${err}`); }
+  finally { button.disabled = false; }
+}
+document.getElementById('btn-copy-diagnostics').addEventListener('click', copyDiagnostics);
+setInterval(() => {
+  if (preparingConnections.size || connectionStatuses.some(s => s.state === 'connecting')) updateStatusUI(currentStatus);
+}, 1000);
 
 function activateWorkspacePage(page) {
  workspacePage = page;

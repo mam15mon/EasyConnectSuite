@@ -22,7 +22,7 @@ function workspace(api = {}) {
     selectionVersion:0, selectionPending:false, activeProfile:{id:'a'}, workspacePage:'resources',
     profileSelect:{}, routesFilter:{}, currentStatus:{profileId:'a',running:false,state:'disconnected'},
     connectionStatuses:[], selectionQueue:Promise.resolve(), profileResources:new Map(), resourceRequest:0,
-    pendingActions:new Set(), actionVersions:new Map(), rendered:[], notifications:[],
+    pendingActions:new Set(), preparingConnections:new Map(), actionVersions:new Map(), rendered:[], notifications:[],
     document:{getElementById:()=>({classList:{add(){},remove(){}}})},
     window:{go:{main:{App:api}}}, renderConnections(){},
     updateStatusUI(status) { if (!status.profileId || status.profileId === state.activeProfile?.id) state.currentStatus = status; },
