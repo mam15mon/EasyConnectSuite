@@ -103,6 +103,20 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class PlatformInfo {
+	    tunSupported: boolean;
+	    logDir: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PlatformInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.tunSupported = source["tunSupported"];
+	        this.logDir = source["logDir"];
+	    }
+	}
 	
 	export class VPNStatus {
 	    profileId: string;

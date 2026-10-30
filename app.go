@@ -7,7 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"runtime"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"time"
@@ -54,7 +54,7 @@ type PlatformInfo struct {
 }
 
 func (a *App) GetPlatformInfo() PlatformInfo {
-	return PlatformInfo{TUNSupported: runtime.GOOS == "windows", LogDir: applicationLogDir()}
+	return PlatformInfo{TUNSupported: goruntime.GOOS == "windows", LogDir: applicationLogDir()}
 }
 
 // VPNStatus contains current connection status

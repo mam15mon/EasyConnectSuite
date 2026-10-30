@@ -22,6 +22,10 @@ export function GetInterfaces() {
   return window['go']['main']['App']['GetInterfaces']();
 }
 
+export function GetPlatformInfo() {
+  return window['go']['main']['App']['GetPlatformInfo']();
+}
+
 export function GetProfileLogs(arg1) {
   return window['go']['main']['App']['GetProfileLogs'](arg1);
 }

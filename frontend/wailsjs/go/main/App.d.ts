@@ -13,6 +13,8 @@ export function GetConnections():Promise<Array<main.VPNStatus>>;
 
 export function GetInterfaces():Promise<Array<string>>;
 
+export function GetPlatformInfo():Promise<main.PlatformInfo>;
+
 export function GetProfileLogs(arg1:string):Promise<Array<string>>;
 
 export function GetProfileVPNResources(arg1:string):Promise<Array<engine.ResourceEntry>>;
