@@ -29,14 +29,8 @@ func TestTUNDiscoveryDoesNotBlockLifecycle(t *testing.T) {
 			vpn := &pendingTUNStack{dial: func() (net.Conn, error) {
 				close(entered)
 				<-release // Model an endpoint lock that ignores context cancellation.
-				return zones.DialTCP(context.Background(), nil)
-			}}
-			// zoneDNSStack records the target; supply it in this fixture.
-			vpn.dial = func() (net.Conn, error) {
-				close(entered)
-				<-release
 				return zones.DialTCP(context.Background(), &net.TCPAddr{IP: net.ParseIP("192.0.2.53"), Port: 53})
-			}
+			}}
 			p := &connectionPolicy{stack: vpn, dnsName: "192.0.2.53", useRemoteDNS: true,
 				resourceIPs: []client.IPResource{}, resourceDomains: client.DomainResources{"app.corp.example": nil}}
 			e.router.current.Store(p)
