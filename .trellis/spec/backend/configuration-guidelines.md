@@ -79,3 +79,7 @@ if a.connections[p.ID] == c && !c.stopping {
 const rows = await window.go.main.App.GetProfileVPNResources(id);
 if (id !== activeProfile?.id || version !== selectionVersion || request !== resourceRequest) return;
 ```
+
+## Connection-stage feedback
+
+VPNStatus adds stageDetail and stageStartedAt (Unix milliseconds). applyEngineStatus resets stageStartedAt when entering connecting or changing Stage/StageDetail, preserves it for repeated messages in the same stage, and clears it outside connecting. PhaseReconnecting retains Stage=重连中 so TUN and tray behavior remains compatible; StageDetail describes authentication, resource load, TUN update, resource publication or tunnel rebuild. Engine emits these statuses before the existing blocking steps and still logs them via emitStatusFull/operation diagnostics. No timing threshold changes recovery or implies a diagnosed root cause.
