@@ -1,0 +1,45 @@
+name: macOS
+
+on:
+  push:
+    branches: [main, codex/**]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-13, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Test
+        run: go test ./...
+      - name: Build Go packages
+        run: go build ./...
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+      - name: Build macOS app
+        run: wails build -platform darwin/${{ runner.arch == 'ARM64' && 'arm64' || 'amd64' }} -m -nosyncgomod -trimpath
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: VPN-${{ matrix.os }}
+          path: build/bin/*.app
