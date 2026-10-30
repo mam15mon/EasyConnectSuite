@@ -26,7 +26,7 @@ export function installPreview(onStatus) {
       if(!profiles.some(p=>p.id===id))throw new Error('服务器配置不存在');
       return clone(statuses.get(id)?.state==='connected' ? resources.get(id)||[] : []);
     },
-    GetProfileLogs:async id=>[`${new Date().toLocaleTimeString()} [VPN profile="${id}"] status phase=${statuses.get(id)?.state||'disconnected'}`,`${new Date().toLocaleTimeString()} 演示记录：实际阶段、停止原因和流量统计由新版引擎写入。`],
+    GetProfileLogs:async id=>[`${new Date().toLocaleTimeString()} [VPN profile="${id}"] status phase=${statuses.get(id)?.state||'disconnected'}`,`${new Date().toLocaleTimeString()} [VPN profile="${id}"] operation=1 name=tun_update goroutine=20 phase=end outcome=failed stage=worker_update_reply elapsed=3s stage_elapsed=2s canceled=false timeout=true error_type=*net.OpError cause=演示错误`],
     GetInterfaces:async()=>['WLAN','以太网'],
     SetActiveProfile:async id=>{ if(!profiles.some(p=>p.id===id)) return false; selected=id; return true; },
     SetProfileTUNMode:async(id,enabled)=>{ const p=profiles.find(p=>p.id===id); if(!p)throw new Error('配置不存在'); p.tunMode=enabled; const status=statuses.get(id); if(status.running){status.tunState=enabled?"attaching":"detaching";emit(id);await new Promise(r=>setTimeout(r,300));status.tunMode=enabled;status.tunState=enabled?"on":"off";status.tunError="";emit(id);} },
@@ -36,10 +36,10 @@ export function installPreview(onStatus) {
       const profile=profiles.find(p=>p.id===id);
       const version=(generation.get(id)||0)+1;
       generation.set(id,version);
-      Object.assign(status,{tunMode:profile.tunMode,disableProxy:!!profile.disableProxy,socksPort:String(profile.socksPort),httpPort:String(profile.httpPort),running:true,state:'connecting',stage:'认证中',message:'演示：正在连接网关…',lastError:'',duration:0}); emit(id);
+      Object.assign(status,{tunMode:profile.tunMode,disableProxy:!!profile.disableProxy,socksPort:String(profile.socksPort),httpPort:String(profile.httpPort),running:true,state:'connecting',stage:'认证中',stageStartedAt:Date.now(),message:'演示：正在连接网关…',lastError:'',duration:0}); emit(id);
       await new Promise(resolve=>setTimeout(resolve,650));
       if(generation.get(id)!==version)return 'OK';
-      Object.assign(status,{state:'connected',stage:'',clientIp:'192.0.2.20'});emit(id);return 'OK';
+      Object.assign(status,{state:'connected',stage:'',stageStartedAt:0,clientIp:'192.0.2.20'});emit(id);return 'OK';
     },
     StopProfileVPN:async id=>{generation.set(id,(generation.get(id)||0)+1);Object.assign(statuses.get(id),{running:false,state:'disconnected',stage:'',message:'',duration:0,clientIp:'',dns:''});emit(id);return 'OK';},
     StopAllVPN:async()=>{ for(const s of statuses.values())if(s.running)await api.StopProfileVPN(s.profileId); return 'OK'; },

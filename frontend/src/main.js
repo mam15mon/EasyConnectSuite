@@ -296,13 +296,6 @@ formDisableKeepAlive.addEventListener('change', () => {
 
 // ---------- 状态 ----------
 
-const STATE_WORDS = {
-  connected: '已连接',
-  connecting: '连接中',
-  disconnected: '未连接',
-  error: '连接出错',
-};
-
 function updateInfoFields(status) {
   if (!status) return;
 
@@ -911,11 +904,10 @@ document.getElementById('btn-stop-all').addEventListener('click', async () => {
 async function openConnectionLogs(id) {
   if (modeSaving || !cachedProfiles.some(p => p.id === id)) return;
   const selected = selectProfile(id);
-  const version = selectionVersion;
-  await selected;
-  if (version !== selectionVersion || activeProfile?.id !== id) return;
+  if (activeProfile?.id !== id) return;
   activateWorkspacePage('logs');
   document.getElementById('tab-logs').focus();
+  await selected;
 }
 document.getElementById('btn-error-details').addEventListener('click', () => openConnectionLogs(activeProfile?.id));
 

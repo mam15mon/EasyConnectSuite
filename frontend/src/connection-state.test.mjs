@@ -1,3 +1,4 @@
+import { buildDiagnostics } from './connection-feedback.mjs';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
@@ -234,4 +235,45 @@ test('connect all ignores empty lists and explicit mode changes in progress', as
   state.cachedProfiles=[];
   await state.connectAll();
   assert.deepEqual(calls,[]);
+});
+
+
+test('error details opens the requested profile logs without waiting for resource loading', async () => {
+ const pending=deferred();
+ const state=workspace({SetActiveProfile:async()=>pending.promise, GetStatus:async()=>state.currentStatus, GetProfileVPNResources:async()=>[]});
+ const opened=[];
+ state.activateWorkspacePage=page=>{opened.push([page,state.activeProfile.id]);};
+ state.document.getElementById=()=>({focus(){}});
+ vm.runInContext(productionFunction('openConnectionLogs'),state);
+ const action=state.openConnectionLogs('b');
+ assert.deepEqual(opened,[['logs','b']]);
+ state.activeProfile={id:'a'};state.selectionVersion++;
+ pending.resolve(true);await action;
+ assert.deepEqual(opened,[['logs','b']]);
+});
+
+test('diagnostic copy discards a late result after changing the selected profile', async () => {
+ const pending=deferred(), copied=[];
+ const state=workspace({GetProfileLogs:async id=>{assert.equal(id,'a');return pending.promise;}});
+ state.navigator={clipboard:{writeText:async text=>copied.push(text)}};
+ state.buildDiagnostics=buildDiagnostics;
+ vm.runInContext(productionFunction('copyDiagnostics'),state);
+ const copy=state.copyDiagnostics();
+ state.activeProfile={id:'b'};state.selectionVersion++;
+ pending.resolve(['private old log']);await copy;
+ assert.deepEqual(copied,[]);
+});
+
+test('diagnostic copy exports only the current profile summary and reports clipboard rejection', async () => {
+ const copied=[];
+ const state=workspace({GetProfileLogs:async()=>['secret raw log']});
+ state.connectionStatuses=[{profileId:'a',protocol:'easyconnect',state:'error',lastError:'secret raw error'}];
+ state.navigator={clipboard:{writeText:async text=>copied.push(text)}};
+ state.buildDiagnostics=buildDiagnostics;
+ vm.runInContext(productionFunction('copyDiagnostics'),state);
+ await state.copyDiagnostics();
+ assert.equal(copied.length,1);assert.ok(!copied[0].includes('secret'));
+ state.navigator.clipboard.writeText=async()=>{throw new Error('denied');};
+ await state.copyDiagnostics();
+ assert.ok(state.notifications.some(s=>s.includes('复制诊断失败')));
 });
