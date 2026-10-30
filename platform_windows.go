@@ -14,6 +14,9 @@ func setStdErrHandle(f *os.File) {
 	_ = windows.SetStdHandle(windows.STD_ERROR_HANDLE, windows.Handle(f.Fd()))
 }
 
+func applicationStorageRoot() string   { return os.Getenv("APPDATA") }
+func configureDefaultProfile(*Profile) {}
+
 func showStartupError(err error) {
 	message, _ := windows.UTF16PtrFromString(err.Error())
 	title, _ := windows.UTF16PtrFromString("VPN 启动失败")

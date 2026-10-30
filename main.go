@@ -32,7 +32,7 @@ func setupNamedCrashLog(filename string) {
 	debug.SetTraceback("all")
 
 	logDir := ""
-	if appData := os.Getenv("APPDATA"); appData != "" {
+	if applicationStorageRoot() != "" {
 		logDir = applicationLogDir()
 		if err := os.MkdirAll(logDir, 0755); err != nil {
 			return

@@ -8,7 +8,7 @@ import (
 )
 
 func applicationDataDir() string {
-	return filepath.Join(os.Getenv("APPDATA"), "VPN")
+	return filepath.Join(applicationStorageRoot(), "VPN")
 }
 
 func applicationLogDir() string {
@@ -17,7 +17,7 @@ func applicationLogDir() string {
 
 // Rename the whole directory on the same volume so profiles and logs move together.
 func migrateLegacyStorage() error {
-	legacy := filepath.Join(os.Getenv("APPDATA"), "EasyConnectVPN")
+	legacy := filepath.Join(applicationStorageRoot(), "EasyConnectVPN")
 	if _, err := os.Stat(legacy); errors.Is(err, os.ErrNotExist) {
 		return nil
 	} else if err != nil {

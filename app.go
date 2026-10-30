@@ -96,8 +96,7 @@ func NewApp() *App {
 
 	configPath := filepath.Join(baseDir, "vpn_profiles.json")
 	if _, err := os.Stat(configPath); err != nil {
-		appData := os.Getenv("APPDATA")
-		if appData != "" {
+		if applicationStorageRoot() != "" {
 			appDir := applicationDataDir()
 			_ = os.MkdirAll(appDir, 0755)
 			configPath = filepath.Join(appDir, "vpn_profiles.json")
@@ -136,6 +135,7 @@ func (a *App) initDefaultConfig() {
 		DisableProxy:     true,
 		DisableZjuConfig: true,
 	}
+	configureDefaultProfile(&defaultProfile)
 
 	a.appConfig = AppConfig{
 		ActiveProfileID: defaultProfile.ID,

@@ -37,6 +37,17 @@ func (a *App) tunControllerLocked() tunControl {
 }
 func (a *App) cleanupTUNOnStartup() (bool, error) { return false, nil }
 
+func (a *App) SetTUNMode(enabled bool) error {
+	a.mu.Lock()
+	id := a.appConfig.ActiveProfileID
+	a.mu.Unlock()
+	return a.SetProfileTUNMode(id, enabled)
+}
+
+func (a *App) SetProfileTUNMode(id string, enabled bool) error {
+	return errors.New("macOS TUN 尚未实现")
+}
+
 func (a *App) setProfileTUNMode(id string, enabled bool, manager tunControl) error {
 	if enabled {
 		return manager.Prepare(context.Background(), id)
