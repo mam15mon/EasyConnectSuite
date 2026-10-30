@@ -2,13 +2,10 @@ package main
 
 import (
 	"EasyConnectSuite/engine"
-	"bytes"
 	"errors"
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
