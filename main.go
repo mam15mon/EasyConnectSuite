@@ -9,12 +9,9 @@ import (
 	"runtime/debug"
 	"time"
 
-	winsys "golang.org/x/sys/windows"
-
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
 //go:embed all:frontend/dist
@@ -54,7 +51,7 @@ func setupNamedCrashLog(filename string) {
 		return
 	}
 	_, _ = f.WriteString(fmt.Sprintf("\n=== application started %s ===\n", time.Now().Format(time.RFC3339)))
-	_ = winsys.SetStdHandle(winsys.STD_ERROR_HANDLE, winsys.Handle(f.Fd()))
+	setStdErrHandle(f)
 	stdlog.SetOutput(f)
 }
 
@@ -68,15 +65,13 @@ func main() {
 		return
 	}
 	if err := migrateLegacyStorage(); err != nil {
-		message, _ := winsys.UTF16PtrFromString(err.Error())
-		title, _ := winsys.UTF16PtrFromString("VPN 启动失败")
-		_, _ = winsys.MessageBox(0, message, title, winsys.MB_OK|winsys.MB_ICONERROR)
+		showStartupError(err)
 		return
 	}
 	setupCrashLog()
 	app := NewApp()
 
-	err := wails.Run(&options.App{
+	appOptions := &options.App{
 		Title:             "VPN",
 		Width:             1080,
 		Height:            820,
@@ -100,13 +95,9 @@ func main() {
 		Bind: []interface{}{
 			app,
 		},
-		Windows: &windows.Options{
-			WebviewUserDataPath:  filepath.Join(applicationDataDir(), "webview"),
-			WebviewIsTransparent: false,
-			WindowIsTranslucent:  false,
-			DisableWindowIcon:    false,
-		},
-	})
+	}
+	configurePlatformOptions(appOptions)
+	err := wails.Run(appOptions)
 
 	if err != nil {
 		println("Error:", err.Error())
