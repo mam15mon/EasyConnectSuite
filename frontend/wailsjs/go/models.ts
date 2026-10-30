@@ -109,6 +109,8 @@ export namespace main {
 	    protocol: string;
 	    running: boolean;
 	    stage: string;
+	    stageDetail: string;
+	    stageStartedAt: number;
 	    message: string;
 	    state: string;
 	    activeProfile: string;
@@ -133,6 +135,8 @@ export namespace main {
 	        this.protocol = source["protocol"];
 	        this.running = source["running"];
 	        this.stage = source["stage"];
+	        this.stageDetail = source["stageDetail"];
+	        this.stageStartedAt = source["stageStartedAt"];
 	        this.message = source["message"];
 	        this.state = source["state"];
 	        this.activeProfile = source["activeProfile"];
