@@ -182,10 +182,14 @@ func (e *Engine) updateTUN(p *connectionPolicy, discover bool) {
 		diagnostic.Step("dns_namespace_discovery")
 		// DialTCP may synchronously trigger relogin while holding an endpoint lock.
 		// The relogin callback must be able to update/detach TUN before Dial returns.
-		t.op.Unlock()
-		names := discoverDNSNamespaces(backend.ctx, view)
-		diagnostic.Step("wait_tun_operation_lock")
-		t.op.Lock()
+		names := func() []string {
+			t.op.Unlock()
+			defer func() {
+				diagnostic.Step("wait_tun_operation_lock")
+				t.op.Lock()
+			}()
+			return discoverDNSNamespaces(backend.ctx, view)
+		}()
 		diagnostic.Step("validate_discovery")
 		if t.backend != backend || t.spec.Ref != ref || t.policy != p || backend.ctx.Err() != nil {
 			diagnosticErr = backend.ctx.Err()

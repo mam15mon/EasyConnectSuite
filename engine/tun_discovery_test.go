@@ -18,9 +18,9 @@ func TestTUNDiscoveryDoesNotBlockLifecycle(t *testing.T) {
 		t.Run(action, func(t *testing.T) {
 			e, c, _ := recoveryTestEngine(t)
 			path := filepath.Join(t.TempDir(), "engine.log")
-			e.opts.LogFile = path
-			e.startLogCapture()
-			defer e.stopLogCapture()
+			observer := &Engine{opts: Options{LogFile: path}}
+			observer.startLogCapture()
+			defer observer.stopLogCapture()
 			entered, release := make(chan struct{}), make(chan struct{})
 			var once sync.Once
 			unblock := func() { once.Do(func() { close(release) }) }
@@ -98,11 +98,82 @@ func TestTUNDiscoveryDoesNotBlockLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, marker := range []string{"stage=dns_namespace_discovery", "stage=validate_discovery", "outcome=discarded", "stage_elapsed="} {
+			outcome := "outcome=failed"
+			if action == "refresh" {
+				outcome = "outcome=discarded"
+				e.updateTUN(p, true) // A delayed recovered callback must not reinstate p.
+				if first.updates != want {
+					t.Fatal("delayed callback replaced current policy")
+				}
+			}
+			for _, marker := range []string{"stage=dns_namespace_discovery", "stage=validate_discovery", outcome, "stage_elapsed="} {
 				if !strings.Contains(string(data), marker) {
 					t.Errorf("missing diagnostic %s", marker)
 				}
 			}
 		})
 	}
+}
+
+func TestInitialTUNAttachDiscoversZonesOutsideLock(t *testing.T) {
+	e, _, _ := recoveryTestEngine(t)
+	if err := e.SetTUN(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	zones := &zoneDNSStack{zones: map[string]string{"app.corp.example.": "corp.example"}}
+	vpn := &pendingTUNStack{dial: func() (net.Conn, error) {
+		close(entered)
+		<-release
+		return zones.DialTCP(context.Background(), &net.TCPAddr{IP: net.ParseIP("192.0.2.53"), Port: 53})
+	}}
+	p := &connectionPolicy{stack: vpn, dnsName: "192.0.2.53", useRemoteDNS: true,
+		resourceIPs: []client.IPResource{}, resourceDomains: client.DomainResources{"app.corp.example": nil}}
+	e.router.current.Store(p)
+	attached := make(chan error, 1)
+	go func() { attached <- e.SetTUN(context.Background(), true) }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("discovery did not start")
+	}
+	select {
+	case err := <-attached:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("initial attach waited for DNS")
+	}
+	e.tunSession.op.Lock()
+	if e.tunSession.spec.Policy != 1 || !containsNamespace(e.tunSession.spec.Names, "app.corp.example") {
+		t.Error("initial resource names not installed before discovery")
+	}
+	e.tunSession.op.Unlock()
+	unblock()
+	deadline := time.Now().Add(time.Second)
+	for {
+		e.tunSession.op.Lock()
+		complete := containsNamespace(e.tunSession.spec.Names, "corp.example") && e.tunSession.spec.Policy == 2
+		e.tunSession.op.Unlock()
+		if complete {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("discovered zone not published")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func containsNamespace(names []string, name string) bool {
+	for _, item := range names {
+		if item == name {
+			return true
+		}
+	}
+	return false
 }
