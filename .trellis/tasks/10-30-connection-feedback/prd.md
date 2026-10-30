@@ -1,19 +1,5 @@
-# 明确连接阶段并直达诊断详情
+# 连接反馈与诊断
 
-## Goal
+实现用户批准的建议 1、2：连接/重连显示实际阶段和该阶段耗时；准备 TUN 与可能的系统授权明确提示；失败项可直接进入其运行记录；复制脱敏诊断摘要。保留原自动重连、TUN 和多连接行为。
 
-显示连接和重连实际阶段及耗时，失败详情直达对应日志，复制不含原始日志与凭据的诊断摘要。
-
-## Requirements
-
-- TBD
-
-## Acceptance Criteria
-
-- [ ] TBD
-
-## Notes
-
-- Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
-- Lightweight tasks can remain PRD-only.
-- For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
+验收：阶段切换重置计时，同阶段消息不重置，完成后停止计时；重连保持现有 Stage=重连中兼容标记；跨连接查看/复制不会串线；摘要仅输出受限阶段/计时/错误类型字段，凭据/地址/原始错误不复制；根 test/vet/race、Node、Wails 构建和 840x660 预览通过。
