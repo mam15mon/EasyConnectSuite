@@ -86,7 +86,7 @@ func TestDarwinTUNAvailabilityAndExistingPreferences(t *testing.T) {
 }
 
 // Runs on disposable CI to exercise the AppleScript timeout without a GUI prompt.
-func TestDarwinAuthorizationScriptOutlivesDefaultTimeout(t *testing.T) {
+func TestDarwinAuthorizationScriptLongRunning(t *testing.T) {
 	if os.Getenv("ECS_DARWIN_LONG_SCRIPT_TEST") != "1" {
 		t.Skip("requires the long-running macOS system test")
 	}
