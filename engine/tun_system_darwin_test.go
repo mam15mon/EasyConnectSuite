@@ -76,6 +76,40 @@ func TestDarwinUTUNSystemDNS(t *testing.T) {
 		t.Fatal("system DNS did not use VPN resolver")
 	}
 }
+
+func TestDarwinRouteCleanupDoesNotDeleteReplacement(t *testing.T) {
+	if os.Getenv("ECS_DARWIN_TUN_SYSTEM_TEST") != "1" {
+		t.Skip("requires a disposable macOS host and root")
+	}
+	spec := TUNSpec{Ref: tunipc.Ref{Profile: "route-test", Session: "test", Attachment: "test", Policy: 1}, Slot: 62}
+	device, name, err := createDarwinTUN(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := device.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	const target = "198.18.251.43/32"
+	manager := newRouteManager(&darwinRoutes{name: name, ref: spec})
+	if err := manager.replace([]string{target}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = exec.Command("/sbin/route", "-n", "delete", "-net", target).CombinedOutput() })
+	for _, args := range [][]string{{"-n", "delete", "-net", target, "-interface", name}, {"-n", "add", "-net", target, "-interface", "lo0"}} {
+		if out, err := exec.Command("/sbin/route", args...).CombinedOutput(); err != nil {
+			t.Fatalf("change test route: %s: %v", out, err)
+		}
+	}
+	if err := manager.close(); err == nil {
+		t.Error("cleanup accepted a route replaced by another interface")
+	}
+	out, err := exec.Command("/sbin/route", "-n", "get", "198.18.251.43").CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "interface: lo0") {
+		t.Fatalf("replacement route lost: %s: %v", out, err)
+	}
+}
 func (*darwinEchoBackend) DNS(context.Context, []byte) ([]byte, []string, error) {
 	return nil, nil, fmt.Errorf("unexpected DNS request")
 }
