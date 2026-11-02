@@ -290,7 +290,11 @@ func TestDarwinUTUNSystemLifecycle(t *testing.T) {
 	}
 	const destination = "198.18.250.42"
 	const testRoute = "198.18.250.42/32"
-	routes := newRouteManager(&darwinRoutes{name: name, ref: spec})
+	routes := newRouteManager(&darwinRoutes{name: name, ref: spec, run: func(ctx context.Context, args ...string) ([]byte, error) {
+		out, err := exec.CommandContext(ctx, "/sbin/route", args...).CombinedOutput()
+		t.Logf("route add output: %s (error: %v)", out, err)
+		return out, err
+	}})
 	if err := routes.replace([]string{testRoute}); err != nil {
 		t.Fatalf("add route: %v", err)
 	}
