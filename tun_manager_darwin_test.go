@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -61,5 +62,24 @@ func TestDarwinCanceledAuthorizationWaitsForProcessExit(t *testing.T) {
 			t.Fatalf("authorization process exit did not clear wait: %v", recoveryErr)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestDarwinTUNAvailabilityAndExistingPreferences(t *testing.T) {
+	app := &App{configPath: filepath.Join(t.TempDir(), "profiles.json")}
+	if !app.GetPlatformInfo().TUNSupported {
+		t.Fatal("macOS TUN control is disabled")
+	}
+	app.initDefaultConfig()
+	if profile := app.appConfig.Profiles[0]; !profile.TUNMode || !profile.DisableProxy {
+		t.Fatalf("new macOS profile does not default to TUN: %+v", profile)
+	}
+	const saved = `{"activeProfileId":"existing","profiles":[{"id":"existing","tunMode":false,"disableProxy":false}]}`
+	if err := os.WriteFile(app.configPath, []byte(saved), 0600); err != nil {
+		t.Fatal(err)
+	}
+	app.loadConfigFile()
+	if profile := app.appConfig.Profiles[0]; profile.ID != "existing" || profile.TUNMode || profile.DisableProxy {
+		t.Fatalf("existing profile preferences changed: %+v", profile)
 	}
 }
