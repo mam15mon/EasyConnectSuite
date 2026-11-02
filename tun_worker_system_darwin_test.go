@@ -51,6 +51,16 @@ func TestDarwinWorkerProcessIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	unsafeDir := filepath.Join(t.TempDir(), "unsafe-logs")
+	if err := os.Mkdir(unsafeDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(t.TempDir(), "other-file"), filepath.Join(unsafeDir, "tun-worker-crash.log")); err != nil {
+		t.Fatal(err)
+	}
+	if err := setupDarwinWorkerCrashLog(unsafeDir); err == nil {
+		t.Fatal("worker crash log accepted a symbolic link")
+	}
 	logDir := filepath.Join(t.TempDir(), "worker-logs")
 	m := newTUNManager()
 	m.launch = func(name string) (*exec.Cmd, error) {
