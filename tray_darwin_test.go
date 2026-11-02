@@ -36,3 +36,18 @@ func TestDarwinSecondLaunchRestoresWindow(t *testing.T) {
 		t.Fatalf("window restored while shutting down: %v", calls)
 	}
 }
+
+func TestDarwinTraySnapshotIncludesIndependentActions(t *testing.T) {
+	statuses := []VPNStatus{
+		{ProfileID: "first", ActiveProfile: "甲", State: "connected", Running: true},
+		{ProfileID: "second", ActiveProfile: "乙", State: "error"},
+		{ProfileID: "third", ActiveProfile: "丙", State: "stopping", Running: true},
+	}
+	menu := darwinTraySnapshot(statuses)
+	if !menu.Running || len(menu.Profiles) != 3 {
+		t.Fatalf("unexpected menu: %+v", menu)
+	}
+	if menu.Profiles[0].ID != "first" || menu.Profiles[0].Action != "disconnect" || menu.Profiles[1].ID != "second" || menu.Profiles[1].Action != "connect" || !menu.Profiles[2].Disabled {
+		t.Fatalf("incorrect profile actions: %+v", menu.Profiles)
+	}
+}
