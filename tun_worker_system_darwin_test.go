@@ -115,8 +115,37 @@ func TestDarwinWorkerProcessIdentity(t *testing.T) {
 	if got := <-backend.calls; got != "tcp 198.18.251.46:43210" {
 		t.Fatalf("unexpected updated flow %q", got)
 	}
+	secondBackend := &macWorkerEcho{calls: make(chan string, 2)}
+	secondSpec := engine.TUNSpec{Ref: tunipc.Ref{Profile: "system-test-2", Session: "2", Attachment: tunipc.NewName(), Policy: 1}, Slot: 61, Prefixes: []string{"198.18.251.47/32"}}
+	second, err := m.Attach(ctx, secondSpec, secondBackend)
+	if err != nil {
+		t.Fatalf("attach second worker ingress: %v", err)
+	}
 	if err = attachment.Close(ctx); err != nil {
-		t.Fatalf("detach worker: %v", err)
+		t.Fatalf("detach first worker ingress: %v", err)
+	}
+	for _, network := range []string{"tcp", "udp"} {
+		conn, err := net.DialTimeout(network+"4", "198.18.251.47:43210", 5*time.Second)
+		if err != nil {
+			t.Fatalf("remaining %s dial: %v", network, err)
+		}
+		_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+		if _, err = conn.Write([]byte("second")); err != nil {
+			conn.Close()
+			t.Fatalf("remaining %s write: %v", network, err)
+		}
+		var reply [6]byte
+		if _, err = io.ReadFull(conn, reply[:]); err != nil || string(reply[:]) != "second" {
+			conn.Close()
+			t.Fatalf("remaining %s reply %q: %v", network, reply, err)
+		}
+		conn.Close()
+		if got := <-secondBackend.calls; got != network+" 198.18.251.47:43210" {
+			t.Fatalf("unexpected remaining worker flow %q", got)
+		}
+	}
+	if err = second.Close(ctx); err != nil {
+		t.Fatalf("detach second worker ingress: %v", err)
 	}
 	select {
 	case <-done:
