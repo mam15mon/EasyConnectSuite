@@ -33,6 +33,15 @@ func TestDarwinDNSManagesOnlyOwnedResolvers(t *testing.T) {
 	if err := r.setDNS(nil); err != nil {
 		t.Fatal(err)
 	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), darwinResolverTempPrefix) {
+			t.Fatalf("temporary resolver remains after publication or conflict: %s", entry.Name())
+		}
+	}
 }
 
 func TestDarwinStaleResolverCleanupPreservesLiveAndUnownedFiles(t *testing.T) {
