@@ -369,7 +369,7 @@ function updateStatusUI(status) {
     : 'SOCKS5 / HTTP，可与 TUN 同时开启';
   profileSelect.disabled = modeSaving;
   btnToggle.disabled = modeSaving || !activeProfile || (pendingActions.has(activeProfile?.id) && status.state !== 'connecting');
-  const tunMessage = !platformInfo.tunSupported ? 'macOS TUN 尚未实现，请使用本地代理。' : status.tunError || (modeSaving || status.tunState === 'attaching' ? '正在附着 TUN 或等待系统 UAC 授权…' : status.tunState === 'detaching' ? '正在清理 TUN 网卡和路由…' : '系统流量按服务器授权资源进入 VPN，开关不会重新登录。');
+  const tunMessage = !platformInfo.tunSupported ? '当前平台不支持 TUN，请使用本地代理。' : status.tunError || (modeSaving || status.tunState === 'attaching' ? '正在附着 TUN 或等待系统管理员授权…' : status.tunState === 'detaching' ? '正在清理 TUN 网卡和路由…' : '系统流量按服务器授权资源进入 VPN，开关不会重新登录。');
   tunModeNote.title = tunMessage;
   tunModeNote.querySelector('small').textContent = tunMessage;
   updateInfoFields(status);
