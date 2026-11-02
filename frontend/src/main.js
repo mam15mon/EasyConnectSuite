@@ -726,12 +726,19 @@ document.getElementById('btn-refresh-resources').addEventListener('click', () =>
   refreshResources();
 });
 
+function applyPlatformInfo(info) {
+  platformInfo = info;
+  document.querySelector('.workspace-footer').textContent = info.closeToTray
+    ? '关闭窗口后，连接继续在托盘运行。'
+    : '关闭窗口将断开连接并退出。';
+}
+
 // ---------- 预览模式（仅浏览器 ?preview，用于视觉检查） ----------
 
 async function loadPreviewData() {
   const { installPreview } = await import('./preview.mjs');
   installPreview(receiveStatus);
-  platformInfo = await window.go.main.App.GetPlatformInfo();
+  applyPlatformInfo(await window.go.main.App.GetPlatformInfo());
   document.getElementById('preview-indicator').hidden = false;
   detectedInterfaces = await window.go.main.App.GetInterfaces();
   await refreshProfiles();
@@ -746,6 +753,7 @@ async function initApp() {
   }
 
   if (window.runtime) {
+    window.runtime.EventsOn('platform-info', applyPlatformInfo);
     window.runtime.EventsOn('vpn-status', (status) => {
       receiveStatus(status);
       if (!status.running && status.profileId === activeProfile?.id) refreshResources();
@@ -767,8 +775,7 @@ async function initApp() {
 
   try {
     if (window.go && window.go.main && window.go.main.App) {
-      platformInfo = await window.go.main.App.GetPlatformInfo();
-      if (!platformInfo.closeToTray) document.querySelector('.workspace-footer').textContent = '关闭窗口将断开连接并退出。';
+      applyPlatformInfo(await window.go.main.App.GetPlatformInfo());
       detectedInterfaces = await window.go.main.App.GetInterfaces();
       await refreshProfiles();
 
