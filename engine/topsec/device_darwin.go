@@ -7,7 +7,7 @@ package topsec
 #include <string.h>
 
 static int ecs_topsec_identity(char *buf, size_t size, int *source) {
-    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"));
+    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("IOPlatformExpertDevice"));
     if (!service) return 1;
     CFTypeRef value = IORegistryEntryCreateCFProperty(service, CFSTR("IOPlatformSerialNumber"), kCFAllocatorDefault, 0);
     *source = 1;
