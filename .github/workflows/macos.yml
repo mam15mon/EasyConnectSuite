@@ -35,7 +35,7 @@ jobs:
       - name: Test real utun lifecycle
         run: |
           go test -c -o "$RUNNER_TEMP/engine-test" ./engine
-          sudo env ECS_DARWIN_TUN_SYSTEM_TEST=1 "$RUNNER_TEMP/engine-test" -test.run '^TestDarwinUTUN(SystemLifecycle|ForwardsTCPAndUDP)$' -test.v
+          sudo env ECS_DARWIN_TUN_SYSTEM_TEST=1 "$RUNNER_TEMP/engine-test" -test.run '^TestDarwinUTUN(SystemLifecycle|ForwardsTCPAndUDP|SystemDNS)$' -test.v
       - name: Build Go packages
         run: go build ./...
       - name: Install Wails CLI
