@@ -108,10 +108,21 @@ func (m *tunManager) ensure(ctx context.Context) (err error) {
 		case <-processDone:
 			return fmt.Errorf("macOS TUN Worker 未启动或授权已取消: %w", errors.Join(err, processErr))
 		default:
-			unknown := errors.New("macOS TUN Worker 状态未知，无法确认清理；请退出程序后检查")
+			unknown := errors.New("macOS TUN Worker 授权进程仍在退出，请等待后重试")
 			m.mu.Lock()
 			m.recoveryErr = unknown
 			m.mu.Unlock()
+			go func() {
+				wait := vpnlog.BeginOperation(fmt.Sprintf("[TUN pid=%d authorization_pid=%d] ", os.Getpid(), cmd.Process.Pid), "darwin_authorization_retirement", nil)
+				wait.Step("wait_authorization_process_exit")
+				<-processDone
+				m.mu.Lock()
+				if m.recoveryErr == unknown {
+					m.recoveryErr = nil
+				}
+				m.mu.Unlock()
+				wait.Finish("exited_without_session", processErr)
+			}()
 			return errors.Join(err, unknown)
 		}
 	}
