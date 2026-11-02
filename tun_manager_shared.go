@@ -96,14 +96,20 @@ func (m *tunManager) idle(ctx context.Context) error {
 	m.mu.Lock()
 	p := m.peer
 	idle := len(m.attachments) == 0 && len(m.reservations) == 0
-	if p != nil && idle {
-		m.peer = nil
-	}
+	done := m.workerDone
 	m.mu.Unlock()
 	if p != nil && idle {
 		_, err := p.Call(ctx, tunipc.Message{Op: "shutdown"})
 		p.Close()
-		return err
+		select {
+		case <-done:
+			m.mu.Lock()
+			cleanupErr := m.recoveryErr
+			m.mu.Unlock()
+			return errors.Join(err, cleanupErr)
+		case <-ctx.Done():
+			return errors.Join(err, ctx.Err())
+		}
 	}
 	return nil
 }

@@ -145,7 +145,15 @@ func (m *tunManager) ensure(ctx context.Context) (err error) {
 	trace.Step("worker_hello")
 	if _, err = peer.Call(handshake, tunipc.Message{Op: "hello"}); err != nil {
 		peer.Close()
-		return err
+		select {
+		case <-workerDone:
+			m.mu.Lock()
+			cleanupErr := m.recoveryErr
+			m.mu.Unlock()
+			return errors.Join(err, cleanupErr)
+		case <-time.After(45 * time.Second):
+			return errors.Join(err, errors.New("macOS TUN Worker 清理超时"))
+		}
 	}
 	outcome = "ready"
 	return nil
