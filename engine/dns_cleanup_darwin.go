@@ -32,14 +32,17 @@ func validateDarwinResolverDir(dir string, requireRoot bool) error {
 
 func darwinResolverOwner(data []byte) (int, bool, error) {
 	text := string(data)
-	if !strings.HasPrefix(text, darwinResolverMarker) {
+	if !strings.Contains(text, "\n"+darwinResolverMarker) {
 		return 0, false, nil
 	}
 	lines := strings.Split(text, "\n")
 	if len(lines) != 3 || lines[2] != "" {
 		return 0, true, errors.New("invalid owned resolver content")
 	}
-	fields := strings.Fields(strings.TrimPrefix(lines[0], darwinResolverMarker))
+	if !strings.HasPrefix(lines[1], darwinResolverMarker) {
+		return 0, true, errors.New("invalid owned resolver marker")
+	}
+	fields := strings.Fields(strings.TrimPrefix(lines[1], darwinResolverMarker))
 	if len(fields) != 2 || !strings.HasPrefix(fields[0], "pid=") || !strings.HasPrefix(fields[1], "token=") {
 		return 0, true, errors.New("invalid owned resolver marker")
 	}
@@ -49,10 +52,10 @@ func darwinResolverOwner(data []byte) (int, bool, error) {
 	if err != nil || pid <= 1 || decodeErr != nil || len(decoded) != 24 || hex.EncodeToString(decoded) != nonce {
 		return 0, true, errors.New("invalid owned resolver identity")
 	}
-	if !strings.HasPrefix(lines[1], "nameserver ") {
+	if !strings.HasPrefix(lines[0], "nameserver ") {
 		return 0, true, errors.New("invalid owned resolver server")
 	}
-	server, err := netip.ParseAddr(strings.TrimPrefix(lines[1], "nameserver "))
+	server, err := netip.ParseAddr(strings.TrimPrefix(lines[0], "nameserver "))
 	if err != nil || !server.Is4() || !netip.MustParsePrefix("198.19.128.0/24").Contains(server) || server.As4()[3]%4 != 2 {
 		return 0, true, errors.New("invalid owned resolver server")
 	}

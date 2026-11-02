@@ -20,7 +20,7 @@ func TestDarwinDNSManagesOnlyOwnedResolvers(t *testing.T) {
 	}
 	path := filepath.Join(dir, "corp.example")
 	data, err := os.ReadFile(path)
-	if err != nil || !strings.HasPrefix(string(data), "# EasyConnectSuite TUN pid=") || !strings.HasSuffix(string(data), "\nnameserver 198.19.128.2\n") {
+	if err != nil || !strings.HasPrefix(string(data), "nameserver 198.19.128.2\n# EasyConnectSuite TUN pid=") {
 		t.Fatalf("resolver = %q %v", data, err)
 	}
 	if err := r.setDNS([]string{"other.example"}); err == nil {
@@ -38,7 +38,7 @@ func TestDarwinDNSManagesOnlyOwnedResolvers(t *testing.T) {
 func TestDarwinStaleResolverCleanupPreservesLiveAndUnownedFiles(t *testing.T) {
 	dir := t.TempDir()
 	marker := func(pid int) []byte {
-		return []byte(fmt.Sprintf("# EasyConnectSuite TUN pid=%d token=%s\nnameserver 198.19.128.2\n", pid, strings.Repeat("a", 48)))
+		return []byte(fmt.Sprintf("nameserver 198.19.128.2\n# EasyConnectSuite TUN pid=%d token=%s\n", pid, strings.Repeat("a", 48)))
 	}
 	for name, data := range map[string][]byte{"stale.example": marker(101), "live.example": marker(202), "foreign.example": []byte("nameserver 192.0.2.1\n")} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0644); err != nil {
@@ -68,7 +68,7 @@ func TestDarwinStaleResolverCleanupPreservesLiveAndUnownedFiles(t *testing.T) {
 func TestDarwinStaleResolverRejectsMalformedMarker(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "corp.example")
-	if err := os.WriteFile(path, []byte("# EasyConnectSuite TUN pid=123 token=invalid\nnameserver 198.19.128.2\n"), 0644); err != nil {
+	if err := os.WriteFile(path, []byte("nameserver 198.19.128.2\n# EasyConnectSuite TUN pid=123 token=invalid\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := cleanupDarwinResolvers(dir, false, false, func(int) (bool, error) { return false, nil }); err == nil {

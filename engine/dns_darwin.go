@@ -47,7 +47,7 @@ func (r *darwinRoutes) setDNS(names []string) (err error) {
 		}
 		r.resolverMarker = fmt.Sprintf("# EasyConnectSuite TUN pid=%d token=%s\n", os.Getpid(), hex.EncodeToString(nonce[:]))
 	}
-	contents := []byte(r.resolverMarker + "nameserver " + server.String() + "\n")
+	contents := []byte("nameserver " + server.String() + "\n" + r.resolverMarker)
 	var remove []string
 	for name := range r.resolverFiles {
 		if !wanted[name] {
