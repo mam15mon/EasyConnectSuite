@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"EasyConnectSuite/engine"
 	"EasyConnectSuite/internal/tunipc"
 	vpnlog "EasyConnectSuite/vpncore/log"
 )
@@ -150,4 +151,4 @@ func (m *tunManager) ensure(ctx context.Context) (err error) {
 	return nil
 }
 
-func (a *App) cleanupTUNOnStartup() (bool, error) { return false, nil }
+func (a *App) cleanupTUNOnStartup() (bool, error) { return engine.CleanupStaleDarwinTUN(true) }

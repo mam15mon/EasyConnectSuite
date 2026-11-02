@@ -14,12 +14,13 @@ import (
 
 // darwinRoutes changes only routes assigned to its own utun interface.
 type darwinRoutes struct {
-	name          string
-	ref           TUNSpec
-	dns           string
-	resolverDir   string
-	resolverFiles map[string]os.FileInfo
-	run           func(context.Context, ...string) ([]byte, error)
+	name           string
+	ref            TUNSpec
+	dns            string
+	resolverDir    string
+	resolverFiles  map[string]os.FileInfo
+	resolverMarker string
+	run            func(context.Context, ...string) ([]byte, error)
 }
 
 func (r *darwinRoutes) Apply(add, remove []string) (result routeResult, err error) {

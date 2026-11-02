@@ -3,6 +3,7 @@ package engine
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -89,6 +90,16 @@ func TestDarwinUTUNCrashEvidence(t *testing.T) {
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("expected DNS residue for recovery verification: %v", err)
+	}
+	pending, err := CleanupStaleDarwinTUN(true)
+	if err != nil || !pending {
+		t.Fatalf("probe stale DNS: pending=%t err=%v", pending, err)
+	}
+	if _, err = CleanupStaleDarwinTUN(false); err != nil {
+		t.Fatalf("clean stale DNS: %v", err)
+	}
+	if _, err = os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale DNS remains: %v", err)
 	}
 }
 

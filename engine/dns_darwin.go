@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -32,12 +34,20 @@ func (r *darwinRoutes) setDNS(names []string) (err error) {
 	}
 	dir := r.resolverDir
 	if dir == "" {
-		dir = "/etc/resolver"
+		dir = darwinResolverDir
 	}
 	if r.resolverFiles == nil {
 		r.resolverFiles = make(map[string]os.FileInfo)
 	}
-	contents := []byte("nameserver " + server.String() + "\n")
+	if r.resolverMarker == "" && len(wanted) != 0 {
+		var nonce [24]byte
+		if _, err := rand.Read(nonce[:]); err != nil {
+			outcome = "failed"
+			return err
+		}
+		r.resolverMarker = fmt.Sprintf("# EasyConnectSuite TUN pid=%d token=%s\n", os.Getpid(), hex.EncodeToString(nonce[:]))
+	}
+	contents := []byte(r.resolverMarker + "nameserver " + server.String() + "\n")
 	var remove []string
 	for name := range r.resolverFiles {
 		if !wanted[name] {
@@ -80,6 +90,10 @@ func (r *darwinRoutes) setDNS(names []string) (err error) {
 		if e := os.MkdirAll(dir, 0755); e != nil {
 			outcome = "failed"
 			return fmt.Errorf("create DNS resolver directory: %w", e)
+		}
+		if e := validateDarwinResolverDir(dir, dir == darwinResolverDir); e != nil {
+			outcome = "failed"
+			return fmt.Errorf("check DNS resolver directory: %w", e)
 		}
 	}
 	for _, name := range add {

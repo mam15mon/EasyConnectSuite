@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
@@ -43,15 +42,17 @@ func TestDarwinWorkerProcessIdentity(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	err = m.Prepare(ctx, "system-test")
-	if err == nil || !strings.Contains(err.Error(), "残留清理尚未实现") {
-		t.Fatalf("worker must reject incomplete cleanup: %v", err)
+	if err = m.Prepare(ctx, "system-test"); err != nil {
+		t.Fatalf("prepare worker: %v", err)
 	}
 	m.mu.Lock()
 	done := m.workerDone
 	m.mu.Unlock()
 	if done == nil {
 		t.Fatal("authenticated worker never reached handshake")
+	}
+	if err = m.Release(ctx, "system-test"); err != nil {
+		t.Fatalf("release worker: %v", err)
 	}
 	select {
 	case <-done:
