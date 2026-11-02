@@ -143,3 +143,10 @@ fix2 authenticated, fetched two resources and created TUN, but the internal SSH 
 Use TYPE=all's net_param for the data-stack IPv4 and DNS; reject invalid/missing current IPv4 instead of reusing the earlier address. Tests independently assign login 10.91.0.2 and complete-config 10.91.0.9; the integration gateway drops packets with the obsolete source. Before correction, the session assertion failed; after correction TCP and UDP echo pass. Invalid current VIP revokes authentication without opening data TLS. Root test/vet and filtering tests pass.
 
 Uncompressed fix4 is 20653056 bytes, SHA256 818BF1EF81655C6F7C7CD4A09F5B9A26B622A4B21ADF65936D7510F5B77510DF. Actual log 2026-10-11 01:57:40 records the first transmit and receive in the same second, using full_config with vip_changed=true. User confirms internal access works and is keeping the session running for stability testing. This confirms this gateway's TCP access; live UDP, long-term stability and simultaneous real-vendor TUN coexistence remain separate validation.
+
+
+## macOS 官方客户端静态证据（2026-11-02）
+
+天融信官方下载页 https://app.topsec.com.cn/mac_client_1.html 的 NGVONE macOS 客户端 V3.5.0.73.3，安装包 MD5 为 `D1EA71D782E583FB047D8023BC9F4A5E`；仅在临时目录解包，没有安装或提交官方程序。`libTopSecVPN` 的 SHA-256 为 `aaed4e2707048f7c698dc1cb389c4902bbd02d4364e58949bb729a1299ae2795`（x86_64）。符号 `-[VPNService getMacFeatureCode]` 位于 `0x45710`：静态指令查询 `IOPlatformExpertDevice`，优先读取 `IOPlatformSerialNumber`，不存在时查询 `IOPlatformUUID`；支持 CFString/CFData，取值后调用 `+[Misc MD5InitwithString:]`（`0x3eaf0`）。该方法循环格式化 16 个摘要字节，格式常量是小写 `%02x`。程序还包含携带 `S_CODE` 的登录格式字符串。
+
+这些是静态观察，不证明该特征码返回值实际传入登录 S_CODE，也不证明其他版本、Apple Silicon 或真实网关行为。设备身份实现和兼容性仍待调用链及受控 macOS 对照验证；不记录实际序列号、UUID、摘要、认证报文或凭据。
