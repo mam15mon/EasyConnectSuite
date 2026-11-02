@@ -2,12 +2,27 @@ package main
 
 import (
 	"context"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"strconv"
 	"testing"
 	"time"
+
+	"EasyConnectSuite/engine"
+	"EasyConnectSuite/internal/tunipc"
 )
+
+type macWorkerEcho struct{ calls chan string }
+
+func (b *macWorkerEcho) Dial(_ context.Context, network, addr string) (net.Conn, error) {
+	b.calls <- network + " " + addr
+	a, c := net.Pipe()
+	go func() { defer c.Close(); _, _ = io.Copy(c, c) }()
+	return a, nil
+}
+func (*macWorkerEcho) DNS(context.Context, []byte) ([]byte, []string, error) { return nil, nil, nil }
 
 func TestDarwinWorkerHelper(t *testing.T) {
 	if os.Getenv("ECS_DARWIN_WORKER_HELPER") != "1" {
@@ -51,8 +66,34 @@ func TestDarwinWorkerProcessIdentity(t *testing.T) {
 	if done == nil {
 		t.Fatal("authenticated worker never reached handshake")
 	}
-	if err = m.Release(ctx, "system-test"); err != nil {
-		t.Fatalf("release worker: %v", err)
+	backend := &macWorkerEcho{calls: make(chan string, 2)}
+	spec := engine.TUNSpec{Ref: tunipc.Ref{Profile: "system-test", Session: "1", Attachment: tunipc.NewName(), Policy: 1}, Slot: 62, Prefixes: []string{"198.18.251.45/32"}}
+	attachment, err := m.Attach(ctx, spec, backend)
+	if err != nil {
+		t.Fatalf("attach worker: %v", err)
+	}
+	for _, network := range []string{"tcp", "udp"} {
+		conn, err := net.DialTimeout(network+"4", "198.18.251.45:43210", 5*time.Second)
+		if err != nil {
+			t.Fatalf("%s dial: %v", network, err)
+		}
+		_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+		if _, err = conn.Write([]byte("worker-flow")); err != nil {
+			conn.Close()
+			t.Fatalf("%s write: %v", network, err)
+		}
+		var reply [11]byte
+		if _, err = io.ReadFull(conn, reply[:]); err != nil || string(reply[:]) != "worker-flow" {
+			conn.Close()
+			t.Fatalf("%s reply %q: %v", network, reply, err)
+		}
+		conn.Close()
+		if got := <-backend.calls; got != network+" 198.18.251.45:43210" {
+			t.Fatalf("unexpected worker flow %q", got)
+		}
+	}
+	if err = attachment.Close(ctx); err != nil {
+		t.Fatalf("detach worker: %v", err)
 	}
 	select {
 	case <-done:
