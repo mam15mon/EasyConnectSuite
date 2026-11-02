@@ -96,7 +96,7 @@ func main() {
 			app,
 		},
 	}
-	configurePlatformOptions(appOptions)
+	configurePlatformOptions(appOptions, app)
 	err := wails.Run(appOptions)
 
 	if err != nil {

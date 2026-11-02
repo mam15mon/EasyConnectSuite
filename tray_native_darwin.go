@@ -50,7 +50,13 @@ var darwinTray struct {
 	refresh chan struct{}
 }
 
-func StartTray(app *App, _ context.Context) {
+func darwinTrayReady() bool {
+	darwinTray.Lock()
+	defer darwinTray.Unlock()
+	return darwinTray.app != nil
+}
+
+func StartTray(app *App, ctx context.Context) {
 	if C.ecs_tray_start() == 0 {
 		log.Printf("[VPN] macOS 菜单栏创建失败")
 		return
@@ -61,6 +67,7 @@ func StartTray(app *App, _ context.Context) {
 	darwinTray.refresh = make(chan struct{}, 1)
 	stop, refresh := darwinTray.stop, darwinTray.refresh
 	darwinTray.Unlock()
+	wailsruntime.EventsEmit(ctx, "platform-info", app.GetPlatformInfo())
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()

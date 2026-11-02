@@ -23,7 +23,9 @@ func showStartupError(err error) {
 	_, _ = winsys.MessageBox(0, message, title, winsys.MB_OK|winsys.MB_ICONERROR)
 }
 
-func configurePlatformOptions(app *options.App) {
+func platformCloseToTray() bool { return true }
+
+func configurePlatformOptions(app *options.App, _ *App) {
 	app.Windows = &windows.Options{
 		WebviewUserDataPath:  filepath.Join(applicationDataDir(), "webview"),
 		WebviewIsTransparent: false,

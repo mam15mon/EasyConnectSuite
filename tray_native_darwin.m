@@ -33,6 +33,11 @@ int ecs_tray_start(void) {
         ecsStatusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength] retain];
         if (ecsStatusItem != nil) {
             [[ecsStatusItem button] setTitle:@"VPN"];
+            NSMenu *menu = [[[NSMenu alloc] initWithTitle:@"VPN"] autorelease];
+            [menu setAutoenablesItems:NO];
+            [menu addItem:ecsItem(@"打开 VPN 工作台", @"open", @"", YES)];
+            [menu addItem:ecsItem(@"退出程序（断开全部）", @"quit", @"", YES)];
+            [ecsStatusItem setMenu:menu];
             ok = 1;
         }
     });
