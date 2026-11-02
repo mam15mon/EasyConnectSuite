@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -81,5 +82,23 @@ func TestDarwinTUNAvailabilityAndExistingPreferences(t *testing.T) {
 	app.loadConfigFile()
 	if profile := app.appConfig.Profiles[0]; profile.ID != "existing" || profile.TUNMode || profile.DisableProxy {
 		t.Fatalf("existing profile preferences changed: %+v", profile)
+	}
+}
+
+// Runs on disposable CI to exercise the AppleScript timeout without a GUI prompt.
+func TestDarwinAuthorizationScriptOutlivesDefaultTimeout(t *testing.T) {
+	if os.Getenv("ECS_DARWIN_LONG_SCRIPT_TEST") != "1" {
+		t.Skip("requires the long-running macOS system test")
+	}
+	original := `do shell script (quoted form of (item 1 of argv) & " --tun-worker " & quoted form of (item 2 of argv) & " " & quoted form of (item 3 of argv)) with administrator privileges`
+	if !strings.Contains(darwinWorkerScript, original) {
+		t.Fatal("authorization script no longer matches system test")
+	}
+	script := strings.Replace(darwinWorkerScript, original, `do shell script "/bin/sleep 125"`, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 140*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "/usr/bin/osascript", "-e", script).CombinedOutput()
+	if err != nil {
+		t.Fatalf("long-running authorization script failed: %s: %v", out, err)
 	}
 }
