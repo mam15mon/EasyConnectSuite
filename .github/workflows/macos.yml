@@ -32,6 +32,10 @@ jobs:
         run: npm run build
       - name: Test
         run: go test ./...
+      - name: Test real utun lifecycle
+        run: |
+          go test -c -o "$RUNNER_TEMP/engine-test" ./engine
+          sudo env ECS_DARWIN_TUN_SYSTEM_TEST=1 "$RUNNER_TEMP/engine-test" -test.run '^TestDarwinUTUNSystemLifecycle$' -test.v
       - name: Build Go packages
         run: go build ./...
       - name: Install Wails CLI
