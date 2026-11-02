@@ -4,7 +4,6 @@ import (
 	"net"
 	"net/netip"
 	"os"
-	"os/exec"
 	"testing"
 	"time"
 
@@ -58,14 +57,15 @@ func TestDarwinUTUNSystemLifecycle(t *testing.T) {
 	}
 	const destination = "198.18.250.42"
 	const testRoute = "198.18.250.42/32"
-	if output, err := exec.Command("/sbin/route", "-n", "add", "-net", testRoute, "-interface", name).CombinedOutput(); err != nil {
-		t.Fatalf("add route: %v: %s", err, output)
+	routes := newRouteManager(&darwinRoutes{name: name, ref: TUNSpec{}})
+	if err := routes.replace([]string{testRoute}); err != nil {
+		t.Fatalf("add route: %v", err)
 	}
 	routeRemoved := false
 	t.Cleanup(func() {
 		if !routeRemoved {
-			if output, err := exec.Command("/sbin/route", "-n", "delete", "-net", testRoute, "-interface", name).CombinedOutput(); err != nil {
-				t.Errorf("delete route: %v: %s", err, output)
+			if err := routes.close(); err != nil {
+				t.Errorf("delete route: %v", err)
 			}
 		}
 	})
@@ -100,8 +100,8 @@ func TestDarwinUTUNSystemLifecycle(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("test packet did not reach utun")
 	}
-	if output, err := exec.Command("/sbin/route", "-n", "delete", "-net", testRoute, "-interface", name).CombinedOutput(); err != nil {
-		t.Fatalf("delete route: %v: %s", err, output)
+	if err := routes.close(); err != nil {
+		t.Fatalf("delete route: %v", err)
 	}
 	routeRemoved = true
 	if err := device.Close(); err != nil {
