@@ -22,8 +22,8 @@ func TestMacStorageAndDefaultProfile(t *testing.T) {
 		t.Fatalf("config path = %q", a.configPath)
 	}
 	p := a.appConfig.Profiles[0]
-	if p.TUNMode || p.DisableProxy {
-		t.Fatalf("default profile cannot use proxy: %+v", p)
+	if !p.TUNMode || !p.DisableProxy {
+		t.Fatalf("default profile does not use TUN: %+v", p)
 	}
 }
 
