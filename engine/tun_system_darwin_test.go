@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -55,6 +56,54 @@ func TestDarwinUTUNSystemLifecycle(t *testing.T) {
 	if !found {
 		t.Fatalf("%s has no test address: %v", name, addresses)
 	}
+	const destination = "198.18.250.42"
+	const testRoute = "198.18.250.42/32"
+	if output, err := exec.Command("/sbin/route", "-n", "add", "-net", testRoute, "-interface", name).CombinedOutput(); err != nil {
+		t.Fatalf("add route: %v: %s", err, output)
+	}
+	routeRemoved := false
+	t.Cleanup(func() {
+		if !routeRemoved {
+			if output, err := exec.Command("/sbin/route", "-n", "delete", "-net", testRoute, "-interface", name).CombinedOutput(); err != nil {
+				t.Errorf("delete route: %v: %s", err, output)
+			}
+		}
+	})
+	packets := make(chan []byte, 1)
+	readErrors := make(chan error, 1)
+	go func() {
+		packet := make([]byte, 2048)
+		n, err := device.Read(packet)
+		if err != nil {
+			readErrors <- err
+			return
+		}
+		packets <- packet[:n]
+	}()
+	conn, err := net.Dial("udp4", net.JoinHostPort(destination, "43210"))
+	if err != nil {
+		t.Fatalf("dial test destination: %v", err)
+	}
+	if _, err := conn.Write([]byte("tun-test")); err != nil {
+		conn.Close()
+		t.Fatalf("write test packet: %v", err)
+	}
+	conn.Close()
+	select {
+	case packet := <-packets:
+		// utun frames start with a four-byte address family before the IPv4 header.
+		if len(packet) < 24 || packet[4]>>4 != 4 || packet[13] != 17 || net.IP(packet[20:24]).String() != destination {
+			t.Fatalf("unexpected utun packet: %x", packet)
+		}
+	case err := <-readErrors:
+		t.Fatalf("read utun packet: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("test packet did not reach utun")
+	}
+	if output, err := exec.Command("/sbin/route", "-n", "delete", "-net", testRoute, "-interface", name).CombinedOutput(); err != nil {
+		t.Fatalf("delete route: %v: %s", err, output)
+	}
+	routeRemoved = true
 	if err := device.Close(); err != nil {
 		t.Fatalf("close %s: %v", name, err)
 	}
