@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
-	"net"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -16,9 +14,7 @@ import (
 	"time"
 	"unsafe"
 
-	"EasyConnectSuite/engine"
 	"EasyConnectSuite/internal/tunipc"
-	vpnlog "EasyConnectSuite/vpncore/log"
 	"golang.org/x/sys/windows"
 )
 

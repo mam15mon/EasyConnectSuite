@@ -2,9 +2,6 @@ package main
 
 import (
 	"EasyConnectSuite/engine"
-	"context"
-	"errors"
-	"fmt"
 	"golang.org/x/sys/windows"
 )
 
