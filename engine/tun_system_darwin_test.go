@@ -323,7 +323,8 @@ func TestDarwinUTUNSystemLifecycle(t *testing.T) {
 	case err := <-readErrors:
 		t.Fatalf("read utun packet: %v", err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("test packet did not reach utun")
+		out, routeErr := exec.Command("/sbin/route", "-n", "get", destination).CombinedOutput()
+		t.Fatalf("test packet did not reach %s; route get: %s: %v", name, out, routeErr)
 	}
 	if err := device.Close(); err != nil {
 		t.Fatalf("close %s: %v", name, err)
