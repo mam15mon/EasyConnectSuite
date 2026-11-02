@@ -2,7 +2,7 @@
 
 支持深信服 EasyConnect、华为／联软 UniVPN 及天融信 TopSAP 标准模式协议子集的第三方 Windows 图形客户端。一个 EXE 可同时连接多个配置，分别管理连接状态、资源、本地代理和 TUN。EasyConnect 引擎基于 [zju-connect](https://github.com/mythologyli/zju-connect)(上游 commit `4031c52`)，UniVPN 和 TopSAP 使用 Go 协议核心；**引擎源码直接编译进 GUI 进程**，无需 OpenConnect 或 Python 子进程。支持范围见 [UniVPN 接入说明](docs/univpn-go.md)及 [TopSAP 测试版说明](docs/topsec-go.md)；TopSAP 的新版 EXE 仍待真实网关验证。
 
-macOS 支持 EasyConnect、UniVPN 的代理模式和按 VPN 资源分流的 IPv4 TCP/UDP TUN。开启 TUN 时会请求管理员授权，主程序无需提权；域名资源使用系统 resolver。GitHub Actions 在 Intel 和 Apple Silicon 测试真实 utun、系统 DNS、多连接与模拟后端转发，并构建 `.app`。真实网关连接和管理员授权弹窗交互尚未验证，CI 成功不代表已验证真实连接。托盘和 TopSAP 的 macOS 设备标识尚未实现。配置和主程序日志位于 `~/Library/Application Support/VPN`；TUN Worker 的管理员诊断日志位于 `/private/var/log/EasyConnectSuite/tun-worker-crash.log`。关闭窗口会断开连接并退出。Actions 产物为保留可执行权限的 `.tar.gz`，应用尚未签名或公证。
+macOS 支持 EasyConnect、UniVPN 的代理模式和按 VPN 资源分流的 IPv4 TCP/UDP TUN。开启 TUN 时会请求管理员授权，主程序无需提权；域名资源使用系统 resolver。GitHub Actions 在 Intel 和 Apple Silicon 测试真实 utun、系统 DNS、多连接与模拟后端转发，并构建 `.app`。真实网关连接和管理员授权弹窗交互尚未验证，CI 成功不代表已验证真实连接。菜单栏支持查看各连接、连接或断开、打开工作台和退出；TopSAP 的 macOS 设备标识尚未实现。配置和主程序日志位于 `~/Library/Application Support/VPN`；TUN Worker 的管理员诊断日志位于 `/private/var/log/EasyConnectSuite/tun-worker-crash.log`。菜单栏成功启动后，关闭窗口会隐藏工作台并保持连接，使用菜单栏的退出操作可断开连接并退出；菜单栏和窗口的实际交互尚未在实体 Mac 验证。Actions 产物为保留可执行权限的 `.tar.gz`，应用尚未签名或公证。
 
 ## 目录结构
 
