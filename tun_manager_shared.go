@@ -71,8 +71,7 @@ func (m *tunManager) Prepare(ctx context.Context, id string) error {
 	}
 	_, err := m.request(ctx, tunipc.Message{Op: "prepare", Ref: tunipc.Ref{Profile: id}})
 	if err != nil {
-		m.idle(ctx)
-		return err
+		return errors.Join(err, m.idle(ctx))
 	}
 	m.mu.Lock()
 	m.reservations[id] = true
@@ -93,6 +92,8 @@ func (m *tunManager) Release(ctx context.Context, id string) error {
 	return errors.Join(err, m.idle(ctx))
 }
 func (m *tunManager) idle(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
 	m.mu.Lock()
 	p := m.peer
 	idle := len(m.attachments) == 0 && len(m.reservations) == 0
@@ -137,8 +138,7 @@ func (m *tunManager) Attach(ctx context.Context, spec engine.TUNSpec, b engine.T
 		delete(m.attachments, spec.Attachment)
 		m.mu.Unlock()
 		a.finish()
-		m.idle(context.Background())
-		return nil, err
+		return nil, errors.Join(err, m.idle(context.Background()))
 	}
 	m.mu.Lock()
 	delete(m.reservations, spec.Profile)
