@@ -26,6 +26,7 @@ import (
 
 type gateway struct {
 	server                                          *httptest.Server
+	expectedDeviceCode                              string
 	roots                                           *x509.CertPool
 	reject, noResources, stall, corrupt, invalidVIP bool
 	logins, logouts                                 atomic.Int32
@@ -36,7 +37,7 @@ type gateway struct {
 
 func newGateway(t *testing.T) *gateway {
 	t.Helper()
-	g := &gateway{}
+	g := &gateway{expectedDeviceCode: "tOn2cYFE+wqTmNHkz2AA7g=="}
 	g.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "CONNECT" {
 			conn, rw, err := w.(http.Hijacker).Hijack()
@@ -71,7 +72,7 @@ func newGateway(t *testing.T) *gateway {
 			fmt.Fprint(w, `{pswd:"on",check_client_before_login:"off",auth_protocol:"0",data_protocol:"0",twoway_auth_switch:"off"}`)
 		case "/vone/login/user_pswd":
 			g.logins.Add(1)
-			if r.Form.Get("U") != "bW9ja3VzZXI=" || r.Form.Get("P") != "IHAmKyUg" || r.Form.Get("S_CODE") != "tOn2cYFE+wqTmNHkz2AA7g==" || !r.Form.Has("HASH") || r.Form.Get("HASH") != "" || len(r.Form) != 4 {
+			if r.Form.Get("U") != "bW9ja3VzZXI=" || r.Form.Get("P") != "IHAmKyUg" || r.Form.Get("S_CODE") != g.expectedDeviceCode || !r.Form.Has("HASH") || r.Form.Get("HASH") != "" || len(r.Form) != 4 {
 				t.Error("authentication differs from independent vectors")
 			}
 			if g.reject {
