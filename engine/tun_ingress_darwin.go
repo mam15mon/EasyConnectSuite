@@ -1,0 +1,71 @@
+package engine
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/netip"
+	"os"
+
+	"EasyConnectSuite/vpncore/log"
+	tun "github.com/mythologyli/sing-tun"
+)
+
+func (r *darwinRoutes) setDNS(names []string) error {
+	if len(names) != 0 {
+		return errors.New("macOS TUN 域名分流尚未实现")
+	}
+	return nil
+}
+
+func StartDarwinTUNIngress(ctx context.Context, spec TUNSpec, service TUNBackend) (ingress *tunIngress, err error) {
+	operation := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), spec.Profile, spec.Session, spec.Attachment), "darwin_tun_attach", ctx.Done())
+	outcome := "interrupted"
+	defer func() { operation.Finish(outcome, err) }()
+	if len(spec.Names) != 0 {
+		err = errors.New("macOS TUN 域名分流尚未实现")
+		outcome = "failed"
+		return
+	}
+	attachCtx, cancel := context.WithCancel(ctx)
+	obj := &tunIngress{service: service, ctx: attachCtx, cancel: cancel}
+	defer func() {
+		if err != nil {
+			operation.Step("cleanup_failed_attach")
+			err = errors.Join(err, obj.Close())
+		}
+	}()
+	operation.Step("create_device")
+	obj.device, obj.name, err = createDarwinTUN(attachCtx, spec)
+	if err != nil {
+		outcome = "failed"
+		return
+	}
+	obj.prefix = fmt.Sprintf("198.19.128.%d/30", spec.Slot*4+1)
+	obj.dns = fmt.Sprintf("198.19.128.%d", spec.Slot*4+2)
+	backend := &darwinRoutes{name: obj.name, ref: spec}
+	obj.backend = backend
+	obj.routes = newRouteManager(backend)
+	operation.Step("create_stack")
+	obj.stack, err = tun.NewStack("system", tun.StackOptions{Context: attachCtx, Tun: obj.device, Name: obj.name, MTU: 1400, Inet4Address: []netip.Prefix{netip.MustParsePrefix(obj.prefix)}, UDPTimeout: 60, Handler: obj, Logger: tunLogger{}})
+	if err != nil {
+		outcome = "failed"
+		return
+	}
+	operation.Step("start_stack")
+	if err = obj.stack.Start(); err != nil {
+		outcome = "failed"
+		return
+	}
+	operation.Step("install_routes")
+	if err = obj.update(spec, nil); err != nil {
+		outcome = "failed"
+		return
+	}
+	if err = attachCtx.Err(); err != nil {
+		outcome = "cancelled"
+		return
+	}
+	outcome = "attached"
+	return obj, nil
+}
