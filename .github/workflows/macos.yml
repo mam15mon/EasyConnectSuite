@@ -35,7 +35,7 @@ jobs:
       - name: Test real utun lifecycle
         run: |
           go test -c -o "$RUNNER_TEMP/engine-test" ./engine
-          sudo env ECS_DARWIN_TUN_SYSTEM_TEST=1 "$RUNNER_TEMP/engine-test" -test.run '^TestDarwin(UTUN(SystemLifecycle|ForwardsTCPAndUDP|SystemDNS)|RouteCleanupDoesNotDeleteReplacement)$' -test.v
+          sudo env ECS_DARWIN_TUN_SYSTEM_TEST=1 "$RUNNER_TEMP/engine-test" -test.run '^TestDarwin(UTUN(SystemLifecycle|ForwardsTCPAndUDP|SystemDNS|CrashEvidence)|RouteCleanupDoesNotDeleteReplacement)$' -test.v
       - name: Test privileged worker identity
         run: |
           go test -c -o "$RUNNER_TEMP/app-test" .

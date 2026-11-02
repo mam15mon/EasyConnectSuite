@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -15,6 +16,81 @@ import (
 	"EasyConnectSuite/internal/tunipc"
 	"github.com/miekg/dns"
 )
+
+func TestDarwinCrashFixture(t *testing.T) {
+	if os.Getenv("ECS_DARWIN_CRASH_HELPER") != "1" {
+		return
+	}
+	spec := TUNSpec{Ref: tunipc.Ref{Profile: "crash-test", Session: "test", Attachment: "test", Policy: 1}, Slot: 62, Prefixes: []string{"198.18.251.44/32"}, Names: []string{"ecs-crash-test.invalid"}}
+	ingress, err := StartDarwinTUNIngress(context.Background(), spec, &darwinDNSBackend{calls: make(chan struct{}, 1)})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	fmt.Fprintln(os.Stdout, ingress.name)
+	select {}
+}
+
+func TestDarwinUTUNCrashEvidence(t *testing.T) {
+	if os.Getenv("ECS_DARWIN_TUN_SYSTEM_TEST") != "1" {
+		t.Skip("requires a disposable macOS host and root")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe, "-test.run=^TestDarwinCrashFixture$")
+	cmd.Env = append(os.Environ(), "ECS_DARWIN_CRASH_HELPER=1")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+	})
+	lines := make(chan string, 1)
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		if scanner.Scan() {
+			lines <- scanner.Text()
+		} else {
+			close(lines)
+		}
+	}()
+	var name string
+	select {
+	case name = <-lines:
+		if !strings.HasPrefix(name, "utun") {
+			t.Fatalf("unexpected fixture output %q", name)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("crash fixture startup timed out")
+	}
+	path := "/etc/resolver/ecs-crash-test.invalid"
+	t.Cleanup(func() {
+		if data, err := os.ReadFile(path); err == nil && strings.Contains(string(data), "nameserver 198.19.128.250") {
+			_ = os.Remove(path)
+		}
+	})
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = cmd.Wait()
+	out, err := exec.Command("/sbin/route", "-n", "get", "198.18.251.44").CombinedOutput()
+	if err == nil && routeInterface(out) == name {
+		t.Fatalf("route still points to dead utun: %s", out)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected DNS residue for recovery verification: %v", err)
+	}
+}
 
 type darwinEchoBackend struct{ calls chan string }
 
