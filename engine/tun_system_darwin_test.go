@@ -163,9 +163,16 @@ func TestDarwinUTUNSystemDNS(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, "/usr/bin/dscacheutil", "-q", "host", "-a", "name", "host."+domain).CombinedOutput()
-	if err != nil || !strings.Contains(string(output), "198.18.250.42") {
-		t.Fatalf("system DNS result: %s: %v", output, err)
+	var output []byte
+	for attempt := 0; ; attempt++ {
+		output, err = exec.CommandContext(ctx, "/usr/bin/dscacheutil", "-q", "host", "-a", "name", fmt.Sprintf("host%d.%s", attempt, domain)).CombinedOutput()
+		if err == nil && strings.Contains(string(output), "198.18.250.42") {
+			break
+		}
+		if ctx.Err() != nil {
+			t.Fatalf("system DNS did not resolve within deadline after %d attempts: %s: %v", attempt+1, output, err)
+		}
+		time.Sleep(250 * time.Millisecond)
 	}
 	select {
 	case <-backend.calls:
