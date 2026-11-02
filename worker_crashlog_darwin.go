@@ -35,7 +35,7 @@ func setupDarwinWorkerCrashLog(dir string) error {
 	if err != nil {
 		return fmt.Errorf("open macOS TUN worker crash log: %w", err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err = unix.Fstat(fd, &info); err != nil {
 		return err
 	}
@@ -51,7 +51,6 @@ func setupDarwinWorkerCrashLog(dir string) error {
 		if err != nil {
 			return fmt.Errorf("create macOS TUN worker crash log: %w", err)
 		}
-		defer unix.Close(fd)
 	}
 	if err = unix.Dup2(fd, 2); err != nil {
 		return fmt.Errorf("redirect macOS TUN worker stderr: %w", err)

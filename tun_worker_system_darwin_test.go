@@ -6,7 +6,9 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,6 +30,9 @@ func TestDarwinWorkerHelper(t *testing.T) {
 	if os.Getenv("ECS_DARWIN_WORKER_HELPER") != "1" {
 		return
 	}
+	if err := setupDarwinWorkerCrashLog(os.Getenv("ECS_DARWIN_LOG_DIR")); err != nil {
+		os.Exit(3)
+	}
 	err := runTUNWorker([]string{"--tun-worker", os.Getenv("ECS_DARWIN_SOCKET"), os.Getenv("ECS_DARWIN_PARENT")})
 	if err != nil {
 		os.Exit(2)
@@ -46,10 +51,11 @@ func TestDarwinWorkerProcessIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	logDir := filepath.Join(t.TempDir(), "worker-logs")
 	m := newTUNManager()
 	m.launch = func(name string) (*exec.Cmd, error) {
 		cmd := exec.Command(exe, "-test.run=^TestDarwinWorkerHelper$")
-		cmd.Env = append(os.Environ(), "ECS_DARWIN_WORKER_HELPER=1", "ECS_DARWIN_SOCKET="+name, "ECS_DARWIN_PARENT="+strconv.Itoa(os.Getpid()))
+		cmd.Env = append(os.Environ(), "ECS_DARWIN_WORKER_HELPER=1", "ECS_DARWIN_SOCKET="+name, "ECS_DARWIN_PARENT="+strconv.Itoa(os.Getpid()), "ECS_DARWIN_LOG_DIR="+logDir)
 		if err := cmd.Start(); err != nil {
 			return nil, err
 		}
@@ -150,6 +156,10 @@ func TestDarwinWorkerProcessIdentity(t *testing.T) {
 	select {
 	case <-done:
 	case <-ctx.Done():
-		t.Fatal("worker failed to exit after rejected handshake")
+		t.Fatal("worker failed to exit after shutdown")
+	}
+	data, err := os.ReadFile(filepath.Join(logDir, "tun-worker-crash.log"))
+	if err != nil || !strings.Contains(string(data), "operation=") {
+		t.Fatalf("worker operation evidence missing from crash log: %v", err)
 	}
 }
