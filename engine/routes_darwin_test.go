@@ -10,6 +10,9 @@ import (
 func TestDarwinRoutesRetainsPartialOwnershipOnFailure(t *testing.T) {
 	var calls [][]string
 	routes := &darwinRoutes{name: "utun9", run: func(_ context.Context, args ...string) ([]byte, error) {
+		if args[1] == "get" {
+			return []byte("interface: utun9\n"), nil
+		}
 		calls = append(calls, append([]string(nil), args...))
 		if len(calls) == 2 {
 			return []byte("route exists"), errors.New("exit status 1")
@@ -29,6 +32,18 @@ func TestDarwinRoutesRetainsPartialOwnershipOnFailure(t *testing.T) {
 	want := []string{"-n", "delete", "-net", "192.0.2.0/24", "-interface", "utun9"}
 	if !reflect.DeepEqual(calls[2], want) {
 		t.Fatalf("cleanup = %v", calls[2])
+	}
+}
+
+func TestDarwinRoutesRejectsChangedInterface(t *testing.T) {
+	routes := &darwinRoutes{name: "utun9", run: func(_ context.Context, args ...string) ([]byte, error) {
+		if args[1] != "get" {
+			t.Fatal("deleted route belonging to another interface")
+		}
+		return []byte("interface: lo0\n"), nil
+	}}
+	if _, err := routes.Apply(nil, []string{"192.0.2.0/24"}); err == nil {
+		t.Fatal("changed route accepted")
 	}
 }
 

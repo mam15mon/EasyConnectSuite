@@ -57,6 +57,17 @@ func (r *darwinRoutes) Apply(add, remove []string) (result routeResult, err erro
 					return exec.CommandContext(ctx, "/sbin/route", args...).CombinedOutput()
 				}
 			}
+			if action.name == "delete" {
+				operation.Step("verify_route_interface")
+				output, checkErr := run(ctx, "-n", "get", "-net", value)
+				if checkErr != nil || routeInterface(output) != r.name {
+					cancel()
+					err = fmt.Errorf("macOS TUN route %s no longer belongs to %s; cleanup refused", value, r.name)
+					outcome = "failed"
+					return
+				}
+				operation.Step("route_delete")
+			}
 			output, runErr := run(ctx, "-n", action.name, "-net", value, "-interface", r.name)
 			cancel()
 			if runErr != nil {
@@ -73,4 +84,14 @@ func (r *darwinRoutes) Apply(add, remove []string) (result routeResult, err erro
 	}
 	outcome = "completed"
 	return
+}
+
+func routeInterface(output []byte) string {
+	for _, line := range strings.Split(string(output), "\n") {
+		key, value, found := strings.Cut(strings.TrimSpace(line), ":")
+		if found && key == "interface" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
