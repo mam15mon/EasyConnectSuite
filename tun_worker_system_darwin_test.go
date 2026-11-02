@@ -162,4 +162,25 @@ func TestDarwinWorkerProcessIdentity(t *testing.T) {
 	if err != nil || !strings.Contains(string(data), "operation=") {
 		t.Fatalf("worker operation evidence missing from crash log: %v", err)
 	}
+	previousSize := len(data)
+	if err = m.Prepare(ctx, "disconnected-test"); err != nil {
+		t.Fatalf("prepare worker for disconnected IPC: %v", err)
+	}
+	lostSpec := engine.TUNSpec{Ref: tunipc.Ref{Profile: "disconnected-test", Session: "3", Attachment: tunipc.NewName(), Policy: 1}, Slot: 62, Prefixes: []string{"198.18.251.48/32"}}
+	if _, err = m.Attach(ctx, lostSpec, &macWorkerEcho{calls: make(chan string, 1)}); err != nil {
+		t.Fatalf("attach before IPC disconnect: %v", err)
+	}
+	m.mu.Lock()
+	peer, lostDone := m.peer, m.workerDone
+	m.mu.Unlock()
+	peer.Close()
+	select {
+	case <-lostDone:
+	case <-ctx.Done():
+		t.Fatal("worker failed to clean up after IPC disconnect")
+	}
+	data, err = os.ReadFile(filepath.Join(logDir, "tun-worker-crash.log"))
+	if err != nil || len(data) <= previousSize || !strings.Contains(string(data[previousSize:]), "name=darwin_tun_release") {
+		t.Fatalf("cleanup evidence missing after IPC disconnect: %v", err)
+	}
 }
