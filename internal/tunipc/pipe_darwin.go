@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"EasyConnectSuite/vpncore/log"
+	"github.com/shirou/gopsutil/v4/process"
 	"golang.org/x/sys/unix"
 )
 
@@ -110,7 +111,66 @@ func checkPeer(conn *net.UnixConn, expected uint32) error {
 	return nil
 }
 
+func verifyProcess(conn *net.UnixConn, uid uint32, executable string) (uint32, error) {
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		return 0, err
+	}
+	var pid int
+	var credentials *unix.Xucred
+	var socketErr error
+	if err = raw.Control(func(fd uintptr) {
+		pid, socketErr = unix.GetsockoptInt(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEERPID)
+		if socketErr == nil {
+			credentials, socketErr = unix.GetsockoptXucred(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEERCRED)
+		}
+	}); err != nil {
+		return 0, err
+	}
+	if socketErr != nil {
+		return 0, fmt.Errorf("read worker identity: %w", socketErr)
+	}
+	if pid <= 0 || credentials == nil || credentials.Uid != uid {
+		return 0, errors.New("unexpected TUN worker credentials")
+	}
+	p, err := process.NewProcess(int32(pid))
+	if err != nil {
+		return 0, fmt.Errorf("read TUN worker process: %w", err)
+	}
+	path, err := p.Exe()
+	if err != nil {
+		return 0, fmt.Errorf("read TUN worker executable: %w", err)
+	}
+	actual, err := os.Stat(path)
+	if err != nil {
+		return 0, fmt.Errorf("stat TUN worker executable: %w", err)
+	}
+	expected, err := os.Stat(executable)
+	if err != nil {
+		return 0, fmt.Errorf("stat GUI executable: %w", err)
+	}
+	if !os.SameFile(actual, expected) {
+		return 0, errors.New("TUN worker executable mismatch")
+	}
+	return uint32(pid), nil
+}
+
+// AcceptWorker accepts only a root process running the same executable as the GUI.
+func (l *Listener) AcceptWorker(ctx context.Context, executable string) (net.Conn, uint32, error) {
+	var pid uint32
+	conn, err := l.accept(ctx, 0, func(c *net.UnixConn) error {
+		var err error
+		pid, err = verifyProcess(c, 0, executable)
+		return err
+	})
+	return conn, pid, err
+}
+
 func (l *Listener) Accept(ctx context.Context, expected uint32) (result net.Conn, err error) {
+	return l.accept(ctx, expected, func(conn *net.UnixConn) error { return checkPeer(conn, expected) })
+}
+
+func (l *Listener) accept(ctx context.Context, expected uint32, verify func(*net.UnixConn) error) (result net.Conn, err error) {
 	op := log.BeginOperation(fmt.Sprintf("[TUN IPC pid=%d peer=%d] ", os.Getpid(), expected), "darwin_socket_accept", ctx.Done())
 	outcome := "interrupted"
 	defer func() {
@@ -142,7 +202,7 @@ func (l *Listener) Accept(ctx context.Context, expected uint32) (result net.Conn
 		return nil, err
 	}
 	op.Step("verify_peer")
-	if err = checkPeer(conn, expected); err != nil {
+	if err = verify(conn); err != nil {
 		conn.Close()
 		return nil, err
 	}

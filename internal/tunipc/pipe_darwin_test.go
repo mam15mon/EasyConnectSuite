@@ -3,6 +3,7 @@ package tunipc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"testing"
@@ -116,4 +117,53 @@ func TestDarwinSocketCancelDoesNotPoisonNextAccept(t *testing.T) {
 		t.Fatal("accept timed out")
 	}
 	conn.Close()
+}
+
+func TestDarwinWorkerIdentityChecksUIDAndExecutable(t *testing.T) {
+	l, err := Listen(NewName())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := l.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan error, 1)
+	go func() {
+		conn, e := l.accept(context.Background(), 0, func(c *net.UnixConn) error {
+			pid, e := verifyProcess(c, uint32(os.Geteuid()), exe)
+			if e != nil || pid != uint32(os.Getpid()) {
+				return fmt.Errorf("same process: pid=%d: %w", pid, e)
+			}
+			if _, e = verifyProcess(c, uint32(os.Geteuid())+1, exe); e == nil {
+				return errors.New("wrong UID accepted")
+			}
+			if _, e = verifyProcess(c, uint32(os.Geteuid()), os.DevNull); e == nil {
+				return errors.New("wrong executable accepted")
+			}
+			return nil
+		})
+		if conn != nil {
+			conn.Close()
+		}
+		result <- e
+	}()
+	conn, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: l.listener.Addr().String(), Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("identity verification timed out")
+	}
 }
