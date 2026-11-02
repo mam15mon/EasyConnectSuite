@@ -174,8 +174,8 @@ func (a *App) saveConfigFile() error {
 
 // startup is called when the app starts
 func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
 	a.mu.Lock()
+	a.ctx = ctx
 	a.starting = true
 	a.mu.Unlock()
 	a.handleEngineStatus(engine.Status{Phase: engine.PhaseConnecting, Stage: "恢复网络配置", Message: "正在检查并清理上次遗留的 TUN 配置…"})
