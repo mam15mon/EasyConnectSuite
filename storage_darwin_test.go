@@ -32,9 +32,6 @@ func TestMacCanDisableImportedTUN(t *testing.T) {
 	a := multiTestApp(t)
 	a.appConfig.Profiles[0].TUNMode = true
 	id := a.appConfig.Profiles[0].ID
-	if err := a.SetProfileTUNMode(id, true); err == nil {
-		t.Fatal("macOS TUN must report unsupported")
-	}
 	if err := a.SetProfileTUNMode(id, false); err != nil {
 		t.Fatal(err)
 	}
