@@ -50,28 +50,32 @@ func TestDarwinSocketChecksBothPeerPIDs(t *testing.T) {
 		}
 		errs <- e
 	}()
-	conn2, err := Dial(context.Background(), name, uint32(os.Getpid()))
+	conn2, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: name, Net: "unix"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn2.Close()
 	if err = <-errs; err == nil {
 		t.Fatal("incorrect client PID accepted")
 	}
+	conn2.Close()
 	go func() {
 		c, e := l.Accept(context.Background(), uint32(os.Getpid()))
-		if c != nil {
-			c.Close()
+		if e != nil {
+			errs <- e
+			return
 		}
-		errs <- e
+		accepted <- c
 	}()
-	if conn3, err := Dial(context.Background(), name, uint32(os.Getpid())+1); err == nil {
-		conn3.Close()
-		t.Fatal("incorrect server PID accepted")
-	}
-	if err = <-errs; err != nil {
+	conn3, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: name, Net: "unix"})
+	if err != nil {
 		t.Fatal(err)
 	}
+	peer := <-accepted
+	if err = checkPeer(conn3, uint32(os.Getpid())+1); err == nil {
+		t.Fatal("incorrect server PID accepted")
+	}
+	conn3.Close()
+	peer.Close()
 }
 
 func TestDarwinSocketCancelDoesNotPoisonNextAccept(t *testing.T) {
@@ -89,20 +93,27 @@ func TestDarwinSocketCancelDoesNotPoisonNextAccept(t *testing.T) {
 	if _, err = l.Accept(ctx, uint32(os.Getpid())); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("cancel: %v", err)
 	}
-	result := make(chan error, 1)
+	result := make(chan net.Conn, 1)
+	errs := make(chan error, 1)
 	go func() {
 		conn, err := l.Accept(context.Background(), uint32(os.Getpid()))
-		if conn != nil {
-			conn.Close()
+		if err != nil {
+			errs <- err
+			return
 		}
-		result <- err
+		result <- conn
 	}()
 	conn, err := Dial(context.Background(), l.listener.Addr().String(), uint32(os.Getpid()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn.Close()
-	if err := <-result; err != nil {
+	select {
+	case peer := <-result:
+		peer.Close()
+	case err := <-errs:
 		t.Fatal(err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("accept timed out")
 	}
+	conn.Close()
 }
