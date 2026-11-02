@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"EasyConnectSuite/vpncore/log"
@@ -153,6 +154,33 @@ func verifyProcess(conn *net.UnixConn, uid uint32, executable string) (uint32, e
 		return 0, errors.New("TUN worker executable mismatch")
 	}
 	return uint32(pid), nil
+}
+
+// VerifyParent checks that the control socket belongs to the launching GUI.
+func VerifyParent(conn net.Conn, name string, expectedPID uint32, executable string) error {
+	if !validName(name) {
+		return errors.New("invalid TUN socket name")
+	}
+	info, err := os.Lstat(filepath.Dir(name))
+	if err != nil {
+		return fmt.Errorf("stat TUN socket directory: %w", err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || !info.IsDir() || info.Mode().Perm() != 0700 {
+		return errors.New("invalid TUN socket directory")
+	}
+	unixConn, ok := conn.(*net.UnixConn)
+	if !ok {
+		return errors.New("invalid TUN control connection")
+	}
+	pid, err := verifyProcess(unixConn, stat.Uid, executable)
+	if err != nil {
+		return err
+	}
+	if pid != expectedPID {
+		return errors.New("unexpected GUI PID")
+	}
+	return nil
 }
 
 // AcceptWorker accepts only a root process running the same executable as the GUI.

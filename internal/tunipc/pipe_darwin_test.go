@@ -167,3 +167,53 @@ func TestDarwinWorkerIdentityChecksUIDAndExecutable(t *testing.T) {
 		t.Fatal("identity verification timed out")
 	}
 }
+
+func TestDarwinWorkerVerifiesParentSocketAndExecutable(t *testing.T) {
+	name := NewName()
+	l, err := Listen(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := l.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := make(chan net.Conn, 1)
+	errs := make(chan error, 1)
+	go func() {
+		c, e := l.Accept(context.Background(), uint32(os.Getpid()))
+		if e != nil {
+			errs <- e
+			return
+		}
+		accepted <- c
+	}()
+	conn, err := Dial(context.Background(), name, uint32(os.Getpid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var peer net.Conn
+	select {
+	case peer = <-accepted:
+	case err = <-errs:
+		t.Fatal(err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("accept timeout")
+	}
+	defer peer.Close()
+	if err := VerifyParent(conn, name, uint32(os.Getpid()), exe); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyParent(conn, name, uint32(os.Getpid())+1, exe); err == nil {
+		t.Fatal("wrong parent PID accepted")
+	}
+	if err := VerifyParent(conn, name, uint32(os.Getpid()), os.DevNull); err == nil {
+		t.Fatal("wrong parent executable accepted")
+	}
+}

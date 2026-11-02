@@ -15,4 +15,3 @@ func applicationStorageRoot() string {
 	return filepath.Join(os.Getenv("HOME"), "Library", "Application Support")
 }
 func configureDefaultProfile(p *Profile) { p.TUNMode = false; p.DisableProxy = false }
-func runTUNWorker([]string) error        { return os.ErrInvalid }
