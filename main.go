@@ -25,9 +25,6 @@ var assets embed.FS
 func setupCrashLog() {
 	setupNamedCrashLog("crash.log")
 }
-func setupWorkerCrashLog() {
-	setupNamedCrashLog("tun-worker-crash.log")
-}
 func setupNamedCrashLog(filename string) {
 	debug.SetTraceback("all")
 
@@ -57,7 +54,10 @@ func setupNamedCrashLog(filename string) {
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--tun-worker" {
-		setupWorkerCrashLog()
+		if err := setupWorkerCrashLog(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 		if err := runTUNWorker(os.Args[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
