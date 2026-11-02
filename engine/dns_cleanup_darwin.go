@@ -17,6 +17,7 @@ import (
 
 const darwinResolverDir = "/etc/resolver"
 const darwinResolverMarker = "# EasyConnectSuite TUN "
+const darwinResolverTempPrefix = ".easyconnectsuite-tun-"
 
 func validateDarwinResolverDir(dir string, requireRoot bool) error {
 	info, err := os.Lstat(dir)
@@ -62,6 +63,27 @@ func darwinResolverOwner(data []byte) (int, bool, error) {
 	return pid, true, nil
 }
 
+func darwinResolverTempOwner(name string) (int, bool) {
+	if !strings.HasPrefix(name, darwinResolverTempPrefix) {
+		return 0, false
+	}
+	parts := strings.Split(strings.TrimPrefix(name, darwinResolverTempPrefix), "-")
+	if len(parts) != 3 || len(parts[1]) != 48 || len(parts[2]) == 0 {
+		return 0, false
+	}
+	pid, err := strconv.Atoi(parts[0])
+	nonce, decodeErr := hex.DecodeString(parts[1])
+	if err != nil || pid <= 1 || decodeErr != nil || hex.EncodeToString(nonce) != parts[1] {
+		return 0, false
+	}
+	for _, c := range parts[2] {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+	}
+	return pid, true
+}
+
 func darwinProcessAlive(pid int) (bool, error) {
 	err := unix.Kill(pid, 0)
 	if err == nil || errors.Is(err, unix.EPERM) {
@@ -85,6 +107,35 @@ func cleanupDarwinResolvers(dir string, probe, requireRoot bool, alive func(int)
 	}
 	for _, entry := range entries {
 		name := entry.Name()
+		if pid, temp := darwinResolverTempOwner(name); temp {
+			path := filepath.Join(dir, name)
+			info, e := os.Lstat(path)
+			if e != nil {
+				return pending, e
+			}
+			stat, ok := info.Sys().(*syscall.Stat_t)
+			if !ok || !info.Mode().IsRegular() || (requireRoot && (stat.Uid != 0 || info.Mode().Perm()&0022 != 0)) {
+				return pending, fmt.Errorf("unsafe temporary resolver %s", name)
+			}
+			isAlive, e := alive(pid)
+			if e != nil {
+				return pending, fmt.Errorf("check resolver owner %d: %w", pid, e)
+			}
+			if isAlive {
+				continue
+			}
+			pending = true
+			if !probe {
+				current, e := os.Lstat(path)
+				if e != nil || !os.SameFile(info, current) {
+					return pending, fmt.Errorf("temporary resolver %s changed; cleanup refused", name)
+				}
+				if e = os.Remove(path); e != nil {
+					return pending, fmt.Errorf("remove temporary resolver %s: %w", name, e)
+				}
+			}
+			continue
+		}
 		if !validDomain(name) {
 			continue
 		}

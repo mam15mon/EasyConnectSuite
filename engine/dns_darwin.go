@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -97,24 +98,52 @@ func (r *darwinRoutes) setDNS(names []string) (err error) {
 		}
 	}
 	for _, name := range add {
-		op.Step("create_resolver")
-		path := filepath.Join(dir, name)
-		file, e := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
-		if e != nil {
-			outcome = "failed"
-			return fmt.Errorf("create DNS resolver %s: %w", name, e)
-		}
-		info, statErr := file.Stat()
-		if statErr == nil {
+		op.Step("publish_resolver")
+		info, e := createDarwinResolver(dir, name, contents)
+		if info != nil {
 			r.resolverFiles[name] = info
 		}
-		_, writeErr := file.Write(contents)
-		closeErr := file.Close()
-		if e = errors.Join(statErr, writeErr, closeErr); e != nil {
+		if e != nil {
 			outcome = "failed"
-			return fmt.Errorf("write DNS resolver %s: %w", name, e)
+			return fmt.Errorf("publish DNS resolver %s: %w", name, e)
 		}
 	}
 	outcome = "completed"
 	return nil
+}
+
+// Publish only fully written resolver contents, without replacing another owner.
+func createDarwinResolver(dir, name string, contents []byte) (info os.FileInfo, err error) {
+	var nonce [24]byte
+	if _, err = rand.Read(nonce[:]); err != nil {
+		return nil, err
+	}
+	pattern := fmt.Sprintf("%s%d-%s-*", darwinResolverTempPrefix, os.Getpid(), hex.EncodeToString(nonce[:]))
+	file, err := os.CreateTemp(dir, pattern)
+	if err != nil {
+		return nil, err
+	}
+	temp := file.Name()
+	defer func() { err = errors.Join(err, os.Remove(temp)) }()
+	defer func() { err = errors.Join(err, file.Close()) }()
+	var n int
+	if n, err = file.Write(contents); err != nil {
+		return nil, err
+	}
+	if n != len(contents) {
+		return nil, io.ErrShortWrite
+	}
+	if err = file.Chmod(0644); err != nil {
+		return nil, err
+	}
+	if err = file.Sync(); err != nil {
+		return nil, err
+	}
+	if info, err = file.Stat(); err != nil {
+		return nil, err
+	}
+	if err = os.Link(temp, filepath.Join(dir, name)); err != nil {
+		return nil, err
+	}
+	return info, nil
 }
