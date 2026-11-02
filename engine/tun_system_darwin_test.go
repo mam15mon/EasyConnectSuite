@@ -18,6 +18,16 @@ import (
 	"github.com/miekg/dns"
 )
 
+func routeInterface(output []byte) string {
+	for _, line := range strings.Split(string(output), "\n") {
+		key, value, found := strings.Cut(strings.TrimSpace(line), ":")
+		if found && key == "interface" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
 func TestDarwinCrashFixture(t *testing.T) {
 	if os.Getenv("ECS_DARWIN_CRASH_HELPER") != "1" {
 		return
@@ -168,29 +178,26 @@ func TestDarwinRouteCleanupDoesNotDeleteReplacement(t *testing.T) {
 	if os.Getenv("ECS_DARWIN_TUN_SYSTEM_TEST") != "1" {
 		t.Skip("requires a disposable macOS host and root")
 	}
-	spec := TUNSpec{Ref: tunipc.Ref{Profile: "route-test", Session: "test", Attachment: "test", Policy: 1}, Slot: 62}
-	device, name, err := createDarwinTUN(context.Background(), spec)
+	spec := TUNSpec{Ref: tunipc.Ref{Profile: "route-test", Session: "test", Attachment: "test", Policy: 1}, Slot: 62, Prefixes: []string{"198.18.251.43/32"}}
+	ingress, err := StartDarwinTUNIngress(context.Background(), spec, &darwinEchoBackend{calls: make(chan string, 1)})
 	if err != nil {
 		t.Fatal(err)
 	}
+	name := ingress.name
 	t.Cleanup(func() {
-		if err := device.Close(); err != nil {
+		if err := ingress.Close(); err != nil {
 			t.Error(err)
 		}
 	})
 	const target = "198.18.251.43/32"
-	manager := newRouteManager(&darwinRoutes{name: name, ref: spec})
-	if err := manager.replace([]string{target}); err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() { _, _ = exec.Command("/sbin/route", "-n", "delete", "-net", target).CombinedOutput() })
 	for _, args := range [][]string{{"-n", "delete", "-net", target, "-interface", name}, {"-n", "add", "-net", target, "-interface", "lo0"}} {
 		if out, err := exec.Command("/sbin/route", args...).CombinedOutput(); err != nil {
 			t.Fatalf("change test route: %s: %v", out, err)
 		}
 	}
-	if err := manager.close(); err == nil {
-		t.Error("cleanup accepted a route replaced by another interface")
+	if err := ingress.Close(); err != nil {
+		t.Fatalf("close ingress: %v", err)
 	}
 	out, err := exec.Command("/sbin/route", "-n", "get", "198.18.251.43").CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "interface: lo0") {
@@ -287,14 +294,6 @@ func TestDarwinUTUNSystemLifecycle(t *testing.T) {
 	if err := routes.replace([]string{testRoute}); err != nil {
 		t.Fatalf("add route: %v", err)
 	}
-	routeRemoved := false
-	t.Cleanup(func() {
-		if !routeRemoved {
-			if err := routes.close(); err != nil {
-				t.Errorf("delete route: %v", err)
-			}
-		}
-	})
 	packets := make(chan []byte, 1)
 	readErrors := make(chan error, 1)
 	go func() {
@@ -326,14 +325,13 @@ func TestDarwinUTUNSystemLifecycle(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("test packet did not reach utun")
 	}
-	if err := routes.close(); err != nil {
-		t.Fatalf("delete route: %v", err)
-	}
-	routeRemoved = true
 	if err := device.Close(); err != nil {
 		t.Fatalf("close %s: %v", name, err)
 	}
 	closed = true
+	if out, err := exec.Command("/sbin/route", "-n", "get", destination).CombinedOutput(); err == nil && routeInterface(out) == name {
+		t.Fatalf("route remains on closed interface: %s", out)
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if _, err := net.InterfaceByName(name); err != nil {

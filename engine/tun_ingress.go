@@ -62,6 +62,9 @@ func (t *tunIngress) update(spec TUNSpec, progress func(string, string)) error {
 	if t.closed {
 		return net.ErrClosed
 	}
+	if err := validateIngressUpdate(t, spec); err != nil {
+		return err
+	}
 	if progress != nil {
 		progress("配置路由", "正在配置 VPN 资源路由…")
 	}
@@ -95,12 +98,7 @@ func (t *tunIngress) Close() error {
 		if t.backend != nil {
 			t.closeErr = errors.Join(t.closeErr, t.backend.setDNS(nil))
 		}
-		if t.routes != nil {
-			t.closeErr = errors.Join(t.closeErr, t.routes.close())
-		}
-		if t.device != nil {
-			t.closeErr = errors.Join(t.closeErr, t.device.Close())
-		}
+		t.closeErr = errors.Join(t.closeErr, releaseIngressRoutes(t))
 		if t.stack != nil {
 			t.closeErr = errors.Join(t.closeErr, t.stack.Close())
 		}

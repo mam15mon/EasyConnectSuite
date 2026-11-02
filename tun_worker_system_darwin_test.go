@@ -92,6 +92,29 @@ func TestDarwinWorkerProcessIdentity(t *testing.T) {
 			t.Fatalf("unexpected worker flow %q", got)
 		}
 	}
+	spec.Ref.Policy++
+	spec.Prefixes = []string{"198.18.251.46/32"}
+	if err = attachment.Update(ctx, spec); err != nil {
+		t.Fatalf("replace worker policy: %v", err)
+	}
+	conn, err := net.DialTimeout("tcp4", "198.18.251.46:43210", 5*time.Second)
+	if err != nil {
+		t.Fatalf("updated route dial: %v", err)
+	}
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	if _, err = conn.Write([]byte("updated")); err != nil {
+		conn.Close()
+		t.Fatal(err)
+	}
+	var updated [7]byte
+	if _, err = io.ReadFull(conn, updated[:]); err != nil || string(updated[:]) != "updated" {
+		conn.Close()
+		t.Fatalf("updated route reply %q: %v", updated, err)
+	}
+	conn.Close()
+	if got := <-backend.calls; got != "tcp 198.18.251.46:43210" {
+		t.Fatalf("unexpected updated flow %q", got)
+	}
 	if err = attachment.Close(ctx); err != nil {
 		t.Fatalf("detach worker: %v", err)
 	}
