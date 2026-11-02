@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -10,6 +12,60 @@ import (
 
 	"EasyConnectSuite/internal/tunipc"
 )
+
+type darwinEchoBackend struct{ calls chan string }
+
+func (b *darwinEchoBackend) Dial(_ context.Context, network, address string) (net.Conn, error) {
+	b.calls <- fmt.Sprintf("%s %s", network, address)
+	client, server := net.Pipe()
+	go func() { defer server.Close(); _, _ = io.Copy(server, server) }()
+	return client, nil
+}
+func (*darwinEchoBackend) DNS(context.Context, []byte) ([]byte, []string, error) {
+	return nil, nil, fmt.Errorf("unexpected DNS request")
+}
+
+func TestDarwinUTUNForwardsTCPAndUDP(t *testing.T) {
+	if os.Getenv("ECS_DARWIN_TUN_SYSTEM_TEST") != "1" {
+		t.Skip("requires a disposable macOS host and root")
+	}
+	spec := TUNSpec{Ref: tunipc.Ref{Profile: "flow-test", Session: "test", Attachment: "test", Policy: 1}, Slot: 62, Prefixes: []string{"198.18.250.42/32"}}
+	backend := &darwinEchoBackend{calls: make(chan string, 2)}
+	ingress, err := StartDarwinTUNIngress(context.Background(), spec, backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := ingress.Close(); err != nil {
+			t.Errorf("cleanup ingress: %v", err)
+		}
+	})
+	for _, network := range []string{"tcp", "udp"} {
+		conn, err := net.DialTimeout(network+"4", "198.18.250.42:43210", 5*time.Second)
+		if err != nil {
+			t.Fatalf("%s dial: %v", network, err)
+		}
+		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+		if _, err = conn.Write([]byte("hello-tun")); err != nil {
+			conn.Close()
+			t.Fatalf("%s write: %v", network, err)
+		}
+		var reply [9]byte
+		if _, err = io.ReadFull(conn, reply[:]); err != nil || string(reply[:]) != "hello-tun" {
+			conn.Close()
+			t.Fatalf("%s reply %q: %v", network, reply, err)
+		}
+		conn.Close()
+		select {
+		case got := <-backend.calls:
+			if got != network+" 198.18.250.42:43210" {
+				t.Fatalf("backend saw %q", got)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("backend not invoked")
+		}
+	}
+}
 
 // This test runs only on disposable macOS CI machines with explicit root access.
 func TestDarwinUTUNSystemLifecycle(t *testing.T) {
