@@ -105,3 +105,35 @@ func TestDarwinDNSRejectsUnsafeNamespace(t *testing.T) {
 		}
 	}
 }
+
+func TestDarwinStaleTemporaryResolvers(t *testing.T) {
+	dir := t.TempDir()
+	name := func(pid int) string {
+		return fmt.Sprintf("%s%d-%s-123", darwinResolverTempPrefix, pid, strings.Repeat("a", 48))
+	}
+	stale, live := name(101), name(202)
+	foreign := darwinResolverTempPrefix + "101-not-our-format"
+	for _, file := range []string{stale, live, foreign} {
+		if err := os.WriteFile(filepath.Join(dir, file), []byte("partial"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	alive := func(pid int) (bool, error) { return pid == 202, nil }
+	if pending, err := cleanupDarwinResolvers(dir, true, false, alive); err != nil || !pending {
+		t.Fatalf("probe partial resolver: %t %v", pending, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, stale)); err != nil {
+		t.Fatalf("probe removed temporary file: %v", err)
+	}
+	if pending, err := cleanupDarwinResolvers(dir, false, false, alive); err != nil || !pending {
+		t.Fatalf("cleanup partial resolver: %t %v", pending, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, stale)); !os.IsNotExist(err) {
+		t.Fatalf("partial resolver remains: %v", err)
+	}
+	for _, file := range []string{live, foreign} {
+		if _, err := os.Stat(filepath.Join(dir, file)); err != nil {
+			t.Fatalf("unrelated temporary file lost: %v", err)
+		}
+	}
+}

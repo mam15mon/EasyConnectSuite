@@ -90,6 +90,15 @@ func TestDarwinUTUNCrashEvidence(t *testing.T) {
 			_ = os.Remove(path)
 		}
 	})
+	partial, err := os.CreateTemp(darwinResolverDir, fmt.Sprintf("%s%d-%s-*", darwinResolverTempPrefix, cmd.Process.Pid, strings.Repeat("a", 48)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	partialPath := partial.Name()
+	if err := partial.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(partialPath) })
 	if err := cmd.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
@@ -110,6 +119,9 @@ func TestDarwinUTUNCrashEvidence(t *testing.T) {
 	}
 	if _, err = os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("stale DNS remains: %v", err)
+	}
+	if _, err = os.Stat(partialPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("partial DNS temporary file remains: %v", err)
 	}
 }
 
