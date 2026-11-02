@@ -12,10 +12,6 @@ import (
 var showDarwinWindow = wailsruntime.WindowShow
 var restoreDarwinWindow = wailsruntime.WindowUnminimise
 
-func StartTray(_ *App, _ context.Context) {}
-func RemoveTrayIcon()                     {}
-func UpdateTrayTooltip(string)            {}
-
 func showTrayWorkspace(app *App) {
 	op := vpnlog.BeginOperation(fmt.Sprintf("[VPN pid=%d] ", os.Getpid()), "darwin_workspace", nil)
 	outcome := "skipped"
