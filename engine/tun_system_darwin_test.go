@@ -1,13 +1,14 @@
 package engine
 
 import (
+	"context"
 	"net"
 	"net/netip"
 	"os"
 	"testing"
 	"time"
 
-	tun "github.com/mythologyli/sing-tun"
+	"EasyConnectSuite/internal/tunipc"
 )
 
 // This test runs only on disposable macOS CI machines with explicit root access.
@@ -18,15 +19,8 @@ func TestDarwinUTUNSystemLifecycle(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Fatal("system test requires root")
 	}
-	name := tun.CalculateInterfaceName("")
-	if name == "" {
-		t.Fatal("could not select utun interface")
-	}
-	device, err := tun.New(tun.Options{
-		Name: name, MTU: 1400,
-		Inet4Address: []netip.Prefix{netip.MustParsePrefix("198.19.128.249/30")},
-		AutoRoute:    false,
-	})
+	spec := TUNSpec{Ref: tunipc.Ref{Profile: "system-test", Session: "test", Attachment: "test", Policy: 1}, Slot: 62}
+	device, name, err := createDarwinTUN(context.Background(), spec)
 	if err != nil {
 		t.Fatalf("create %s: %v", name, err)
 	}
@@ -57,7 +51,7 @@ func TestDarwinUTUNSystemLifecycle(t *testing.T) {
 	}
 	const destination = "198.18.250.42"
 	const testRoute = "198.18.250.42/32"
-	routes := newRouteManager(&darwinRoutes{name: name, ref: TUNSpec{}})
+	routes := newRouteManager(&darwinRoutes{name: name, ref: spec})
 	if err := routes.replace([]string{testRoute}); err != nil {
 		t.Fatalf("add route: %v", err)
 	}
