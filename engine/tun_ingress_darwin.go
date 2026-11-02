@@ -11,22 +11,10 @@ import (
 	tun "github.com/mythologyli/sing-tun"
 )
 
-func (r *darwinRoutes) setDNS(names []string) error {
-	if len(names) != 0 {
-		return errors.New("macOS TUN 域名分流尚未实现")
-	}
-	return nil
-}
-
 func StartDarwinTUNIngress(ctx context.Context, spec TUNSpec, service TUNBackend) (ingress *tunIngress, err error) {
 	operation := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), spec.Profile, spec.Session, spec.Attachment), "darwin_tun_attach", ctx.Done())
 	outcome := "interrupted"
 	defer func() { operation.Finish(outcome, err) }()
-	if len(spec.Names) != 0 {
-		err = errors.New("macOS TUN 域名分流尚未实现")
-		outcome = "failed"
-		return
-	}
 	attachCtx, cancel := context.WithCancel(ctx)
 	obj := &tunIngress{service: service, ctx: attachCtx, cancel: cancel}
 	defer func() {
@@ -43,7 +31,7 @@ func StartDarwinTUNIngress(ctx context.Context, spec TUNSpec, service TUNBackend
 	}
 	obj.prefix = fmt.Sprintf("198.19.128.%d/30", spec.Slot*4+1)
 	obj.dns = fmt.Sprintf("198.19.128.%d", spec.Slot*4+2)
-	backend := &darwinRoutes{name: obj.name, ref: spec}
+	backend := &darwinRoutes{name: obj.name, ref: spec, dns: obj.dns}
 	obj.backend = backend
 	obj.routes = newRouteManager(backend)
 	operation.Step("create_stack")
