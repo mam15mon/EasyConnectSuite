@@ -337,9 +337,6 @@ func TestDarwinUTUNSystemLifecycle(t *testing.T) {
 		t.Fatalf("close %s: %v", name, err)
 	}
 	closed = true
-	if out, err := exec.Command("/sbin/route", "-n", "get", destination).CombinedOutput(); err == nil && routeInterface(out) == name {
-		t.Fatalf("route remains on closed interface: %s", out)
-	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if _, err := net.InterfaceByName(name); err != nil {
@@ -349,5 +346,8 @@ func TestDarwinUTUNSystemLifecycle(t *testing.T) {
 			t.Fatalf("%s remains after close", name)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+	if out, err := exec.Command("/sbin/route", "-n", "get", destination).CombinedOutput(); err == nil && routeInterface(out) == name {
+		t.Fatalf("route remains on closed interface: %s", out)
 	}
 }
