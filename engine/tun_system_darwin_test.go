@@ -294,6 +294,9 @@ func TestDarwinUTUNSystemLifecycle(t *testing.T) {
 	if err := routes.replace([]string{testRoute}); err != nil {
 		t.Fatalf("add route: %v", err)
 	}
+	if out, routeErr := exec.Command("/sbin/route", "-n", "get", destination).CombinedOutput(); routeErr != nil || routeInterface(out) != name {
+		t.Fatalf("new route does not use %s immediately after add: %s: %v", name, out, routeErr)
+	}
 	packets := make(chan []byte, 1)
 	readErrors := make(chan error, 1)
 	go func() {
