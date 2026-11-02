@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"EasyConnectSuite/vpncore/log"
 	"golang.org/x/sys/unix"
 )
 
@@ -109,7 +110,16 @@ func checkPeer(conn *net.UnixConn, expected uint32) error {
 	return nil
 }
 
-func (l *Listener) Accept(ctx context.Context, expected uint32) (net.Conn, error) {
+func (l *Listener) Accept(ctx context.Context, expected uint32) (result net.Conn, err error) {
+	op := log.BeginOperation(fmt.Sprintf("[TUN IPC pid=%d peer=%d] ", os.Getpid(), expected), "darwin_socket_accept", ctx.Done())
+	outcome := "interrupted"
+	defer func() {
+		if err != nil {
+			outcome = "failed"
+		}
+		op.Finish(outcome, err)
+	}()
+	op.Step("wait_listener_lock")
 	l.acceptMu.Lock()
 	defer l.acceptMu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -123,6 +133,7 @@ func (l *Listener) Accept(ctx context.Context, expected uint32) (net.Conn, error
 		}
 		_ = l.listener.SetDeadline(time.Time{})
 	}()
+	op.Step("accept_connection")
 	conn, err := l.listener.AcceptUnix()
 	if err != nil {
 		if ctx.Err() != nil {
@@ -130,6 +141,7 @@ func (l *Listener) Accept(ctx context.Context, expected uint32) (net.Conn, error
 		}
 		return nil, err
 	}
+	op.Step("verify_peer")
 	if err = checkPeer(conn, expected); err != nil {
 		conn.Close()
 		return nil, err
@@ -138,20 +150,32 @@ func (l *Listener) Accept(ctx context.Context, expected uint32) (net.Conn, error
 		conn.Close()
 		return nil, err
 	}
+	outcome = "accepted"
 	return conn, nil
 }
 
-func Dial(ctx context.Context, name string, expected uint32) (net.Conn, error) {
+func Dial(ctx context.Context, name string, expected uint32) (result net.Conn, err error) {
+	op := log.BeginOperation(fmt.Sprintf("[TUN IPC pid=%d peer=%d] ", os.Getpid(), expected), "darwin_socket_dial", ctx.Done())
+	outcome := "interrupted"
+	defer func() {
+		if err != nil {
+			outcome = "failed"
+		}
+		op.Finish(outcome, err)
+	}()
 	if !validName(name) {
 		return nil, errors.New("invalid TUN socket name")
 	}
+	op.Step("connect_socket")
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", name)
 	if err != nil {
 		return nil, err
 	}
+	op.Step("verify_peer")
 	if err = checkPeer(conn.(*net.UnixConn), expected); err != nil {
 		conn.Close()
 		return nil, err
 	}
+	outcome = "connected"
 	return conn, nil
 }
