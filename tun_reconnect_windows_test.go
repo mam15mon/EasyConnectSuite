@@ -38,6 +38,8 @@ func reconnectAttachment(t *testing.T, backend engine.TUNBackend) *remoteTUN {
 	worker := tunipc.NewPeer(right, func(context.Context, tunipc.Message) (tunipc.Message, error) {
 		return tunipc.Message{}, nil
 	}, nil)
+	m.workerDone = make(chan struct{})
+	go func() { <-peer.Done(); close(m.workerDone) }()
 	ctx, cancel := context.WithCancel(context.Background())
 	a := &remoteTUN{manager: m, backend: backend, ctx: ctx, cancel: cancel, done: make(chan struct{}),
 		spec: engine.TUNSpec{Ref: tunipc.Ref{Profile: "reconnect%profile", Session: "session", Attachment: "attachment", Policy: 1}}}
