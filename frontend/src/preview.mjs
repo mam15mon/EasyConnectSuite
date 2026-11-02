@@ -18,7 +18,7 @@ export function installPreview(onStatus) {
   const clone = value => structuredClone(value);
   const emit = id => onStatus(clone(statuses.get(id)));
   const api = {
-    GetPlatformInfo:async()=>({tunSupported:true,logDir:'%APPDATA%\\VPN\\logs'}),
+    GetPlatformInfo:async()=>({tunSupported:true,closeToTray:true,logDir:'%APPDATA%\\VPN\\logs'}),
     GetAppConfig:async()=>clone({profiles, activeProfileId:selected}),
     GetConnections:async()=>clone([...statuses.values()]),
     GetStatus:async()=>clone(statuses.get(selected)),

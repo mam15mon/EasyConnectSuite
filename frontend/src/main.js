@@ -768,7 +768,7 @@ async function initApp() {
   try {
     if (window.go && window.go.main && window.go.main.App) {
       platformInfo = await window.go.main.App.GetPlatformInfo();
-      if (!platformInfo.tunSupported) document.querySelector('.workspace-footer').textContent = '关闭窗口将断开连接并退出。';
+      if (!platformInfo.closeToTray) document.querySelector('.workspace-footer').textContent = '关闭窗口将断开连接并退出。';
       detectedInterfaces = await window.go.main.App.GetInterfaces();
       await refreshProfiles();
 

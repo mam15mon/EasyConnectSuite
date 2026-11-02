@@ -51,10 +51,11 @@ type AppConfig struct {
 type PlatformInfo struct {
 	TUNSupported bool   `json:"tunSupported"`
 	LogDir       string `json:"logDir"`
+	CloseToTray  bool   `json:"closeToTray"`
 }
 
 func (a *App) GetPlatformInfo() PlatformInfo {
-	return PlatformInfo{TUNSupported: goruntime.GOOS == "windows", LogDir: applicationLogDir()}
+	return PlatformInfo{TUNSupported: goruntime.GOOS == "windows" || goruntime.GOOS == "darwin", LogDir: applicationLogDir(), CloseToTray: goruntime.GOOS == "windows"}
 }
 
 // VPNStatus contains current connection status

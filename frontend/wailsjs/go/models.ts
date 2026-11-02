@@ -106,6 +106,7 @@ export namespace main {
 	export class PlatformInfo {
 	    tunSupported: boolean;
 	    logDir: string;
+	    closeToTray: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new PlatformInfo(source);
@@ -115,6 +116,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.tunSupported = source["tunSupported"];
 	        this.logDir = source["logDir"];
+	        this.closeToTray = source["closeToTray"];
 	    }
 	}
 	
