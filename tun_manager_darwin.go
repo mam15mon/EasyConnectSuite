@@ -34,7 +34,9 @@ func newTUNManager() *tunManager {
 }
 
 const darwinWorkerScript = `on run argv
-  do shell script (quoted form of (item 1 of argv) & " --tun-worker " & quoted form of (item 2 of argv) & " " & quoted form of (item 3 of argv)) with administrator privileges
+  with timeout of 2147483647 seconds
+    do shell script (quoted form of (item 1 of argv) & " --tun-worker " & quoted form of (item 2 of argv) & " " & quoted form of (item 3 of argv)) with administrator privileges
+  end timeout
 end run`
 
 func launchDarwinWorker(name string) (*exec.Cmd, error) {
