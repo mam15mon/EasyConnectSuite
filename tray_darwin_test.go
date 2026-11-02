@@ -4,6 +4,8 @@ import (
 	"context"
 	"reflect"
 	"testing"
+
+	"github.com/wailsapp/wails/v2/pkg/options"
 )
 
 func TestDarwinSecondLaunchRestoresWindow(t *testing.T) {
@@ -49,5 +51,35 @@ func TestDarwinTraySnapshotIncludesIndependentActions(t *testing.T) {
 	}
 	if menu.Profiles[0].ID != "first" || menu.Profiles[0].Action != "disconnect" || menu.Profiles[1].ID != "second" || menu.Profiles[1].Action != "connect" || !menu.Profiles[2].Disabled {
 		t.Fatalf("incorrect profile actions: %+v", menu.Profiles)
+	}
+}
+
+func TestDarwinCloseKeepsConnectionsOnlyWithMenuBar(t *testing.T) {
+	originalHide := hideDarwinWindow
+	defer func() { hideDarwinWindow = originalHide }()
+	app := &App{}
+	config := &options.App{}
+	configurePlatformOptions(config, app)
+	ctx := context.Background()
+	calls := 0
+	hideDarwinWindow = func(got context.Context) {
+		if got != ctx {
+			t.Fatal("wrong window context")
+		}
+		calls++
+	}
+	if config.OnBeforeClose(ctx) || calls != 0 {
+		t.Fatal("window hidden without an available menu bar")
+	}
+	darwinTray.Lock()
+	darwinTray.app = app
+	darwinTray.Unlock()
+	defer func() { darwinTray.Lock(); darwinTray.app = nil; darwinTray.Unlock() }()
+	if !config.OnBeforeClose(ctx) || calls != 1 || !app.GetPlatformInfo().CloseToTray {
+		t.Fatal("window did not stay in menu bar")
+	}
+	app.shuttingDown = true
+	if config.OnBeforeClose(ctx) || calls != 1 {
+		t.Fatal("explicit exit was intercepted")
 	}
 }
