@@ -117,6 +117,7 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 				fmt.Fprintln(os.Stdout, "udp_echo")
 			}
 		case 6:
+			session := loginCount.Load()
 			if recvCount.Add(1) == 1 {
 				packet := <-udpReplies
 				if _, err := conn.Write(packet); err != nil {
@@ -135,10 +136,17 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 			for {
 				select {
 				case packet := <-udpReplies:
+					if loginCount.Load() != session {
+						udpReplies <- packet
+						return
+					}
 					if _, err := conn.Write(packet); err != nil {
 						return
 					}
 				case <-time.After(100 * time.Millisecond):
+					if loginCount.Load() != session {
+						return
+					}
 					if loginCount.Load() == 1 {
 						if _, err := os.Stat(os.Args[2]); err == nil {
 							fmt.Fprintln(os.Stdout, "expired_receive_closed")
