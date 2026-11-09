@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+adb install -r android-app/app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -W -n com.zju.easyconnect.suite/.MainActivity
+adb shell uiautomator dump /sdcard/window.xml >/dev/null
+adb exec-out cat /sdcard/window.xml > "$RUNNER_TEMP/android-window.xml"
+python3 - "$RUNNER_TEMP/android-window.xml" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+ids = {node.get("resource-id") for node in root.iter("node")}
+required = {"etServer", "etUsername", "etPassword", "btnToggle", "tvStatus"}
+missing = {item for item in required if f"com.zju.easyconnect.suite:id/{item}" not in ids}
+if missing:
+    raise SystemExit(f"Missing UI elements: {sorted(missing)}")
+status = next(node for node in root.iter("node") if node.get("resource-id") == "com.zju.easyconnect.suite:id/tvStatus")
+if status.get("text") != "未连接":
+    raise SystemExit(f"Unexpected initial status: {status.get('text')!r}")
+print("App launched with the expected fields and disconnected status")
+PY
