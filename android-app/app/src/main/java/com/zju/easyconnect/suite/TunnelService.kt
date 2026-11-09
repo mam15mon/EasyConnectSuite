@@ -9,6 +9,8 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
+import android.util.Log
 import mobile.Mobile
 
 class TunnelService : VpnService() {
@@ -17,7 +19,7 @@ class TunnelService : VpnService() {
         object Disconnected : State()
         object Connecting : State()
         object Connected : State()
-        data class Error(val message: String) : State()
+        data class Error(val message: String, val retrying: Boolean = true) : State()
     }
 
     companion object {
@@ -31,13 +33,15 @@ class TunnelService : VpnService() {
         private val mainHandler = Handler(Looper.getMainLooper())
         private fun publish(state: State) {
             this.state = state
-            active = state != State.Disconnected
+            active = state != State.Disconnected && (state !is State.Error || state.retrying)
             mainHandler.post { if (this.state === state) onState?.invoke(state) }
         }
     }
 
     @Volatile private var wantConnected = false
     private var tunnelFd: ParcelFileDescriptor? = null
+    @Volatile private var worker: Thread? = null
+    @Volatile private var terminalError = false
 
     override fun onCreate() {
         super.onCreate()
@@ -56,7 +60,9 @@ class TunnelService : VpnService() {
             return START_NOT_STICKY
         }
 
+        if (wantConnected) return START_NOT_STICKY
         wantConnected = true
+        terminalError = false
         publish(State.Connecting)
 
         val server = intent.getStringExtra("server")!!
@@ -64,20 +70,34 @@ class TunnelService : VpnService() {
         val password = intent.getStringExtra("password")!!
         val totp = intent.getStringExtra("totp") ?: ""
 
-        Thread {
+        val thread = Thread {
             var attempt = 0
+            val started = SystemClock.elapsedRealtime()
             while (wantConnected) {
                 val ok = connectOnce(server, username, password, totp, attempt > 0)
                 if (!wantConnected) break
-                if (ok) {
-                    attempt = 0
-                    continue // startStack 返回 = 隧道断,循环重连(如会话到期)
+                if (!ok && Mobile.loginRejected()) {
+                    wantConnected = false
+                    terminalError = true
+                    Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=authentication outcome=rejected elapsed_ms=${SystemClock.elapsedRealtime() - started}")
+                    publish(State.Error("认证被服务器拒绝", retrying = false))
+                    stopSelf()
+                    break
                 }
+                if (ok) attempt = 0
                 attempt++
-                publish(State.Error("连接失败,${retryDelay(attempt)}秒后重试"))
-                Thread.sleep(retryDelay(attempt) * 1000L)
+                val delay = retryDelay(attempt)
+                Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=retry_wait attempt=$attempt delay_s=$delay")
+                publish(State.Error("连接中断或失败,${delay}秒后重试"))
+                try {
+                    Thread.sleep(delay * 1000L)
+                } catch (_: InterruptedException) {
+                    break
+                }
             }
-        }.start()
+        }
+        worker = thread
+        thread.start()
 
         return START_NOT_STICKY
     }
@@ -133,6 +153,7 @@ class TunnelService : VpnService() {
 
     private fun stopTunnel() {
         wantConnected = false
+        worker?.interrupt()
         Mobile.logout()
         // 关闭 fd 解除 startStack 的读阻塞
         runCatching { tunnelFd?.close() }
@@ -144,10 +165,11 @@ class TunnelService : VpnService() {
 
     override fun onDestroy() {
         wantConnected = false
+        worker?.interrupt()
         Mobile.logout()
         runCatching { tunnelFd?.close() }
         tunnelFd = null
-        publish(State.Disconnected)
+        if (!terminalError) publish(State.Disconnected)
         super.onDestroy()
     }
 
@@ -176,5 +198,5 @@ class TunnelService : VpnService() {
         startForeground(1, notification)
     }
 
-    private fun retryDelay(attempt: Int): Int = minOf(3 * attempt, 30)
+    private fun retryDelay(attempt: Int): Int = minOf(3 * (1 shl minOf(attempt - 1, 7)), 300)
 }
