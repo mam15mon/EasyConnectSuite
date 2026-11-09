@@ -78,7 +78,7 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 					return
 				}
 				length := int(binary.BigEndian.Uint16(ip[2:4]))
-				if ip[0] != 0x45 || ip[9] != 17 || length < 28 || length > 1500 {
+				if ip[0] != 0x45 || length < 20 || length > 1500 {
 					return
 				}
 				packet := make([]byte, length)
@@ -86,7 +86,7 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 				if _, err := io.ReadFull(reader, packet[20:]); err != nil {
 					return
 				}
-				if string(packet[28:]) != "ecs-udp-test" {
+				if packet[9] != 17 || length < 28 || string(packet[28:]) != "ecs-udp-test" {
 					continue
 				}
 				copy(packet[12:16], ip[16:20])

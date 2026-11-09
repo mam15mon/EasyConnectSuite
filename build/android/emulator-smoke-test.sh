@@ -302,6 +302,13 @@ if status.get("text") != "已连接 · 全部流量经 VPN":
     raise SystemExit(f"Unexpected connected status: {status.get('text')!r}")
 print("Mock gateway authenticated and established Android VPN")
 PY
+udp_reply=$(adb shell "printf 'ecs-udp-test' | toybox nc -u -w 5 10.90.0.3 12345" | tr -d '\r')
+if [ "$udp_reply" != "ecs-udp-test" ]; then
+  cat "$RUNNER_TEMP/success-gateway.log"
+  echo "UDP echo did not return through VPN" >&2
+  exit 1
+fi
+echo 'UDP payload returned through Android VPN'
 tap_field btnToggle
 for attempt in $(seq 1 15); do
   adb shell uiautomator dump /sdcard/window.xml >/dev/null
