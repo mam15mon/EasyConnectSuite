@@ -102,6 +102,9 @@ func (c *L3Conn) Read(p []byte) (n int, err error) {
 
 		n, err = current.(io.ReadCloser).Read(p)
 		if err == nil {
+			if n > 0 {
+				c.recvErrCount = 0
+			}
 			return
 		}
 		if _, open := c.connection(false); !open {
@@ -162,6 +165,9 @@ func (c *L3Conn) Write(p []byte) (n int, err error) {
 
 		n, err = current.(io.WriteCloser).Write(p)
 		if err == nil {
+			if n > 0 {
+				c.sendErrCount = 0
+			}
 			return
 		}
 		if _, open := c.connection(true); !open {
