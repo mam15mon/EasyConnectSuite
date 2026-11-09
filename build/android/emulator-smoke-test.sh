@@ -268,3 +268,49 @@ if status.get("text") != "出错:认证被服务器拒绝":
     raise SystemExit(f"Unexpected rejection status: {status.get('text')!r}")
 print("Explicit rejection stopped retries and is shown to the user")
 PY
+
+# Complete authentication and establish a real emulator VPN interface.
+go run build/android/success-gateway.go > "$RUNNER_TEMP/success-gateway.log" 2>&1 &
+success_pid=$!
+trap 'kill "$mock_pid" "$reject_pid" "$success_pid" 2>/dev/null || true' EXIT
+adb reverse tcp:18445 tcp:18445
+adb shell input swipe 500 400 500 1500 400
+tap_field etPort
+adb shell input keyevent 123
+adb shell input keyevent 67 67 67 67 67
+adb shell input text 18445
+adb shell input keyevent 4
+adb shell input swipe 500 1500 500 400 400
+tap_field btnToggle
+for attempt in $(seq 1 45); do
+  if grep -q 'handshake=6' "$RUNNER_TEMP/success-gateway.log"; then break; fi
+  sleep 1
+done
+if ! grep -q 'handshake=6' "$RUNNER_TEMP/success-gateway.log"; then
+  cat "$RUNNER_TEMP/success-gateway.log"
+  echo 'VPN receive channel was not established' >&2
+  exit 1
+fi
+adb shell uiautomator dump /sdcard/window.xml >/dev/null
+adb exec-out cat /sdcard/window.xml > "$RUNNER_TEMP/android-window.xml"
+python3 - "$RUNNER_TEMP/android-window.xml" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+status = next(node for node in root.iter("node") if node.get("resource-id") == "com.zju.easyconnect.suite:id/tvStatus")
+if status.get("text") != "已连接 · 全部流量经 VPN":
+    raise SystemExit(f"Unexpected connected status: {status.get('text')!r}")
+print("Mock gateway authenticated and established Android VPN")
+PY
+tap_field btnToggle
+adb shell uiautomator dump /sdcard/window.xml >/dev/null
+adb exec-out cat /sdcard/window.xml > "$RUNNER_TEMP/android-window.xml"
+python3 - "$RUNNER_TEMP/android-window.xml" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+status = next(node for node in root.iter("node") if node.get("resource-id") == "com.zju.easyconnect.suite:id/tvStatus")
+if status.get("text") != "未连接":
+    raise SystemExit(f"Unexpected disconnected status: {status.get('text')!r}")
+print("Android VPN disconnected")
+PY
