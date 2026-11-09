@@ -119,7 +119,7 @@ class MainActivity : Activity() {
             }
             is TunnelService.State.Error -> {
                 statusText.text = "出错:${state.message}"
-                toggleButton.text = "连接"
+                toggleButton.text = if (TunnelService.active) "取消" else "连接"
                 toggleButton.isEnabled = true
             }
         }

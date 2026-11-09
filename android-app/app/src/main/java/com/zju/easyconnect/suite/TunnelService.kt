@@ -21,17 +21,18 @@ class TunnelService : VpnService() {
     }
 
     companion object {
-        var active: Boolean = false
+        @Volatile var active: Boolean = false
             private set
+        @Volatile private var state: State = State.Disconnected
         var onState: ((State) -> Unit)? = null
 
-        fun currentState(): State =
-            if (active) State.Connected else State.Disconnected
+        fun currentState(): State = state
 
         private val mainHandler = Handler(Looper.getMainLooper())
         private fun publish(state: State) {
-            active = state == State.Connected
-            mainHandler.post { onState?.invoke(state) }
+            this.state = state
+            active = state != State.Disconnected
+            mainHandler.post { if (this.state === state) onState?.invoke(state) }
         }
     }
 
@@ -87,6 +88,10 @@ class TunnelService : VpnService() {
             Mobile.login(server, user, pass)
         } else {
             Mobile.loginWithTOTP(server, user, pass, totp)
+        }
+        if (!wantConnected) {
+            Mobile.logout()
+            return false
         }
         if (ip.isEmpty()) {
             if (!isRetry) publish(State.Error("登录失败,请检查配置"))
