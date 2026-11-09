@@ -270,7 +270,7 @@ print("Explicit rejection stopped retries and is shown to the user")
 PY
 
 # Complete authentication and establish a real emulator VPN interface.
-go run build/android/success-gateway.go > "$RUNNER_TEMP/success-gateway.log" 2>&1 &
+go run build/android/success-gateway.go "$RUNNER_TEMP/close-receive" > "$RUNNER_TEMP/success-gateway.log" 2>&1 &
 success_pid=$!
 trap 'kill "$mock_pid" "$reject_pid" "$success_pid" 2>/dev/null || true' EXIT
 adb reverse tcp:18445 tcp:18445
@@ -309,6 +309,7 @@ if ! adb shell /data/local/tmp/android-udp-probe; then
   echo 'UDP payload did not return through VPN' >&2
   exit 1
 fi
+touch "$RUNNER_TEMP/close-receive"
 # The first receive stream closes after the first echo. Wait for a new receive
 # stream and confirm another datagram traverses the recovered channel.
 for attempt in $(seq 1 45); do

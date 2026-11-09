@@ -114,6 +114,13 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 				if _, err := conn.Write(packet); err != nil {
 					return
 				}
+				fmt.Fprintln(os.Stdout, "first_echo_sent")
+				for {
+					if _, err := os.Stat(os.Args[1]); err == nil {
+						break
+					}
+					time.Sleep(100 * time.Millisecond)
+				}
 				fmt.Fprintln(os.Stdout, "first_receive_closed")
 				return
 			}
