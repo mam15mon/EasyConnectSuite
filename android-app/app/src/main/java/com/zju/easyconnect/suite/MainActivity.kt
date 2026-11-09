@@ -16,6 +16,9 @@ class MainActivity : Activity() {
     private lateinit var toggleButton: Button
     private var pendingConnection: Intent? = null
     private var authorizationStartedAt = 0L
+    private val stateListener: (TunnelService.State) -> Unit = { state ->
+        runOnUiThread { renderState(state) }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,7 +39,7 @@ class MainActivity : Activity() {
         password.setText(prefs.getString("password", ""))
         totp.setText(prefs.getString("totp", ""))
 
-        TunnelService.onState = { runOnUiThread { renderState(it) } }
+        TunnelService.onState = stateListener
 
         toggleButton.setOnClickListener {
             if (TunnelService.active) {
@@ -78,6 +81,11 @@ class MainActivity : Activity() {
         }
 
         renderState(TunnelService.currentState())
+    }
+
+    override fun onDestroy() {
+        if (TunnelService.onState === stateListener) TunnelService.onState = null
+        super.onDestroy()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
