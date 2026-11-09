@@ -46,6 +46,7 @@ jobs:
           export GOOS=android GOARCH=amd64 CGO_ENABLED=1
           export CC="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android24-clang"
           go test -c -o "$RUNNER_TEMP/android-tun-test" ./stack/tun
+          go build -o "$RUNNER_TEMP/android-udp-probe" ../build/android/udp-probe.go
       - name: Build debug APK
         run: |
           mkdir -p android-app/app/libs
