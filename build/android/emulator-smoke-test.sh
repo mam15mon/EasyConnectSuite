@@ -86,7 +86,18 @@ if not any(node.get("package") == "com.android.vpndialogs" for node in root.iter
     raise SystemExit("Android VPN authorization dialog was not displayed")
 print("Android VPN authorization dialog appeared")
 PY
-adb shell input keyevent 4
+coordinates=$(python3 - "$RUNNER_TEMP/android-window.xml" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+button = next(node for node in root.iter("node") if node.get("resource-id") == "android:id/button2")
+left, top, right, bottom = map(int, re.findall(r"\d+", button.get("bounds")))
+print((left + right) // 2, (top + bottom) // 2)
+PY
+)
+adb shell input tap $coordinates
+adb shell input swipe 500 1500 500 400 400
 adb shell uiautomator dump /sdcard/window.xml >/dev/null
 adb exec-out cat /sdcard/window.xml > "$RUNNER_TEMP/android-window.xml"
 python3 - "$RUNNER_TEMP/android-window.xml" <<'PY'
