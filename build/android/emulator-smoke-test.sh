@@ -139,13 +139,14 @@ with socket.socket() as server:
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind(("127.0.0.1", 18443))
     server.listen()
-    connection, _ = server.accept()
-    with connection:
-        connection.settimeout(30)
-        open(sys.argv[1], "w").close()
-        while connection.recv(4096):
-            pass
-        open(sys.argv[2], "w").close()
+    for index in range(2):
+        connection, _ = server.accept()
+        with connection:
+            connection.settimeout(30)
+            open(sys.argv[1] + str(index), "w").close()
+            while connection.recv(4096):
+                pass
+            open(sys.argv[2] + str(index), "w").close()
 PY
 mock_pid=$!
 trap 'kill "$mock_pid" 2>/dev/null || true' EXIT
@@ -172,14 +173,30 @@ PY
 )
 adb shell input tap $coordinates
 for attempt in $(seq 1 30); do
-  if [ -f "$RUNNER_TEMP/mock-accepted" ]; then break; fi
+  if [ -f "$RUNNER_TEMP/mock-accepted0" ]; then break; fi
   sleep 1
 done
-if [ ! -f "$RUNNER_TEMP/mock-accepted" ]; then
+if [ ! -f "$RUNNER_TEMP/mock-accepted0" ]; then
   echo "Mock gateway did not receive the connection" >&2
   exit 1
 fi
 adb shell input swipe 500 1500 500 400 400
+tap_field btnToggle
+# Start a second session immediately after cancellation.
+tap_field btnToggle
+for attempt in $(seq 1 30); do
+  if [ -f "$RUNNER_TEMP/mock-accepted1" ]; then break; fi
+  sleep 1
+done
+if [ ! -f "$RUNNER_TEMP/mock-accepted1" ]; then
+  echo 'Second session did not reach the mock gateway' >&2
+  exit 1
+fi
+sleep 2
+if [ -f "$RUNNER_TEMP/mock-closed1" ]; then
+  echo 'Second session closed before cancellation' >&2
+  exit 1
+fi
 tap_field btnToggle
 adb shell uiautomator dump /sdcard/window.xml >/dev/null
 adb exec-out cat /sdcard/window.xml > "$RUNNER_TEMP/android-window.xml"
@@ -194,14 +211,22 @@ print("Connection cancellation returned to disconnected state")
 PY
 
 for attempt in $(seq 1 15); do
-  if [ -f "$RUNNER_TEMP/mock-closed" ]; then break; fi
+  if [ -f "$RUNNER_TEMP/mock-closed0" ]; then break; fi
   sleep 1
 done
-if [ ! -f "$RUNNER_TEMP/mock-closed" ]; then
+if [ ! -f "$RUNNER_TEMP/mock-closed0" ]; then
   echo "Connection remained open after cancellation" >&2
   exit 1
 fi
-printf '%s\n' 'Mock gateway observed the authentication connection close'
+for attempt in $(seq 1 15); do
+  if [ -f "$RUNNER_TEMP/mock-closed1" ]; then break; fi
+  sleep 1
+done
+if [ ! -f "$RUNNER_TEMP/mock-closed1" ]; then
+  echo 'Second session remained open after cancellation' >&2
+  exit 1
+fi
+printf '%s\n' 'Both authentication sessions closed after their respective cancellations' 
 
 # Confirm an explicit authentication rejection stops retries.
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$RUNNER_TEMP/mock-key.pem" \
