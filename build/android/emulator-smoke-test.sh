@@ -300,8 +300,6 @@ if ! grep -q tcp_gateway_ready "$RUNNER_TEMP/tcp-gateway.log"; then
   cat "$RUNNER_TEMP/tcp-gateway.log"
   exit 1
 fi
-go run build/android/success-gateway.go "$RUNNER_TEMP/close-receive" "$RUNNER_TEMP/expire-session" > "$RUNNER_TEMP/success-gateway.log" 2>&1 &
-success_pid=$!
 adb reverse tcp:18445 tcp:18445
 adb shell input swipe 500 400 500 1500 400
 tap_field etPort
@@ -310,7 +308,26 @@ adb shell input keyevent 67 67 67 67 67
 adb shell input text 18445
 adb shell input keyevent 4
 adb shell input swipe 500 1500 500 400 400
+adb logcat -c
 tap_field btnToggle
+for attempt in $(seq 1 30); do
+  if adb logcat -d -s VPN:I | grep -q 'stage=retry_wait attempt=2 delay_s=6'; then break; fi
+  sleep 1
+done
+if ! adb logcat -d -s VPN:I | grep -q 'stage=retry_wait attempt=2 delay_s=6'; then
+  adb logcat -d -s VPN:I GoLog:I AndroidRuntime:E
+  echo 'Unavailable gateway did not trigger the expected retry backoff' >&2
+  exit 1
+fi
+adb shell dumpsys activity services com.zju.easyconnect.suite/.TunnelService > "$RUNNER_TEMP/android-service.txt"
+if ! grep -q 'isForeground=true' "$RUNNER_TEMP/android-service.txt"; then
+  cat "$RUNNER_TEMP/android-service.txt"
+  echo 'VPN service is not foreground during retry' >&2
+  exit 1
+fi
+echo 'Unavailable gateway triggered exponential backoff in foreground service'
+go run build/android/success-gateway.go "$RUNNER_TEMP/close-receive" "$RUNNER_TEMP/expire-session" > "$RUNNER_TEMP/success-gateway.log" 2>&1 &
+success_pid=$!
 for attempt in $(seq 1 45); do
   if grep -q 'handshake=6' "$RUNNER_TEMP/success-gateway.log"; then break; fi
   sleep 1
