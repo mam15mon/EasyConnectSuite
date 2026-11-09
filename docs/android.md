@@ -2,6 +2,8 @@
 
 仓库包含 EasyConnect 的 Android 原型 App 和 Termux 命令行方案。Android 使用 `zju-connect` 引擎，不等同于桌面端的多协议、多连接工作台。GitHub Actions 构建调试 APK，并使用 Android 13 模拟器和模拟网关验证连接流程；真实设备、真实网关兼容性和电池续航仍需实测。
 
+模拟测试覆盖 VPN 授权和取消、认证拒绝、TCP 与 UDP 往返、接收通道断线恢复、会话过期重新认证、断开后重新连接，以及应用进入后台 20 秒后的转发。短时后台测试不能证明长期待机或实际耗电表现。
+
 ## Android App
 
 `android-app/` 是 Kotlin + Android VpnService 工程，最低 Android API 24。界面支持服务器、账号、密码和可选 TOTP 密钥。服务建立 IPv4 默认路由，将本应用自身排除以避免连接回环；隧道断开后会重新登录，临时失败重试间隔从 3 秒递增到最多 300 秒，明确的认证拒绝不会自动重试。DNS 优先使用登录结果；结果为空时使用代码中的固定地址。
