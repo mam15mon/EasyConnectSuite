@@ -142,9 +142,14 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 		case 6:
 			session := loginCount.Load()
 			if recvCount.Add(1) == 1 {
-				packet := <-udpReplies
-				if _, err := conn.Write(packet); err != nil {
-					return
+				for {
+					packet := <-udpReplies
+					if _, err := conn.Write(packet); err != nil {
+						return
+					}
+					if len(packet) >= 20 && packet[9] == 17 {
+						break
+					}
 				}
 				fmt.Fprintln(os.Stdout, "first_echo_sent")
 				for {
