@@ -37,6 +37,12 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Build Android engine
         run: bash build/android/build.sh
+      - name: Compile Android tunnel tests
+        working-directory: zju-connect
+        run: |
+          export GOOS=android GOARCH=amd64 CGO_ENABLED=1
+          export CC="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android24-clang"
+          go test -c -o "$RUNNER_TEMP/android-tun-test" ./stack/tun
       - name: Build debug APK
         run: |
           mkdir -p android-app/app/libs
