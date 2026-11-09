@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -247,5 +248,26 @@ func TestSetupRejectsTruncatedOrInvalidIPReply(t *testing.T) {
 		if c.ip != nil || c.requestIPConn != nil {
 			t.Fatal("invalid IP session published")
 		}
+	}
+}
+
+func TestIPConnectionRemainsOpenUntilClientClose(t *testing.T) {
+	c, _, _, _ := reloginGateway(t, "")
+	if err := c.Setup(); err != nil {
+		t.Fatal(err)
+	}
+	c.requestIPConnMu.Lock()
+	conn := c.requestIPConn
+	c.requestIPConnMu.Unlock()
+	if conn == nil {
+		t.Fatal("IP connection not retained")
+	}
+	runtime.GC()
+	if _, err := conn.Write([]byte{0}); err != nil {
+		t.Fatalf("IP connection closed while session was active: %v", err)
+	}
+	c.Close()
+	if _, err := conn.Write([]byte{0}); err == nil {
+		t.Fatal("IP connection remained open after client close")
 	}
 }
