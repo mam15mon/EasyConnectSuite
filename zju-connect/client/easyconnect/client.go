@@ -84,15 +84,14 @@ type Client struct {
 	ip        net.IP // Client IP
 	ipReverse []byte
 
-	lifecycleCtx       context.Context
-	lifecycleCancel    context.CancelFunc
-	requestIPConn      net.Conn
-	requestIPConnMu    sync.Mutex
-	requestIPKeepAlive sync.Once
-	keepAliveStarted   sync.Once
-	closeOnce          sync.Once
-	graphCodeFile      string
-	challengeHandler   authchallenge.Handler
+	lifecycleCtx     context.Context
+	lifecycleCancel  context.CancelFunc
+	requestIPConn    net.Conn
+	requestIPConnMu  sync.Mutex
+	keepAliveStarted sync.Once
+	closeOnce        sync.Once
+	graphCodeFile    string
+	challengeHandler authchallenge.Handler
 }
 
 func NewClient(options Options) *Client {

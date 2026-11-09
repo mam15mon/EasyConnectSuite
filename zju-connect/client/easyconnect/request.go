@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -721,26 +720,6 @@ func (c *Client) setRequestIPConn(conn net.Conn) {
 	c.requestIPConn = conn
 	c.requestIPConnMu.Unlock()
 
-	c.requestIPKeepAlive.Do(func() {
-		go c.requestIPKeepAliveLoop()
-	})
-}
-
-func (c *Client) requestIPKeepAliveLoop() {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-c.lifecycleCtx.Done():
-			return
-		case <-ticker.C:
-			c.requestIPConnMu.Lock()
-			conn := c.requestIPConn
-			c.requestIPConnMu.Unlock()
-			runtime.KeepAlive(conn)
-		}
-	}
 }
 
 // Authentication payloads may contain credentials even on failure. Only trusted
