@@ -110,7 +110,6 @@ class TunnelService : VpnService() {
             Mobile.loginWithTOTP(server, user, pass, totp)
         }
         if (!wantConnected) {
-            Mobile.logout()
             return false
         }
         if (ip.isEmpty()) {
@@ -154,7 +153,7 @@ class TunnelService : VpnService() {
             } catch (error: java.io.IOException) {
                 Log.e("VPN", "android_session pid=${android.os.Process.myPid()} stage=tun_close outcome=failed elapsed_ms=${SystemClock.elapsedRealtime() - cleanupStarted} cancelled=${!wantConnected} error_type=${error.javaClass.simpleName}")
             }
-            Mobile.logout()
+            if (wantConnected) Mobile.logout()
         }
         return true
     }
