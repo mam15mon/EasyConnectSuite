@@ -35,6 +35,9 @@ jobs:
           go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20241204233305-ce44b2716d33
           go install golang.org/x/mobile/cmd/gobind@v0.0.0-20241204233305-ce44b2716d33
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Test EasyConnect lifecycle with race detector
+        working-directory: zju-connect
+        run: go test -race ./client/easyconnect -count=1
       - name: Build Android engine
         run: bash build/android/build.sh
       - name: Compile Android tunnel tests
