@@ -292,8 +292,14 @@ func (c *Client) Setup() error {
 	}
 
 	// Error may occur if we request too fast
-	if time.Since(startTime) < time.Second {
-		time.Sleep(time.Second - time.Since(startTime))
+	if remaining := time.Second - time.Since(startTime); remaining > 0 {
+		timer := time.NewTimer(remaining)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-c.lifecycleCtx.Done():
+			return c.lifecycleCtx.Err()
+		}
 	}
 
 	// Finally, use the token to get client IP
