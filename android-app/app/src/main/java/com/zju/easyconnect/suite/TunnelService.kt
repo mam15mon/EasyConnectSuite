@@ -143,11 +143,19 @@ class TunnelService : VpnService() {
 
         // startStack 阻塞直到隧道断开。不 detach:pfd 保持在 Java 侧,
         // 停止时 close() 会关闭 fd,解除 Go 侧的读阻塞
-        Mobile.startStack(pfd.fd.toLong())
-        tunnelFd = null
-
-        // 隧道断开:若 fd 是我们主动关闭的(停止),循环条件已失效
-        Mobile.logout()
+        try {
+            Mobile.startStack(pfd.fd.toLong())
+        } finally {
+            tunnelFd = null
+            val cleanupStarted = SystemClock.elapsedRealtime()
+            try {
+                pfd.close()
+                Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=tun_close outcome=success elapsed_ms=${SystemClock.elapsedRealtime() - cleanupStarted} cancelled=${!wantConnected}")
+            } catch (error: java.io.IOException) {
+                Log.e("VPN", "android_session pid=${android.os.Process.myPid()} stage=tun_close outcome=failed elapsed_ms=${SystemClock.elapsedRealtime() - cleanupStarted} cancelled=${!wantConnected} error_type=${error.javaClass.simpleName}")
+            }
+            Mobile.logout()
+        }
         return true
     }
 
