@@ -8,6 +8,8 @@
 
 `android-app/` 是 Kotlin + Android VpnService 工程，最低 Android API 24。界面支持服务器、账号、密码和可选 TOTP 密钥。服务建立 IPv4 默认路由，将本应用自身排除以避免连接回环；隧道断开后会重新登录，临时失败重试间隔从 3 秒递增到最多 300 秒，明确的认证拒绝不会自动重试。DNS 优先使用登录结果；结果为空时使用代码中的固定地址。
 
+从开始登录到连接和自动重试期间，应用使用前台服务通知显示当前状态，以减少切入后台后服务被系统回收的风险。各设备的后台限制与省电策略不同，长期保持连接仍需在真实设备上验证。
+
 App 会将填写的账号、密码和 TOTP 密钥保存在应用私有的 SharedPreferences 中，当前没有额外加密；使用时请保护设备及其备份。
 
 构建需要 Go、gomobile、Android SDK/NDK、JDK 17 和兼容 Android Gradle Plugin 8.7.3 的 Gradle；工程的 `compileSdk` 为 35。脚本同时构建 arm64 CLI 和 AAR，因此即使只需要 CLI 也需要 gomobile 和 Android 工具链。
