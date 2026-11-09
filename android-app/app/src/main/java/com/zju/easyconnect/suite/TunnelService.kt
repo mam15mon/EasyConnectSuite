@@ -63,6 +63,7 @@ class TunnelService : VpnService() {
         if (wantConnected) return START_NOT_STICKY
         wantConnected = true
         terminalError = false
+        startInForeground("正在登录并建立隧道")
         publish(State.Connecting)
 
         val server = intent.getStringExtra("server")!!
@@ -88,6 +89,7 @@ class TunnelService : VpnService() {
                 attempt++
                 val delay = retryDelay(attempt)
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=retry_wait attempt=$attempt delay_s=$delay")
+                updateNotification("连接中断或失败，${delay}秒后重试")
                 publish(State.Error("连接中断或失败,${delay}秒后重试"))
                 try {
                     Thread.sleep(delay * 1000L)
@@ -141,7 +143,7 @@ class TunnelService : VpnService() {
             return false
         }
 
-        startInForeground()
+        updateNotification("全部流量经 VPN")
         tunnelFd = pfd
         publish(State.Connected)
 
@@ -183,6 +185,7 @@ class TunnelService : VpnService() {
         Mobile.stopStack()
         runCatching { tunnelFd?.close() }
         tunnelFd = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
         if (!terminalError) publish(State.Disconnected)
         super.onDestroy()
     }
@@ -191,7 +194,18 @@ class TunnelService : VpnService() {
         stopTunnel()
     }
 
-    private fun startInForeground() {
+    private fun startInForeground(message: String) {
+        val started = SystemClock.elapsedRealtime()
+        startForeground(1, notification(message))
+        Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=foreground_start outcome=success elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=${!wantConnected}")
+    }
+
+    private fun updateNotification(message: String) {
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(1, notification(message))
+    }
+
+    private fun notification(message: String): android.app.Notification {
         val pi = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE
@@ -202,14 +216,13 @@ class TunnelService : VpnService() {
             @Suppress("DEPRECATION")
             android.app.Notification.Builder(this)
         }
-        val notification = builder
+        return builder
             .setSmallIcon(R.drawable.ic_logo)
             .setContentTitle("EC 隧道运行中")
-            .setContentText("全部流量经 VPN")
+            .setContentText(message)
             .setContentIntent(pi)
             .setOngoing(true)
             .build()
-        startForeground(1, notification)
     }
 
     private fun retryDelay(attempt: Int): Int = minOf(3 * (1 shl minOf(attempt - 1, 7)), 300)
