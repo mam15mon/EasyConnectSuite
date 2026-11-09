@@ -111,14 +111,14 @@ print("VPN authorization denial returned to the app")
 PY
 
 # A local stalled TLS peer keeps authentication in progress until it is cancelled.
-python3 -u -c 'import socket,time; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(("127.0.0.1",18443)); s.listen(); c,_=s.accept(); time.sleep(60)' &
+python3 -u -c 'import socket,time,sys; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(("127.0.0.1",18443)); s.listen(); c,_=s.accept(); open(sys.argv[1],"w").close(); time.sleep(60)' "$RUNNER_TEMP/mock-accepted" &
 mock_pid=$!
 trap 'kill "$mock_pid" 2>/dev/null || true' EXIT
 adb reverse tcp:18443 tcp:18443
 adb shell input swipe 500 400 500 1500 400
 tap_field etPort
 adb shell input keyevent 123
-adb shell input keyevent --longpress 67
+adb shell input keyevent 67 67 67
 adb shell input text 18443
 adb shell input keyevent 4
 adb shell input swipe 500 1500 500 400 400
@@ -136,6 +136,14 @@ print((left + right) // 2, (top + bottom) // 2)
 PY
 )
 adb shell input tap $coordinates
+for attempt in $(seq 1 30); do
+  if [ -f "$RUNNER_TEMP/mock-accepted" ]; then break; fi
+  sleep 1
+done
+if [ ! -f "$RUNNER_TEMP/mock-accepted" ]; then
+  echo "Mock gateway did not receive the connection" >&2
+  exit 1
+fi
 adb shell input swipe 500 1500 500 400 400
 tap_field btnToggle
 adb shell uiautomator dump /sdcard/window.xml >/dev/null
