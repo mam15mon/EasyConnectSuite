@@ -24,6 +24,23 @@ if status.get("text") != "未连接":
 print("App launched with the expected fields and disconnected status")
 PY
 
+# Recreate the activity through rotation and verify its state is restored.
+adb shell settings put system accelerometer_rotation 0
+adb shell settings put system user_rotation 1
+adb shell settings put system user_rotation 0
+adb shell input swipe 500 1500 500 400 400
+adb shell uiautomator dump /sdcard/window.xml >/dev/null
+adb exec-out cat /sdcard/window.xml > "$RUNNER_TEMP/android-window.xml"
+python3 - "$RUNNER_TEMP/android-window.xml" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+status = next(node for node in root.iter("node") if node.get("resource-id") == "com.zju.easyconnect.suite:id/tvStatus")
+if status.get("text") != "未连接":
+    raise SystemExit(f"Unexpected status after activity recreation: {status.get('text')!r}")
+print("Disconnected state is restored after rotation")
+PY
+
 # Scroll to the connection button, then verify empty input is rejected.
 adb shell input swipe 500 1500 500 400 400
 adb shell uiautomator dump /sdcard/window.xml >/dev/null
