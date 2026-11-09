@@ -189,7 +189,16 @@ if ! grep -q 'isForeground=true' "$RUNNER_TEMP/android-service.txt"; then
 fi
 adb shell am start -n com.zju.easyconnect.suite/.MainActivity >/dev/null
 adb shell input keyevent KEYCODE_BACK
-adb shell input swipe 160 550 160 100 400
+for attempt in $(seq 1 15); do
+  adb shell input swipe 160 550 160 100 400
+  adb shell uiautomator dump /sdcard/window.xml >/dev/null
+  if adb exec-out cat /sdcard/window.xml | grep -q 'com.zju.easyconnect.suite:id/btnToggle'; then break; fi
+  if [ "$attempt" -eq 15 ]; then
+    echo 'Connection button did not appear after returning to the app' >&2
+    exit 1
+  fi
+  sleep 1
+done
 adb shell input swipe 500 1500 500 400 400
 tap_field btnToggle
 # Start a second session immediately after cancellation.
