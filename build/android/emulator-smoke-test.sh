@@ -303,14 +303,23 @@ if status.get("text") != "已连接 · 全部流量经 VPN":
 print("Mock gateway authenticated and established Android VPN")
 PY
 tap_field btnToggle
-adb shell uiautomator dump /sdcard/window.xml >/dev/null
-adb exec-out cat /sdcard/window.xml > "$RUNNER_TEMP/android-window.xml"
-python3 - "$RUNNER_TEMP/android-window.xml" <<'PY'
+for attempt in $(seq 1 15); do
+  adb shell uiautomator dump /sdcard/window.xml >/dev/null
+  adb exec-out cat /sdcard/window.xml > "$RUNNER_TEMP/android-window.xml"
+  if python3 - "$RUNNER_TEMP/android-window.xml" <<'PY'
 import sys
 import xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
-status = next(node for node in root.iter("node") if node.get("resource-id") == "com.zju.easyconnect.suite:id/tvStatus")
-if status.get("text") != "未连接":
-    raise SystemExit(f"Unexpected disconnected status: {status.get('text')!r}")
-print("Android VPN disconnected")
+status = next((node for node in root.iter("node") if node.get("resource-id") == "com.zju.easyconnect.suite:id/tvStatus"), None)
+sys.exit(0 if status is not None and status.get("text") == "未连接" else 1)
 PY
+  then
+    echo 'Android VPN disconnected'
+    break
+  fi
+  if [ "$attempt" -eq 15 ]; then
+    adb logcat -d -s VPN:I GoLog:I AndroidRuntime:E
+    echo 'Android VPN did not disconnect within the test deadline' >&2
+    exit 1
+  fi
+done
