@@ -180,6 +180,16 @@ if [ ! -f "$RUNNER_TEMP/mock-accepted0" ]; then
   echo "Mock gateway did not receive the connection" >&2
   exit 1
 fi
+adb shell input keyevent KEYCODE_HOME
+adb shell dumpsys activity services com.zju.easyconnect.suite/.TunnelService > "$RUNNER_TEMP/android-service.txt"
+if ! grep -q 'isForeground=true' "$RUNNER_TEMP/android-service.txt"; then
+  cat "$RUNNER_TEMP/android-service.txt"
+  echo 'VPN service is not foreground while authentication is pending in the background' >&2
+  exit 1
+fi
+adb shell am start -n com.zju.easyconnect.suite/.MainActivity >/dev/null
+adb shell input keyevent KEYCODE_BACK
+adb shell input swipe 160 550 160 100 400
 adb shell input swipe 500 1500 500 400 400
 tap_field btnToggle
 # Start a second session immediately after cancellation.
