@@ -450,4 +450,29 @@ if ! adb shell /data/local/tmp/android-tcp-probe; then
   echo 'TCP failed after disconnect and reconnect' >&2
   exit 1
 fi
+# Exercise repeated user-driven stop/start while previous service cleanup may
+# still be finishing. Verify traffic on every new session, not just UI state.
+for session in 4 5 6; do
+  tap_field btnToggle
+  tap_field btnToggle
+  for attempt in $(seq 1 45); do
+    if grep -q "login=$session" "$RUNNER_TEMP/success-gateway.log" && \
+      [ "$(grep -c 'handshake=6' "$RUNNER_TEMP/success-gateway.log" || true)" -ge "$((session + 1))" ]; then break; fi
+    sleep 1
+  done
+  if ! grep -q "login=$session" "$RUNNER_TEMP/success-gateway.log" || \
+    [ "$(grep -c 'handshake=6' "$RUNNER_TEMP/success-gateway.log" || true)" -lt "$((session + 1))" ]; then
+    cat "$RUNNER_TEMP/success-gateway.log"
+    adb logcat -d -s VPN:I GoLog:I AndroidRuntime:E
+    echo "VPN did not establish repeated session $session" >&2
+    exit 1
+  fi
+  if ! adb shell /data/local/tmp/android-udp-probe || ! adb shell /data/local/tmp/android-tcp-probe; then
+    cat "$RUNNER_TEMP/success-gateway.log"
+    adb logcat -d -s VPN:I GoLog:I AndroidRuntime:E
+    echo "VPN traffic failed in repeated session $session" >&2
+    exit 1
+  fi
+  echo "UDP and TCP succeeded in repeated session $session"
+done
 tap_field btnToggle
