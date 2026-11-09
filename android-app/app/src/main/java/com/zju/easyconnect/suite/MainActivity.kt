@@ -3,6 +3,9 @@ package com.zju.easyconnect.suite
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.net.VpnService
+import android.os.SystemClock
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -11,6 +14,8 @@ class MainActivity : Activity() {
 
     private lateinit var statusText: TextView
     private lateinit var toggleButton: Button
+    private var pendingConnection: Intent? = null
+    private var authorizationStartedAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,12 +65,39 @@ class MainActivity : Activity() {
                     putExtra("password", pw)
                     putExtra("totp", tp)
                 }
-                startService(intent)
-                renderState(TunnelService.State.Connecting)
+                pendingConnection = intent
+                authorizationStartedAt = SystemClock.elapsedRealtime()
+                Log.i("VPN", "vpn_authorization pid=${android.os.Process.myPid()} stage=prepare")
+                val authorization = VpnService.prepare(this)
+                if (authorization == null) {
+                    startAuthorizedConnection()
+                } else {
+                    startActivityForResult(authorization, 1)
+                }
             }
         }
 
         renderState(TunnelService.currentState())
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != 1) return
+        if (resultCode == RESULT_OK) {
+            startAuthorizedConnection()
+        } else {
+            pendingConnection = null
+            Log.i("VPN", "vpn_authorization pid=${android.os.Process.myPid()} outcome=denied elapsed_ms=${SystemClock.elapsedRealtime() - authorizationStartedAt}")
+            statusText.text = "VPN 授权被取消"
+        }
+    }
+
+    private fun startAuthorizedConnection() {
+        val intent = pendingConnection ?: return
+        pendingConnection = null
+        Log.i("VPN", "vpn_authorization pid=${android.os.Process.myPid()} outcome=granted elapsed_ms=${SystemClock.elapsedRealtime() - authorizationStartedAt}")
+        startService(intent)
+        renderState(TunnelService.State.Connecting)
     }
 
     private fun renderState(state: TunnelService.State) {
