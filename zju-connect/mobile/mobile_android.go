@@ -205,9 +205,16 @@ func StartStack(fd int) {
 		return
 	}
 
+	vpnClientMu.Lock()
+	if vpnClient != client {
+		vpnClientMu.Unlock()
+		_ = vpnTUNStack.Stop()
+		return
+	}
 	tunnelMu.Lock()
 	activeTunnel = vpnTUNStack
 	tunnelMu.Unlock()
+	vpnClientMu.Unlock()
 	tunnelRunning.Store(true)
 	defer func() {
 		tunnelMu.Lock()

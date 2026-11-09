@@ -79,3 +79,33 @@ func TestServerDisconnectUnblocksDuplicatedDeviceDescriptor(t *testing.T) {
 		t.Fatalf("original descriptor was closed: %v", err)
 	}
 }
+
+func TestStopClosesTunnelCopyAndUnblocksForwarding(t *testing.T) {
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := os.NewFile(uintptr(fds[0]), "original")
+	peer := os.NewFile(uintptr(fds[1]), "peer")
+	defer original.Close()
+	defer peer.Close()
+	stack := &Stack{endpoint: &Endpoint{}}
+	if err := stack.SetupTun(fds[0]); err != nil {
+		t.Fatal(err)
+	}
+	local, remote := net.Pipe()
+	defer remote.Close()
+	done := make(chan error, 1)
+	go func() { done <- forwardPackets(local, stack.endpoint.readWriteCloser) }()
+	if err := stack.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stop did not unblock forwarding")
+	}
+	if _, err := original.Write([]byte("x")); err != nil {
+		t.Fatalf("original descriptor closed: %v", err)
+	}
+}
