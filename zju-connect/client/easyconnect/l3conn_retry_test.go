@@ -12,8 +12,8 @@ func (*retryTestWriter) Close() error { return nil }
 
 func TestSuccessfulTrafficResetsChannelFailureBudget(t *testing.T) {
 	c := &L3Conn{
-		recvConn: io.NopCloser(strings.NewReader("ok")),
-		sendConn: &retryTestWriter{},
+		recvConn:     io.NopCloser(strings.NewReader("ok")),
+		sendConn:     &retryTestWriter{},
 		recvErrCount: 5,
 		sendErrCount: 5,
 	}
