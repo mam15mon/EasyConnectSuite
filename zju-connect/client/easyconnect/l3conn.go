@@ -191,7 +191,7 @@ func (c *L3Conn) Write(p []byte) (n int, err error) {
 }
 
 func (c *L3Conn) Close() error {
-	op := log.BeginOperation(fmt.Sprintf("[android_l3 pid=%d conn=%p] ", os.Getpid(), c), "l3_close", nil)
+	op := log.BeginOperation(fmt.Sprintf("[easyconnect_l3 pid=%d conn=%p] ", os.Getpid(), c), "l3_close", nil)
 	defer op.Finish("success", nil)
 	op.Step("acquire_state_lock")
 	c.stateLock.Lock()
