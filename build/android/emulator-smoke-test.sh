@@ -111,7 +111,22 @@ print("VPN authorization denial returned to the app")
 PY
 
 # A local stalled TLS peer keeps authentication in progress until it is cancelled.
-python3 -u -c 'import socket,time,sys; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(("127.0.0.1",18443)); s.listen(); c,_=s.accept(); open(sys.argv[1],"w").close(); time.sleep(60)' "$RUNNER_TEMP/mock-accepted" &
+python3 -u - "$RUNNER_TEMP/mock-accepted" "$RUNNER_TEMP/mock-closed" <<'PY' &
+import socket
+import sys
+
+with socket.socket() as server:
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", 18443))
+    server.listen()
+    connection, _ = server.accept()
+    with connection:
+        connection.settimeout(30)
+        open(sys.argv[1], "w").close()
+        while connection.recv(4096):
+            pass
+        open(sys.argv[2], "w").close()
+PY
 mock_pid=$!
 trap 'kill "$mock_pid" 2>/dev/null || true' EXIT
 adb reverse tcp:18443 tcp:18443
@@ -157,3 +172,13 @@ if status.get("text") != "未连接":
     raise SystemExit(f"Unexpected status after cancellation: {status.get('text')!r}")
 print("Connection cancellation returned to disconnected state")
 PY
+
+for attempt in $(seq 1 15); do
+  if [ -f "$RUNNER_TEMP/mock-closed" ]; then break; fi
+  sleep 1
+done
+if [ ! -f "$RUNNER_TEMP/mock-closed" ]; then
+  echo "Connection remained open after cancellation" >&2
+  exit 1
+fi
+printf '%s\n' 'Mock gateway observed the authentication connection close'
