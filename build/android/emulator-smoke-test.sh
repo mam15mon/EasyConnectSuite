@@ -272,7 +272,7 @@ PY
 # Complete authentication and establish a real emulator VPN interface.
 sudo python3 build/android/tcp-gateway.py > "$RUNNER_TEMP/tcp-gateway.log" 2>&1 &
 tcp_pid=$!
-trap 'kill "$mock_pid" "$reject_pid" "$success_pid" 2>/dev/null || true; sudo kill "$tcp_pid" 2>/dev/null || true' EXIT
+trap 'kill "$mock_pid" "$reject_pid" "${success_pid:-}" 2>/dev/null || true; sudo kill "$tcp_pid" 2>/dev/null || true' EXIT
 for attempt in $(seq 1 15); do
   if grep -q tcp_gateway_ready "$RUNNER_TEMP/tcp-gateway.log"; then break; fi
   sleep 1
