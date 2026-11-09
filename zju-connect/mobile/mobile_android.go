@@ -19,6 +19,8 @@ var vpnUnderlay *underlay.Dialer
 var vpnClientMu sync.Mutex
 var loginMu sync.Mutex
 var tunnelRunning atomic.Bool
+var tunnelMu sync.Mutex
+var activeTunnel *tun.Stack
 var loginRejected atomic.Bool
 var loginGeneration uint64
 var loginCancelled chan struct{}
@@ -173,6 +175,17 @@ func TunnelRunning() bool {
 	return tunnelRunning.Load()
 }
 
+func StopStack() {
+	tunnelMu.Lock()
+	stack := activeTunnel
+	tunnelMu.Unlock()
+	if stack != nil {
+		if err := stack.Stop(); err != nil {
+			log.Printf("[android pid=%d] android_tun_stop error_type=%T", os.Getpid(), err)
+		}
+	}
+}
+
 func StartStack(fd int) {
 	vpnClientMu.Lock()
 	client := vpnClient
@@ -192,8 +205,18 @@ func StartStack(fd int) {
 		return
 	}
 
+	tunnelMu.Lock()
+	activeTunnel = vpnTUNStack
+	tunnelMu.Unlock()
 	tunnelRunning.Store(true)
-	defer tunnelRunning.Store(false)
+	defer func() {
+		tunnelMu.Lock()
+		if activeTunnel == vpnTUNStack {
+			activeTunnel = nil
+		}
+		tunnelMu.Unlock()
+		tunnelRunning.Store(false)
+	}()
 	defer func() {
 		// The read loops return on tunnel death; a residual panic must
 		// not take the whole Android app down.

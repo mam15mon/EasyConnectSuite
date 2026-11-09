@@ -24,17 +24,17 @@ type Stack struct {
 }
 
 func (s *Stack) Run() {
-	op := log.BeginOperation(fmt.Sprintf("[android pid=%d] ", os.Getpid()), "android_tun_forward", nil)
-	var resultErr error
-	defer func() { op.Finish("success", resultErr) }()
+	op := log.BeginOperation(fmt.Sprintf("[android pid=%d] ", os.Getpid()), "android_tun_open", nil)
 	op.Step("open_data_channel")
-	s.l3Conn, resultErr = s.endpoint.client.NewL3Conn()
-	if resultErr != nil {
+	conn, err := s.endpoint.client.NewL3Conn()
+	op.Finish("success", err)
+	if err != nil {
 		_ = s.endpoint.readWriteCloser.Close()
 		return
 	}
-	op.Step("forward_packets")
-	resultErr = forwardPackets(s.l3Conn, s.endpoint.readWriteCloser)
+	log.Printf("[android pid=%d] android_tun_forward phase=begin", os.Getpid())
+	err = forwardPackets(conn, s.endpoint.readWriteCloser)
+	log.Printf("[android pid=%d] android_tun_forward phase=end error_type=%T", os.Getpid(), err)
 }
 
 // Both directions own neither input exclusively. Closing both on the first
@@ -142,6 +142,10 @@ func NewStack(client client.Client, _ bool, _ bool, _ []client.IPResource) (*Sta
 	}
 
 	return s, nil
+}
+
+func (s *Stack) Stop() error {
+	return s.endpoint.readWriteCloser.Close()
 }
 
 func (s *Stack) SetupTun(fd int) error {

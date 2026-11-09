@@ -162,6 +162,7 @@ class TunnelService : VpnService() {
     private fun stopTunnel() {
         wantConnected = false
         worker?.interrupt()
+        Mobile.stopStack()
         Mobile.logout()
         // 关闭 fd 解除 startStack 的读阻塞
         runCatching { tunnelFd?.close() }
@@ -174,6 +175,7 @@ class TunnelService : VpnService() {
     override fun onDestroy() {
         wantConnected = false
         worker?.interrupt()
+        Mobile.stopStack()
         Mobile.logout()
         runCatching { tunnelFd?.close() }
         tunnelFd = null
