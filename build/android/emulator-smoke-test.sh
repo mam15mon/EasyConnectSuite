@@ -176,6 +176,24 @@ for attempt in $(seq 1 30); do
   if [ -f "$RUNNER_TEMP/mock-accepted0" ]; then break; fi
   sleep 1
 done
+tap_field btnToggle
+for attempt in $(seq 1 45); do
+  if grep -q 'login=3' "$RUNNER_TEMP/success-gateway.log" && [ "$(grep -c 'handshake=6' "$RUNNER_TEMP/success-gateway.log" || true)" -ge 4 ]; then break; fi
+  sleep 1
+done
+if ! grep -q 'login=3' "$RUNNER_TEMP/success-gateway.log" || [ "$(grep -c 'handshake=6' "$RUNNER_TEMP/success-gateway.log" || true)" -lt 4 ]; then
+  cat "$RUNNER_TEMP/success-gateway.log"
+  adb logcat -d -s VPN:I GoLog:I AndroidRuntime:E
+  echo 'VPN did not reconnect after disconnect' >&2
+  exit 1
+fi
+if ! adb shell /data/local/tmp/android-udp-probe; then
+  cat "$RUNNER_TEMP/success-gateway.log"
+  echo 'UDP failed after disconnect and reconnect' >&2
+  exit 1
+fi
+echo 'UDP recovered after disconnect and reconnect'
+tap_field btnToggle
 if [ ! -f "$RUNNER_TEMP/mock-accepted0" ]; then
   echo "Mock gateway did not receive the connection" >&2
   exit 1
