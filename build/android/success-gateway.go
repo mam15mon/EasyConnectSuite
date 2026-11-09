@@ -203,6 +203,7 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 	case "/por/login_psw.csp":
 		body = "<Auth><Result>1</Result></Auth>"
 	case "/por/update_session.csp":
+		fmt.Fprintln(os.Stdout, "session_keepalive")
 		body = "<Auth><Message>success</Message><ErrorCode>1</ErrorCode></Auth>"
 	case "/por/conf.csp":
 	default:
