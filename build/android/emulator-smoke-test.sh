@@ -270,9 +270,19 @@ print("Explicit rejection stopped retries and is shown to the user")
 PY
 
 # Complete authentication and establish a real emulator VPN interface.
+sudo python3 build/android/tcp-gateway.py > "$RUNNER_TEMP/tcp-gateway.log" 2>&1 &
+tcp_pid=$!
+trap 'kill "$mock_pid" "$reject_pid" "$success_pid" 2>/dev/null || true; sudo kill "$tcp_pid" 2>/dev/null || true' EXIT
+for attempt in $(seq 1 15); do
+  if grep -q tcp_gateway_ready "$RUNNER_TEMP/tcp-gateway.log"; then break; fi
+  sleep 1
+done
+if ! grep -q tcp_gateway_ready "$RUNNER_TEMP/tcp-gateway.log"; then
+  cat "$RUNNER_TEMP/tcp-gateway.log"
+  exit 1
+fi
 go run build/android/success-gateway.go "$RUNNER_TEMP/close-receive" "$RUNNER_TEMP/expire-session" > "$RUNNER_TEMP/success-gateway.log" 2>&1 &
 success_pid=$!
-trap 'kill "$mock_pid" "$reject_pid" "$success_pid" 2>/dev/null || true' EXIT
 adb reverse tcp:18445 tcp:18445
 adb shell input swipe 500 400 500 1500 400
 tap_field etPort
@@ -327,6 +337,13 @@ if ! adb shell /data/local/tmp/android-udp-probe; then
   exit 1
 fi
 echo 'UDP recovered after server receive stream closed'
+adb push "$RUNNER_TEMP/android-tcp-probe" /data/local/tmp/android-tcp-probe
+adb shell chmod 755 /data/local/tmp/android-tcp-probe
+if ! adb shell /data/local/tmp/android-tcp-probe; then
+  cat "$RUNNER_TEMP/tcp-gateway.log" "$RUNNER_TEMP/success-gateway.log"
+  echo 'TCP payload did not return through VPN' >&2
+  exit 1
+fi
 touch "$RUNNER_TEMP/expire-session"
 for attempt in $(seq 1 60); do
   if grep -q 'login=2' "$RUNNER_TEMP/success-gateway.log" && [ "$(grep -c 'handshake=6' "$RUNNER_TEMP/success-gateway.log" || true)" -ge 3 ]; then break; fi
@@ -344,6 +361,10 @@ if ! adb shell /data/local/tmp/android-udp-probe; then
   exit 1
 fi
 echo 'UDP recovered after session reauthentication'
+if ! adb shell /data/local/tmp/android-tcp-probe; then
+  echo 'TCP failed after reauthentication' >&2
+  exit 1
+fi
 tap_field btnToggle
 for attempt in $(seq 1 15); do
   adb shell uiautomator dump /sdcard/window.xml >/dev/null
@@ -382,4 +403,8 @@ if ! adb shell /data/local/tmp/android-udp-probe; then
   exit 1
 fi
 echo 'UDP recovered after disconnect and reconnect'
+if ! adb shell /data/local/tmp/android-tcp-probe; then
+  echo 'TCP failed after disconnect and reconnect' >&2
+  exit 1
+fi
 tap_field btnToggle
