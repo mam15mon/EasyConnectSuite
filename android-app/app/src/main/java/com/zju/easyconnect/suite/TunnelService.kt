@@ -130,9 +130,14 @@ class TunnelService : VpnService() {
         } catch (_: Exception) {
         }
 
+        val establishStarted = SystemClock.elapsedRealtime()
         val pfd = builder.establish() ?: run {
-            publish(State.Error("VPN 权限被拒绝"))
             wantConnected = false
+            terminalError = true
+            Log.e("VPN", "android_session pid=${android.os.Process.myPid()} stage=tun_establish outcome=denied elapsed_ms=${SystemClock.elapsedRealtime() - establishStarted} cancelled=false")
+            Mobile.logout()
+            publish(State.Error("VPN 权限被拒绝", retrying = false))
+            stopSelf()
             return false
         }
 
