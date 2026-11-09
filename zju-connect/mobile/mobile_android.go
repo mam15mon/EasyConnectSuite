@@ -187,7 +187,10 @@ func StartStack(fd int) {
 		return
 	}
 
-	vpnTUNStack.SetupTun(fd)
+	if err := vpnTUNStack.SetupTun(fd); err != nil {
+		log.Printf("tun descriptor setup failed: %v", err)
+		return
+	}
 
 	tunnelRunning.Store(true)
 	defer tunnelRunning.Store(false)

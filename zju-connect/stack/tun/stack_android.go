@@ -1,6 +1,7 @@
 package tun
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -23,58 +24,62 @@ type Stack struct {
 }
 
 func (s *Stack) Run() {
-	var connErr error
-	s.l3Conn, connErr = s.endpoint.client.NewL3Conn()
-	if connErr != nil {
+	op := log.BeginOperation(fmt.Sprintf("[android pid=%d] ", os.Getpid()), "android_tun_forward", nil)
+	var resultErr error
+	defer func() { op.Finish("success", resultErr) }()
+	op.Step("open_data_channel")
+	s.l3Conn, resultErr = s.endpoint.client.NewL3Conn()
+	if resultErr != nil {
+		_ = s.endpoint.readWriteCloser.Close()
 		return
 	}
-	// Read from VPN server and send to TUN stack
+	op.Step("forward_packets")
+	resultErr = forwardPackets(s.l3Conn, s.endpoint.readWriteCloser)
+}
+
+// Both directions own neither input exclusively. Closing both on the first
+// error unblocks the other direction before the session can be restarted.
+func forwardPackets(l3, device io.ReadWriteCloser) error {
+	var stop sync.Once
+	closeBoth := func() { stop.Do(func() { _ = l3.Close(); _ = device.Close() }) }
+	done := make(chan error, 1)
 	go func() {
 		buf := make([]byte, maxInboundPacketSize)
 		for {
-			n, err := s.l3Conn.Read(buf)
-			if err != nil {
-				log.Printf("Error occurred while reading from VPN server: %v", err)
-				return
+			n, err := l3.Read(buf)
+			if err == nil && n > 0 {
+				_, err = device.Write(buf[:n])
 			}
-			log.DebugPrintf("Recv: read %d bytes", n)
-			log.DebugDumpHex(buf[:n])
-
-			err = s.endpoint.Write(buf[:n])
 			if err != nil {
-				log.Printf("Error occurred while writing to TUN stack: %v", err)
+				closeBoth()
+				done <- err
 				return
 			}
 		}
 	}()
-
-	// Read from TUN stack and send to VPN server
 	buf := make([]byte, MTU)
+	var result error
 	for {
-		n, err := s.endpoint.Read(buf)
+		n, err := device.Read(buf)
 		if err != nil {
-			log.Printf("Error occurred while reading from TUN stack: %v", err)
-			return
+			result = err
+			break
 		}
-
 		header, err := ipv4.ParseHeader(buf[:n])
-		if err != nil {
+		if err != nil || (header.Protocol != syscall.IPPROTO_TCP && header.Protocol != syscall.IPPROTO_UDP) {
 			continue
 		}
-
-		// Filter out non-TCP/UDP packets otherwise error may occur
-		if header.Protocol != syscall.IPPROTO_TCP && header.Protocol != syscall.IPPROTO_UDP {
-			continue
+		if _, err = l3.Write(buf[:n]); err != nil {
+			result = err
+			break
 		}
-
-		n, err = s.l3Conn.Write(buf[:n])
-		if err != nil {
-			log.Printf("Error occurred while writing to VPN server: %v", err)
-			return
-		}
-		log.DebugPrintf("Send: wrote %d bytes", n)
-		log.DebugDumpHex(buf[:n])
 	}
+	closeBoth()
+	readErr := <-done
+	if readErr != nil && result != nil {
+		log.Printf("android_tun_forward receive_error=%T send_error=%T", readErr, result)
+	}
+	return result
 }
 
 type Endpoint struct {
@@ -139,6 +144,15 @@ func NewStack(client client.Client, _ bool, _ bool, _ []client.IPResource) (*Sta
 	return s, nil
 }
 
-func (s *Stack) SetupTun(fd int) {
-	s.endpoint.readWriteCloser = os.NewFile(uintptr(fd), "tun")
+func (s *Stack) SetupTun(fd int) error {
+	duplicate, err := syscall.Dup(fd)
+	if err != nil {
+		return err
+	}
+	if err = syscall.SetNonblock(duplicate, true); err != nil {
+		_ = syscall.Close(duplicate)
+		return err
+	}
+	s.endpoint.readWriteCloser = os.NewFile(uintptr(duplicate), "tun")
+	return nil
 }
