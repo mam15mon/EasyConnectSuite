@@ -365,6 +365,16 @@ if ! adb shell /data/local/tmp/android-tcp-probe; then
   echo 'TCP failed after reauthentication' >&2
   exit 1
 fi
+# Leave the app in the background while the VPN service continues forwarding.
+adb shell input keyevent KEYCODE_HOME
+sleep 20
+if ! adb shell /data/local/tmp/android-udp-probe || ! adb shell /data/local/tmp/android-tcp-probe; then
+  adb logcat -d -s VPN:I GoLog:I AndroidRuntime:E
+  echo 'VPN traffic failed while the app was in the background' >&2
+  exit 1
+fi
+echo 'UDP and TCP remained available while app was in background'
+adb shell am start -n com.zju.easyconnect.suite/.MainActivity >/dev/null
 tap_field btnToggle
 for attempt in $(seq 1 15); do
   adb shell uiautomator dump /sdcard/window.xml >/dev/null
