@@ -418,8 +418,7 @@ if ! adb shell /data/local/tmp/android-udp-probe || ! adb shell /data/local/tmp/
 fi
 echo 'UDP and TCP remained available after idle keepalive interval'
 adb shell am start -n com.zju.easyconnect.suite/.MainActivity >/dev/null
-adb shell input keyevent KEYCODE_BACK
-adb shell input swipe 160 550 160 100 400
+adb shell input swipe 160 350 160 100 400
 for attempt in $(seq 1 15); do
   adb shell uiautomator dump /sdcard/window.xml >/dev/null
   if adb exec-out cat /sdcard/window.xml | grep -q 'com.zju.easyconnect.suite:id/btnToggle'; then break; fi
@@ -429,7 +428,7 @@ for attempt in $(seq 1 15); do
     echo 'App did not return to the foreground' >&2
     exit 1
   fi
-  adb shell input swipe 160 550 160 100 400
+  adb shell input swipe 160 350 160 100 400
   sleep 1
 done
 tap_field btnToggle
