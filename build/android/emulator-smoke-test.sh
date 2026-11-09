@@ -375,10 +375,13 @@ if ! adb shell /data/local/tmp/android-udp-probe || ! adb shell /data/local/tmp/
 fi
 echo 'UDP and TCP remained available while app was in background'
 adb shell am start -n com.zju.easyconnect.suite/.MainActivity >/dev/null
+adb shell input swipe 500 1500 500 400 400
 for attempt in $(seq 1 15); do
   adb shell uiautomator dump /sdcard/window.xml >/dev/null
   if adb exec-out cat /sdcard/window.xml | grep -q 'com.zju.easyconnect.suite:id/btnToggle'; then break; fi
   if [ "$attempt" -eq 15 ]; then
+    adb exec-out cat /sdcard/window.xml
+    adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' || true
     echo 'App did not return to the foreground' >&2
     exit 1
   fi
