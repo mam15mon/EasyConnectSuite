@@ -1,6 +1,6 @@
 # TopSAP Go 接入与测试
 
-TopSAP 标准模式现已接入同一 Windows EXE。协议核心在 `engine/topsec`，适配器在 `engine/topsec_client.go`；认证、资源获取和数据通道均由 Go 实现，不调用官方客户端、DLL、Python、Docker 或 MITM。每条配置独立管理连接、代理端口、TUN 槽位和停止流程。
+TopSAP 标准模式已接入 Windows 和 macOS 桌面客户端。协议核心在 `engine/topsec`，适配器在 `engine/topsec_client.go`；认证、资源获取和数据通道均由 Go 实现，不调用官方客户端、DLL、Python、Docker 或 MITM。每条配置独立管理连接、代理端口、TUN 槽位和停止流程。
 
 本轮依据是本机 TopSAP 3.6.6.18.64.1 的成功登录和内网访问样本。已确认 HTTPS 认证字段、cookie、资源缓存 HASH、Windows PCI 网卡设备标识及 IPv4 数据分帧。Go 的设备字段与本机官方服务当前计算结果一致，Go 解析器能读取实际 auth_param 和资源缓存。私有样本、凭据和设备标识均在仓库外。
 
@@ -15,7 +15,7 @@ TopSAP 标准模式现已接入同一 Windows EXE。协议核心在 `engine/tops
 ## 支持边界
 
 - 支持账号密码、standard TLS、非压缩 IPv4 L3、`na`/`ip` 网络资源和连续 IPv4 掩码。
-- 使用已验证的 Windows PCI 网卡设备标识路径；未实现原生硬盘标识路径或无 PCI 网卡的其他标识方式。
+- Windows 使用已验证的 PCI 网卡设备标识路径；未实现原生硬盘标识路径或无 PCI 网卡的其他标识方式。macOS 设备标识依据官方客户端静态分析实现，已覆盖单元测试，真实网关尚待验证。
 - 未实现验证码、短信、浏览器认证、国密、客户端证书、端点安全检查、其他网络资源或非空域名/DNS 配置格式。遇到这些模式明确报错，避免猜参数或扩大路由。
 - 网关未返回完整资源列表时停止启动；不从虚拟地址推导资源，也不添加默认路由。
 - 认证被明确拒绝时保留服务器 Ret 数字并停止重试，不将任意错误解释成密码错误。
@@ -36,10 +36,10 @@ TopSAP 标准模式现已接入同一 Windows EXE。协议核心在 `engine/tops
 | 证书策略 | 默认不发送凭据给不受信任证书；手动忽略可连接；公钥不一致仍拒绝 |
 | 三协议管理 | 模拟 EasyConnect/UniVPN/TopSAP 并发，停止 TopSAP 保留另外两条会话及独立端口/槽位 |
 | Go 检查 | 根模块 `go test ./...`、`go vet ./...`、`go test -race ./...` 通过 |
-| Windows 交付包 | workspace-v4 前端与 windows/amd64 生产构建通过，Compress=false；文件 20,695,552 字节 |
+| 历史 Windows 交付包 | workspace-v4 前端与 windows/amd64 生产构建通过，Compress=false；文件 20,695,552 字节 |
 | 实际 Go EXE | 用户确认 fix4 登录和内网访问成功，日志出现双向数据；新版长期稳定性、真实 UDP 及系统 TUN 共存仍待验证 |
 
-当前构建命令：`wails build -m -nosyncgomod -trimpath`，输出 `build/bin/VPN.exe`，不使用 UPX。当前交付大小、哈希及 UI 验收见 [multi-vpn-workspace.md](multi-vpn-workspace.md)。
+当前构建命令：`wails build -m -nosyncgomod -trimpath`，输出 `build/bin/VPN.exe`，不使用 UPX。历史交付大小、哈希及 UI 验收见 [multi-vpn-workspace.md](multi-vpn-workspace.md)。
 
 历史 workspace-v4 交付文件 SHA-256：`8F0FE78754989EC427853D6804B0DECDC0E2A06C8583E3AEFF6609CCF74AABB5`。
 

@@ -1,8 +1,8 @@
 # 多 VPN 双栏工作台与稳定性日志
 
-交付包：`build/bin/VPN.exe`，Windows amd64 生产构建，20,698,624 字节，Compress=false，未使用 UPX。包含双栏界面、稳定性日志、多 VPN 托盘，以及旧启动结果覆盖新会话、选择队列期间资源错配、日志目录失败回滚越界的修复。保留 fix4 的 TopSAP 完整配置虚拟 IP 修复；用户已确认 fix4 能访问此前失败的内网资源。
+历史交付记录：当时的 `build/bin/VPN.exe`，Windows amd64 生产构建，20,698,624 字节，Compress=false，未使用 UPX。包含双栏界面、稳定性日志、多 VPN 托盘，以及旧启动结果覆盖新会话、选择队列期间资源错配、日志目录失败回滚越界的修复。保留 fix4 的 TopSAP 完整配置虚拟 IP 修复；用户已确认 fix4 能访问此前失败的内网资源。
 
-SHA-256：`3C759BAC1AFE0FDB59524773DE564CE82DC0B680D3C124FD14A01A524B99A63A`。
+当时的 SHA-256（不代表当前构建）：`3C759BAC1AFE0FDB59524773DE564CE82DC0B680D3C124FD14A01A524B99A63A`。
 
 构建：`wails build -m -nosyncgomod -trimpath`。
 
