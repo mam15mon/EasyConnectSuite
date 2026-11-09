@@ -47,6 +47,9 @@ func DebugLogin(server string, username string, password string) string {
 }
 
 func Logout() {
+	op := log.BeginOperation(fmt.Sprintf("[android pid=%d] ", os.Getpid()), "android_logout", nil)
+	defer op.Finish("success", nil)
+	op.Step("acquire_client_lock")
 	vpnClientMu.Lock()
 	loginGeneration++
 	if loginCancelled != nil {
@@ -56,9 +59,11 @@ func Logout() {
 	oldClient, oldUnderlay := vpnClient, vpnUnderlay
 	vpnClient, vpnUnderlay = nil, nil
 	vpnClientMu.Unlock()
+	op.Step("close_client")
 	if oldClient != nil {
 		oldClient.Close()
 	}
+	op.Step("close_underlay")
 	if oldUnderlay != nil {
 		_ = oldUnderlay.Close()
 	}
@@ -176,9 +181,13 @@ func TunnelRunning() bool {
 }
 
 func StopStack() {
+	op := log.BeginOperation(fmt.Sprintf("[android pid=%d] ", os.Getpid()), "android_tun_stop", nil)
+	defer op.Finish("success", nil)
+	op.Step("acquire_tunnel_lock")
 	tunnelMu.Lock()
 	stack := activeTunnel
 	tunnelMu.Unlock()
+	op.Step("close_tun")
 	if stack != nil {
 		if err := stack.Stop(); err != nil {
 			log.Printf("[android pid=%d] android_tun_stop error_type=%T", os.Getpid(), err)
