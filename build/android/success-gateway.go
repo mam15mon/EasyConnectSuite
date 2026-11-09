@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"math/big"
@@ -19,6 +20,8 @@ import (
 	"strings"
 	"time"
 )
+
+var udpReplies = make(chan []byte, 8)
 
 func main() {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -67,7 +70,50 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 			return
 		}
 		fmt.Fprintf(os.Stdout, "handshake=%d\n", header[0])
-		_, _ = io.Copy(io.Discard, reader)
+		switch header[0] {
+		case 5:
+			for {
+				ip := make([]byte, 20)
+				if _, err := io.ReadFull(reader, ip); err != nil {
+					return
+				}
+				length := int(binary.BigEndian.Uint16(ip[2:4]))
+				if ip[0] != 0x45 || ip[9] != 17 || length < 28 || length > 1500 {
+					return
+				}
+				packet := make([]byte, length)
+				copy(packet, ip)
+				if _, err := io.ReadFull(reader, packet[20:]); err != nil {
+					return
+				}
+				if string(packet[28:]) != "ecs-udp-test" {
+					continue
+				}
+				copy(packet[12:16], ip[16:20])
+				copy(packet[16:20], ip[12:16])
+				copy(packet[20:22], packet[22:24])
+				copy(packet[22:24], []byte{0x30, 0x39})
+				packet[10], packet[11], packet[26], packet[27] = 0, 0, 0, 0
+				var sum uint32
+				for i := 0; i < 20; i += 2 {
+					sum += uint32(binary.BigEndian.Uint16(packet[i : i+2]))
+				}
+				for sum>>16 != 0 {
+					sum = sum&0xffff + sum>>16
+				}
+				binary.BigEndian.PutUint16(packet[10:12], ^uint16(sum))
+				udpReplies <- packet
+				fmt.Fprintln(os.Stdout, "udp_echo")
+			}
+		case 6:
+			for packet := range udpReplies {
+				if _, err := conn.Write(packet); err != nil {
+					return
+				}
+			}
+		default:
+			_, _ = io.Copy(io.Discard, reader)
+		}
 		return
 	}
 	request, err := http.ReadRequest(reader)
