@@ -309,6 +309,23 @@ if ! adb shell /data/local/tmp/android-udp-probe; then
   echo 'UDP payload did not return through VPN' >&2
   exit 1
 fi
+# The first receive stream closes after the first echo. Wait for a new receive
+# stream and confirm another datagram traverses the recovered channel.
+for attempt in $(seq 1 45); do
+  if [ "$(grep -c 'handshake=6' "$RUNNER_TEMP/success-gateway.log" || true)" -ge 2 ]; then break; fi
+  sleep 1
+done
+if [ "$(grep -c 'handshake=6' "$RUNNER_TEMP/success-gateway.log" || true)" -lt 2 ]; then
+  cat "$RUNNER_TEMP/success-gateway.log"
+  echo 'Receive channel did not recover after server close' >&2
+  exit 1
+fi
+if ! adb shell /data/local/tmp/android-udp-probe; then
+  cat "$RUNNER_TEMP/success-gateway.log"
+  echo 'UDP failed after receive channel recovery' >&2
+  exit 1
+fi
+echo 'UDP recovered after server receive stream closed'
 tap_field btnToggle
 for attempt in $(seq 1 15); do
   adb shell uiautomator dump /sdcard/window.xml >/dev/null

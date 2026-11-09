@@ -18,10 +18,12 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 var udpReplies = make(chan []byte, 8)
+var recvCount atomic.Int32
 
 func main() {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -107,6 +109,14 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 				fmt.Fprintln(os.Stdout, "udp_echo")
 			}
 		case 6:
+			if recvCount.Add(1) == 1 {
+				packet := <-udpReplies
+				if _, err := conn.Write(packet); err != nil {
+					return
+				}
+				fmt.Fprintln(os.Stdout, "first_receive_closed")
+				return
+			}
 			for packet := range udpReplies {
 				if _, err := conn.Write(packet); err != nil {
 					return
