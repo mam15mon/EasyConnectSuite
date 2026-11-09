@@ -1,8 +1,10 @@
 package easyconnect
 
 import (
+	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 
 	"EasyConnectSuite/vpncore/log"
@@ -189,6 +191,9 @@ func (c *L3Conn) Write(p []byte) (n int, err error) {
 }
 
 func (c *L3Conn) Close() error {
+	op := log.BeginOperation(fmt.Sprintf("[android_l3 pid=%d conn=%p] ", os.Getpid(), c), "l3_close", nil)
+	defer op.Finish("success", nil)
+	op.Step("acquire_state_lock")
 	c.stateLock.Lock()
 	if c.closed {
 		c.stateLock.Unlock()
@@ -199,7 +204,9 @@ func (c *L3Conn) Close() error {
 	c.sendConn = nil
 	c.recvConn = nil
 	c.stateLock.Unlock()
+	op.Step("close_send")
 	safeClose(send)
+	op.Step("close_receive")
 	safeClose(recv)
 	return nil
 }
