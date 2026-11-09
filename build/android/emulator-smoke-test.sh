@@ -182,3 +182,44 @@ if [ ! -f "$RUNNER_TEMP/mock-closed" ]; then
   exit 1
 fi
 printf '%s\n' 'Mock gateway observed the authentication connection close'
+
+# Confirm an explicit authentication rejection stops retries.
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$RUNNER_TEMP/mock-key.pem" \
+  -out "$RUNNER_TEMP/mock-cert.pem" -days 1 -subj '/CN=localhost' >/dev/null 2>&1
+modulus=$(openssl rsa -in "$RUNNER_TEMP/mock-key.pem" -noout -modulus | cut -d= -f2)
+python3 build/android/reject-gateway.py "$RUNNER_TEMP/mock-cert.pem" "$RUNNER_TEMP/mock-key.pem" "$modulus" "$RUNNER_TEMP/mock-rejections" &
+reject_pid=$!
+trap 'kill "$mock_pid" "$reject_pid" 2>/dev/null || true' EXIT
+adb reverse tcp:18444 tcp:18444
+adb shell input swipe 500 400 500 1500 400
+tap_field etPort
+adb shell input keyevent 123
+adb shell input keyevent 67 67 67 67 67
+adb shell input text 18444
+adb shell input keyevent 4
+adb shell input swipe 500 1500 500 400 400
+tap_field btnToggle
+for attempt in $(seq 1 30); do
+  if [ -s "$RUNNER_TEMP/mock-rejections" ]; then break; fi
+  sleep 1
+done
+if [ ! -s "$RUNNER_TEMP/mock-rejections" ]; then
+  echo 'Mock gateway did not receive password authentication' >&2
+  exit 1
+fi
+sleep 8
+if [ "$(wc -l < "$RUNNER_TEMP/mock-rejections")" -ne 1 ]; then
+  echo 'Authentication rejection was retried' >&2
+  exit 1
+fi
+adb shell uiautomator dump /sdcard/window.xml >/dev/null
+adb exec-out cat /sdcard/window.xml > "$RUNNER_TEMP/android-window.xml"
+python3 - "$RUNNER_TEMP/android-window.xml" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+status = next(node for node in root.iter("node") if node.get("resource-id") == "com.zju.easyconnect.suite:id/tvStatus")
+if status.get("text") != "出错:认证被服务器拒绝":
+    raise SystemExit(f"Unexpected rejection status: {status.get('text')!r}")
+print("Explicit rejection stopped retries and is shown to the user")
+PY
