@@ -270,7 +270,7 @@ print("Explicit rejection stopped retries and is shown to the user")
 PY
 
 # Complete authentication and establish a real emulator VPN interface.
-go run build/android/success-gateway.go "$RUNNER_TEMP/close-receive" > "$RUNNER_TEMP/success-gateway.log" 2>&1 &
+go run build/android/success-gateway.go "$RUNNER_TEMP/close-receive" "$RUNNER_TEMP/expire-session" > "$RUNNER_TEMP/success-gateway.log" 2>&1 &
 success_pid=$!
 trap 'kill "$mock_pid" "$reject_pid" "$success_pid" 2>/dev/null || true' EXIT
 adb reverse tcp:18445 tcp:18445
@@ -327,6 +327,23 @@ if ! adb shell /data/local/tmp/android-udp-probe; then
   exit 1
 fi
 echo 'UDP recovered after server receive stream closed'
+touch "$RUNNER_TEMP/expire-session"
+for attempt in $(seq 1 60); do
+  if grep -q 'login=2' "$RUNNER_TEMP/success-gateway.log" && [ "$(grep -c 'handshake=6' "$RUNNER_TEMP/success-gateway.log" || true)" -ge 3 ]; then break; fi
+  sleep 1
+done
+if ! grep -q 'login=2' "$RUNNER_TEMP/success-gateway.log" || [ "$(grep -c 'handshake=6' "$RUNNER_TEMP/success-gateway.log" || true)" -lt 3 ]; then
+  cat "$RUNNER_TEMP/success-gateway.log"
+  adb logcat -d -s VPN:I GoLog:I AndroidRuntime:E
+  echo 'VPN did not reauthenticate after session expiration' >&2
+  exit 1
+fi
+if ! adb shell /data/local/tmp/android-udp-probe; then
+  cat "$RUNNER_TEMP/success-gateway.log"
+  echo 'UDP failed after reauthentication' >&2
+  exit 1
+fi
+echo 'UDP recovered after session reauthentication'
 tap_field btnToggle
 for attempt in $(seq 1 15); do
   adb shell uiautomator dump /sdcard/window.xml >/dev/null

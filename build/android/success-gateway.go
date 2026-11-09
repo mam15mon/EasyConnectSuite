@@ -24,6 +24,7 @@ import (
 
 var udpReplies = make(chan []byte, 8)
 var recvCount atomic.Int32
+var loginCount atomic.Int32
 
 func main() {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -60,6 +61,13 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 		header := make([]byte, 64)
 		if _, err = io.ReadFull(reader, header); err != nil {
 			return
+		}
+		if header[0] == 6 && loginCount.Load() == 1 {
+			if _, err := os.Stat(os.Args[2]); err == nil {
+				_, _ = conn.Write([]byte{8})
+				fmt.Fprintln(os.Stdout, "expired_receive_rejected")
+				return
+			}
 		}
 		reply := []byte{0, 0, 0, 0, 10, 90, 0, 2}
 		switch header[0] {
@@ -124,9 +132,19 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 				fmt.Fprintln(os.Stdout, "first_receive_closed")
 				return
 			}
-			for packet := range udpReplies {
-				if _, err := conn.Write(packet); err != nil {
-					return
+			for {
+				select {
+				case packet := <-udpReplies:
+					if _, err := conn.Write(packet); err != nil {
+						return
+					}
+				case <-time.After(100 * time.Millisecond):
+					if loginCount.Load() == 1 {
+						if _, err := os.Stat(os.Args[2]); err == nil {
+							fmt.Fprintln(os.Stdout, "expired_receive_closed")
+							return
+						}
+					}
 				}
 			}
 		default:
@@ -143,7 +161,9 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 	body := "<Conf><Mline enable=\"0\" list=\"\"/></Conf>"
 	switch request.URL.Path {
 	case "/por/login_auth.csp":
-		body = fmt.Sprintf("<Auth><TwfID>0000000000000001</TwfID><RSA_ENCRYPT_KEY>%s</RSA_ENCRYPT_KEY><RSA_ENCRYPT_EXP>65537</RSA_ENCRYPT_EXP><RndImg>0</RndImg></Auth>", key.N.Text(16))
+		id := loginCount.Add(1)
+		fmt.Fprintf(os.Stdout, "login=%d\n", id)
+		body = fmt.Sprintf("<Auth><TwfID>%016d</TwfID><RSA_ENCRYPT_KEY>%s</RSA_ENCRYPT_KEY><RSA_ENCRYPT_EXP>65537</RSA_ENCRYPT_EXP><RndImg>0</RndImg></Auth>", id, key.N.Text(16))
 	case "/por/login_psw.csp":
 		body = "<Auth><Result>1</Result></Auth>"
 	case "/por/update_session.csp":
