@@ -43,7 +43,7 @@ class MainActivity : Activity() {
 
         toggleButton.setOnClickListener {
             if (TunnelService.active) {
-                stopService(Intent(this, TunnelService::class.java))
+                startService(Intent(this, TunnelService::class.java))
             } else {
                 val s = server.text.toString().trim()
                 val p = port.text.toString().trim().ifEmpty { "443" }
