@@ -10,8 +10,8 @@ import (
 
 type L3Conn struct {
 	easyConnectClient *Client
-	stateLock sync.Mutex
-	closed bool
+	stateLock         sync.Mutex
+	closed            bool
 
 	sendConn     io.WriteCloser
 	sendLock     sync.Mutex
@@ -25,19 +25,33 @@ type L3Conn struct {
 func (c *L3Conn) connection(send bool) (io.Closer, bool) {
 	c.stateLock.Lock()
 	defer c.stateLock.Unlock()
-	if c.closed { return nil, false }
-	if send { return c.sendConn, true }
+	if c.closed {
+		return nil, false
+	}
+	if send {
+		return c.sendConn, true
+	}
 	return c.recvConn, true
 }
 
 func (c *L3Conn) setConnection(send bool, conn io.Closer) bool {
 	c.stateLock.Lock()
 	defer c.stateLock.Unlock()
-	if c.closed { return false }
+	if c.closed {
+		return false
+	}
 	if send {
-		if conn == nil { c.sendConn = nil } else { c.sendConn = conn.(io.WriteCloser) }
+		if conn == nil {
+			c.sendConn = nil
+		} else {
+			c.sendConn = conn.(io.WriteCloser)
+		}
 	} else {
-		if conn == nil { c.recvConn = nil } else { c.recvConn = conn.(io.ReadCloser) }
+		if conn == nil {
+			c.recvConn = nil
+		} else {
+			c.recvConn = conn.(io.ReadCloser)
+		}
 	}
 	return true
 }
@@ -66,7 +80,9 @@ func (c *L3Conn) Read(p []byte) (n int, err error) {
 
 	for {
 		current, open := c.connection(false)
-		if !open { return 0, net.ErrClosed }
+		if !open {
+			return 0, net.ErrClosed
+		}
 		if current == nil {
 			// Previous call left the conn nil after a failed re-dial:
 			// re-dial instead of calling Read on a nil interface (that
@@ -75,7 +91,10 @@ func (c *L3Conn) Read(p []byte) (n int, err error) {
 			if dialErr != nil {
 				return 0, dialErr
 			}
-			if !c.setConnection(false, newConn) { safeClose(newConn); return 0, net.ErrClosed }
+			if !c.setConnection(false, newConn) {
+				safeClose(newConn)
+				return 0, net.ErrClosed
+			}
 			current = newConn
 		}
 
@@ -83,7 +102,9 @@ func (c *L3Conn) Read(p []byte) (n int, err error) {
 		if err == nil {
 			return
 		}
-		if _, open := c.connection(false); !open { return n, net.ErrClosed }
+		if _, open := c.connection(false); !open {
+			return n, net.ErrClosed
+		}
 		if c.recvErrCount >= 5 {
 			return
 		}
@@ -92,14 +113,19 @@ func (c *L3Conn) Read(p []byte) (n int, err error) {
 
 		// Do handshake again and create a new recvConn
 		safeClose(current)
-		if !c.setConnection(false, nil) { return 0, net.ErrClosed }
+		if !c.setConnection(false, nil) {
+			return 0, net.ErrClosed
+		}
 		newConn, dialErr := c.easyConnectClient.RecvConn()
 		if dialErr != nil {
 			// Old token rejected by the server — propagate so the caller
 			// triggers the re-login campaign.
 			return 0, dialErr
 		}
-		if !c.setConnection(false, newConn) { safeClose(newConn); return 0, net.ErrClosed }
+		if !c.setConnection(false, newConn) {
+			safeClose(newConn)
+			return 0, net.ErrClosed
+		}
 		c.recvErrCount++
 
 		// loop: actually retry the read on the fresh connection
@@ -113,7 +139,9 @@ func (c *L3Conn) Write(p []byte) (n int, err error) {
 
 	for {
 		current, open := c.connection(true)
-		if !open { return 0, net.ErrClosed }
+		if !open {
+			return 0, net.ErrClosed
+		}
 		if current == nil {
 			// Previous call left the conn nil after a failed re-dial
 			// (network down): re-dial, and on failure propagate the
@@ -123,7 +151,10 @@ func (c *L3Conn) Write(p []byte) (n int, err error) {
 			if dialErr != nil {
 				return 0, dialErr
 			}
-			if !c.setConnection(true, newConn) { safeClose(newConn); return 0, net.ErrClosed }
+			if !c.setConnection(true, newConn) {
+				safeClose(newConn)
+				return 0, net.ErrClosed
+			}
 			current = newConn
 		}
 
@@ -131,7 +162,9 @@ func (c *L3Conn) Write(p []byte) (n int, err error) {
 		if err == nil {
 			return
 		}
-		if _, open := c.connection(true); !open { return n, net.ErrClosed }
+		if _, open := c.connection(true); !open {
+			return n, net.ErrClosed
+		}
 		if c.sendErrCount >= 5 {
 			return
 		}
@@ -140,19 +173,27 @@ func (c *L3Conn) Write(p []byte) (n int, err error) {
 
 		// Do handshake again and create a new sendConn
 		safeClose(current)
-		if !c.setConnection(true, nil) { return 0, net.ErrClosed }
+		if !c.setConnection(true, nil) {
+			return 0, net.ErrClosed
+		}
 		newConn, dialErr := c.easyConnectClient.SendConn()
 		if dialErr != nil {
 			return 0, dialErr
 		}
-		if !c.setConnection(true, newConn) { safeClose(newConn); return 0, net.ErrClosed }
+		if !c.setConnection(true, newConn) {
+			safeClose(newConn)
+			return 0, net.ErrClosed
+		}
 		c.sendErrCount++
 	}
 }
 
 func (c *L3Conn) Close() error {
 	c.stateLock.Lock()
-	if c.closed { c.stateLock.Unlock(); return nil }
+	if c.closed {
+		c.stateLock.Unlock()
+		return nil
+	}
 	c.closed = true
 	send, recv := c.sendConn, c.recvConn
 	c.sendConn = nil
