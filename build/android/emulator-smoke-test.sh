@@ -20,3 +20,32 @@ if status.get("text") != "未连接":
     raise SystemExit(f"Unexpected initial status: {status.get('text')!r}")
 print("App launched with the expected fields and disconnected status")
 PY
+
+# Scroll to the connection button, then verify empty input is rejected.
+adb shell input swipe 500 1500 500 400 400
+adb shell uiautomator dump /sdcard/window.xml >/dev/null
+adb exec-out cat /sdcard/window.xml > "$RUNNER_TEMP/android-window.xml"
+coordinates=$(python3 - "$RUNNER_TEMP/android-window.xml" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+button = next(node for node in root.iter("node") if node.get("resource-id") == "com.zju.easyconnect.suite:id/btnToggle")
+left, top, right, bottom = map(int, re.findall(r"\d+", button.get("bounds")))
+print((left + right) // 2, (top + bottom) // 2)
+PY
+)
+adb shell input tap $coordinates
+adb shell uiautomator dump /sdcard/window.xml >/dev/null
+adb exec-out cat /sdcard/window.xml > "$RUNNER_TEMP/android-window.xml"
+python3 - "$RUNNER_TEMP/android-window.xml" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+status = next(node for node in root.iter("node") if node.get("resource-id") == "com.zju.easyconnect.suite:id/tvStatus")
+if status.get("text") != "服务器地址和账号不能为空":
+    raise SystemExit(f"Unexpected validation status: {status.get('text')!r}")
+print("Empty server and account are rejected")
+PY
