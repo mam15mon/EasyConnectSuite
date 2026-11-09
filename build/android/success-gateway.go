@@ -91,8 +91,9 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 				}
 				copy(packet[12:16], ip[16:20])
 				copy(packet[16:20], ip[12:16])
+				sourcePort := append([]byte(nil), packet[20:22]...)
 				copy(packet[20:22], packet[22:24])
-				copy(packet[22:24], []byte{0x30, 0x39})
+				copy(packet[22:24], sourcePort)
 				packet[10], packet[11], packet[26], packet[27] = 0, 0, 0, 0
 				var sum uint32
 				for i := 0; i < 20; i += 2 {
