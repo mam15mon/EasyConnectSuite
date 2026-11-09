@@ -1,11 +1,15 @@
 package easyconnect
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	stdlog "log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -93,5 +97,42 @@ func TestRequestConfigRejectsHTTPError(t *testing.T) {
 	config, err := c.requestConfig()
 	if err == nil || !strings.Contains(err.Error(), "401") || config != "" {
 		t.Fatalf("HTTP error returned as configuration: body=%q error=%v", config, err)
+	}
+}
+
+// Signal the completed token request so cancellation occurs before the IP delay ends.
+type tokenLogSignal struct {
+	once  sync.Once
+	ready chan struct{}
+}
+
+func (w *tokenLogSignal) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte("Tunnel token received")) {
+		w.once.Do(func() { close(w.ready) })
+	}
+	return len(p), nil
+}
+
+func TestCloseCancelsWaitBeforeIPRequest(t *testing.T) {
+	c, _, _, _ := reloginGateway(t, "")
+	signal := &tokenLogSignal{ready: make(chan struct{})}
+	original := stdlog.Writer()
+	stdlog.SetOutput(io.MultiWriter(original, signal))
+	defer stdlog.SetOutput(original)
+	done := make(chan error, 1)
+	go func() { done <- c.Setup() }()
+	select {
+	case <-signal.ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("token request did not complete")
+	}
+	c.lifecycleCancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("setup error = %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("setup did not cancel during the wait before IP request")
 	}
 }
