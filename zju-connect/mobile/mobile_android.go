@@ -19,6 +19,7 @@ var vpnUnderlay *underlay.Dialer
 var vpnClientMu sync.Mutex
 var loginMu sync.Mutex
 var tunnelRunning atomic.Bool
+var loginRejected atomic.Bool
 var loginGeneration uint64
 var loginCancelled chan struct{}
 
@@ -61,9 +62,14 @@ func Logout() {
 	}
 }
 
+func LoginRejected() bool {
+	return loginRejected.Load()
+}
+
 func login(server string, username string, password string, totpSecret string) string {
 	loginMu.Lock()
 	defer loginMu.Unlock()
+	loginRejected.Store(false)
 
 	vpnClientMu.Lock()
 	loginGeneration++
@@ -134,6 +140,9 @@ func login(server string, username string, password string, totpSecret string) s
 	vpnClientMu.Unlock()
 	newClient.Close()
 	_ = newUnderlay.Close()
+	if errors.Is(err, easyconnect.ErrLoginRejected) {
+		loginRejected.Store(true)
+	}
 	if errors.Is(err, context.Canceled) {
 		resultErr = context.Canceled
 	} else {
