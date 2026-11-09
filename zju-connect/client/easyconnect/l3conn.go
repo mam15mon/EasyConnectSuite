@@ -101,6 +101,13 @@ func (c *L3Conn) Read(p []byte) (n int, err error) {
 		}
 
 		n, err = current.(io.ReadCloser).Read(p)
+		if n > 0 && err != nil {
+			log.Printf("receive stream ended after delivering data: error_type=%T", err)
+			safeClose(current)
+			c.setConnection(false, nil)
+			c.recvErrCount = 0
+			return n, nil
+		}
 		if err == nil {
 			if n > 0 {
 				c.recvErrCount = 0
@@ -164,6 +171,10 @@ func (c *L3Conn) Write(p []byte) (n int, err error) {
 		}
 
 		n, err = current.(io.WriteCloser).Write(p)
+		if n > 0 && err != nil {
+			log.Printf("send stream failed after partial write: error_type=%T", err)
+			return n, err
+		}
 		if err == nil {
 			if n > 0 {
 				c.sendErrCount = 0
