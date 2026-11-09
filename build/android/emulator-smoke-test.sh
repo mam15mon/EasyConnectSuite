@@ -393,6 +393,30 @@ if ! adb shell /data/local/tmp/android-udp-probe || ! adb shell /data/local/tmp/
   exit 1
 fi
 echo 'UDP and TCP remained available while app was in background'
+# Observe a complete keepalive interval without probe traffic. CPU time is a
+# diagnostic measurement of this emulator run, not a device power estimate.
+idle_pid=$(adb shell pidof com.zju.easyconnect.suite | tr -d '\r')
+idle_before=$(adb shell cat "/proc/$idle_pid/stat" | tr -d '\r')
+keepalive_before=$(grep -c 'session_keepalive' "$RUNNER_TEMP/success-gateway.log" || true)
+sleep 70
+idle_after=$(adb shell cat "/proc/$idle_pid/stat" | tr -d '\r')
+keepalive_after=$(grep -c 'session_keepalive' "$RUNNER_TEMP/success-gateway.log" || true)
+python3 - "$idle_before" "$idle_after" "$keepalive_before" "$keepalive_after" <<'PY'
+import sys
+def cpu_ticks(stat):
+    fields = stat.rsplit(')', 1)[1].split()
+    return int(fields[11]) + int(fields[12])
+heartbeats = int(sys.argv[4]) - int(sys.argv[3])
+if not 1 <= heartbeats <= 2:
+    raise SystemExit(f'Unexpected keepalive count during idle window: {heartbeats}')
+print(f'70-second emulator idle: keepalives={heartbeats}, process_cpu_ticks={cpu_ticks(sys.argv[2]) - cpu_ticks(sys.argv[1])}')
+PY
+if ! adb shell /data/local/tmp/android-udp-probe || ! adb shell /data/local/tmp/android-tcp-probe; then
+  adb logcat -d -s VPN:I GoLog:I AndroidRuntime:E
+  echo 'VPN traffic failed after the idle keepalive interval' >&2
+  exit 1
+fi
+echo 'UDP and TCP remained available after idle keepalive interval'
 adb shell am start -n com.zju.easyconnect.suite/.MainActivity >/dev/null
 adb shell input keyevent KEYCODE_BACK
 adb shell input swipe 160 550 160 100 400
