@@ -226,7 +226,7 @@ if [ ! -f "$RUNNER_TEMP/mock-closed1" ]; then
   echo 'Second session remained open after cancellation' >&2
   exit 1
 fi
-printf '%s\n' 'Both authentication sessions closed after their respective cancellations' 
+printf '%s\n' 'Both authentication sessions closed after their respective cancellations'
 
 # Confirm an explicit authentication rejection stops retries.
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$RUNNER_TEMP/mock-key.pem" \
