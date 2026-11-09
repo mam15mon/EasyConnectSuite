@@ -3,6 +3,8 @@ package tun
 import (
 	"io"
 	"net"
+	"os"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -48,5 +50,32 @@ func TestForwardPacketsTransfersBothDirections(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("device close did not stop forwarding")
+	}
+}
+
+func TestServerDisconnectUnblocksDuplicatedDeviceDescriptor(t *testing.T) {
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := os.NewFile(uintptr(fds[0]), "original")
+	peer := os.NewFile(uintptr(fds[1]), "peer")
+	defer original.Close()
+	defer peer.Close()
+	stack := &Stack{endpoint: &Endpoint{}}
+	if err := stack.SetupTun(fds[0]); err != nil {
+		t.Fatal(err)
+	}
+	local, remote := net.Pipe()
+	done := make(chan error, 1)
+	go func() { done <- forwardPackets(local, stack.endpoint.readWriteCloser) }()
+	remote.Close()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("closing duplicated device did not unblock read")
+	}
+	if _, err := original.Write([]byte("x")); err != nil {
+		t.Fatalf("original descriptor was closed: %v", err)
 	}
 }
