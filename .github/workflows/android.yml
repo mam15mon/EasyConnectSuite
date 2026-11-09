@@ -1,0 +1,47 @@
+name: Android
+
+on:
+  push:
+    branches: [main, codex/**]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: zju-connect/go.mod
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install Android SDK and NDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018'
+      - name: Install gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20241204233305-ce44b2716d33
+          go install golang.org/x/mobile/cmd/gobind@v0.0.0-20241204233305-ce44b2716d33
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Build Android engine
+        run: bash build/android/build.sh
+      - name: Build debug APK
+        run: |
+          mkdir -p android-app/app/libs
+          cp build/android/zju-mobile.aar android-app/app/libs/
+          gradle -p android-app assembleDebug --stacktrace
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: android-app/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
