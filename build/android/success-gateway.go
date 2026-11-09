@@ -25,8 +25,24 @@ import (
 var udpReplies = make(chan []byte, 8)
 var recvCount atomic.Int32
 var loginCount atomic.Int32
+var tcpBridge *net.UDPConn
 
 func main() {
+	var err error
+	tcpBridge, err = net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 18446})
+	if err != nil {
+		panic(err)
+	}
+	go func() {
+		for {
+			packet := make([]byte, 1500)
+			n, err := tcpBridge.Read(packet)
+			if err != nil {
+				return
+			}
+			udpReplies <- packet[:n]
+		}
+	}()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		panic(err)
@@ -95,6 +111,13 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 				copy(packet, ip)
 				if _, err := io.ReadFull(reader, packet[20:]); err != nil {
 					return
+				}
+				if packet[9] == 6 {
+					if _, err := tcpBridge.Write(packet); err != nil {
+						fmt.Fprintf(os.Stderr, "tcp bridge: %v\n", err)
+						return
+					}
+					continue
 				}
 				if packet[9] != 17 || length < 28 || string(packet[28:]) != "ecs-udp-test" {
 					continue
