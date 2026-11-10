@@ -75,14 +75,14 @@ class TunnelService : VpnService() {
             var attempt = 0
             val started = SystemClock.elapsedRealtime()
             while (wantConnected) {
-                val connectedMs = connectOnce(server, username, password, totp, attempt > 0, startId)
+                val connectedMs = connectOnce(server, username, password, totp, attempt > 0)
                 if (!wantConnected) break
                 if (connectedMs == null && Mobile.loginRejected()) {
                     wantConnected = false
                     terminalError = true
                     Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=authentication outcome=rejected elapsed_ms=${SystemClock.elapsedRealtime() - started}")
                     publish(State.Error("认证被服务器拒绝", retrying = false))
-                    stopSelf(startId)
+                    stopSelf()
                     break
                 }
                 attempt = nextRetryAttempt(attempt, connectedMs)
@@ -104,7 +104,7 @@ class TunnelService : VpnService() {
     }
 
     /** 单次:登录 → 建立 VPN 接口 → 转发(阻塞到隧道断开)。返回转发时长，未进入转发时返回 null。 */
-    private fun connectOnce(server: String, user: String, pass: String, totp: String, isRetry: Boolean, startId: Int): Long? {
+    private fun connectOnce(server: String, user: String, pass: String, totp: String, isRetry: Boolean): Long? {
         val ip = if (totp.isEmpty()) {
             Mobile.login(server, user, pass)
         } else {
@@ -138,7 +138,7 @@ class TunnelService : VpnService() {
             Log.e("VPN", "android_session pid=${android.os.Process.myPid()} stage=tun_establish outcome=denied elapsed_ms=${SystemClock.elapsedRealtime() - establishStarted} cancelled=false")
             Mobile.logout()
             publish(State.Error("VPN 权限被拒绝", retrying = false))
-            stopSelf(startId)
+            stopSelf()
             return null
         }
 
