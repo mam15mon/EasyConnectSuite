@@ -45,6 +45,9 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 	httpPort := flags.Int("http-port", 1081, "本地 HTTP 代理端口")
 	totp := flags.Bool("totp-stdin", false, "从标准输入的第二行读取 TOTP 密钥")
 	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	if flags.NArg() != 0 {
