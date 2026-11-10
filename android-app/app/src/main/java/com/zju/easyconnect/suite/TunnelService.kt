@@ -75,9 +75,9 @@ class TunnelService : VpnService() {
             var attempt = 0
             val started = SystemClock.elapsedRealtime()
             while (wantConnected) {
-                val ok = connectOnce(server, username, password, totp, attempt > 0)
+                val connectedMs = connectOnce(server, username, password, totp, attempt > 0)
                 if (!wantConnected) break
-                if (!ok && Mobile.loginRejected()) {
+                if (connectedMs == null && Mobile.loginRejected()) {
                     wantConnected = false
                     terminalError = true
                     Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=authentication outcome=rejected elapsed_ms=${SystemClock.elapsedRealtime() - started}")
@@ -85,10 +85,9 @@ class TunnelService : VpnService() {
                     stopSelf()
                     break
                 }
-                if (ok) attempt = 0
-                attempt++
+                attempt = nextRetryAttempt(attempt, connectedMs)
                 val delay = retryDelay(attempt)
-                Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=retry_wait attempt=$attempt delay_s=$delay")
+                Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=retry_wait attempt=$attempt delay_s=$delay connected_ms=${connectedMs ?: -1} cancelled=${!wantConnected}")
                 updateNotification("连接中断或失败，${delay}秒后重试")
                 publish(State.Error("连接中断或失败,${delay}秒后重试"))
                 try {
@@ -105,18 +104,18 @@ class TunnelService : VpnService() {
     }
 
     /** 单次:登录 → 建立 VPN 接口 → 转发(阻塞到隧道断开)。返回是否已进入过转发。 */
-    private fun connectOnce(server: String, user: String, pass: String, totp: String, isRetry: Boolean): Boolean {
+    private fun connectOnce(server: String, user: String, pass: String, totp: String, isRetry: Boolean): Long? {
         val ip = if (totp.isEmpty()) {
             Mobile.login(server, user, pass)
         } else {
             Mobile.loginWithTOTP(server, user, pass, totp)
         }
         if (!wantConnected) {
-            return false
+            return null
         }
         if (ip.isEmpty()) {
             if (!isRetry) publish(State.Error("登录失败,请检查配置"))
-            return false
+            return null
         }
 
         val dns = Mobile.dnsServer().ifEmpty { "172.31.112.1" }
@@ -140,7 +139,7 @@ class TunnelService : VpnService() {
             Mobile.logout()
             publish(State.Error("VPN 权限被拒绝", retrying = false))
             stopSelf()
-            return false
+            return null
         }
 
         updateNotification("全部流量经 VPN")
@@ -149,6 +148,7 @@ class TunnelService : VpnService() {
 
         // startStack 阻塞直到隧道断开。不 detach:pfd 保持在 Java 侧,
         // 停止时 close() 会关闭 fd,解除 Go 侧的读阻塞
+        val forwardingStarted = SystemClock.elapsedRealtime()
         try {
             Mobile.startStack(pfd.fd.toLong())
         } finally {
@@ -162,7 +162,7 @@ class TunnelService : VpnService() {
             }
             if (wantConnected) Mobile.logout()
         }
-        return true
+        return SystemClock.elapsedRealtime() - forwardingStarted
     }
 
     private fun stopTunnel() {
@@ -225,5 +225,4 @@ class TunnelService : VpnService() {
             .build()
     }
 
-    private fun retryDelay(attempt: Int): Int = minOf(3 * (1 shl minOf(attempt - 1, 7)), 300)
 }
