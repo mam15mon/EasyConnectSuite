@@ -4,6 +4,9 @@ set -euo pipefail
 adb push "$RUNNER_TEMP/android-tun-test" /data/local/tmp/android-tun-test
 adb shell chmod 755 /data/local/tmp/android-tun-test
 adb shell /data/local/tmp/android-tun-test -test.v -test.timeout=30s
+adb push "$RUNNER_TEMP/android-mobile-test" /data/local/tmp/android-mobile-test
+adb shell chmod 755 /data/local/tmp/android-mobile-test
+adb shell /data/local/tmp/android-mobile-test -test.v -test.timeout=30s
 adb install -r android-app/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -W -n com.zju.easyconnect.suite/.MainActivity
 adb shell uiautomator dump /sdcard/window.xml >/dev/null
