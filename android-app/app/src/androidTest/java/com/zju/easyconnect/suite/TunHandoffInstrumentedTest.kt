@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.ParcelFileDescriptor
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.CountDownLatch
@@ -77,6 +78,8 @@ class TunHandoffInstrumentedTest {
                 awaitRelease(releaseMain)
             }
             assertTrue("main thread did not block", mainBlocked.await(10, TimeUnit.SECONDS))
+            val marker = "handoff_test_${android.os.Process.myPid()}_${System.nanoTime()}"
+            Log.i("VPN", marker)
             context.startService(stop)
             context.startForegroundService(start)
             releaseMain.countDown()
@@ -86,6 +89,15 @@ class TunHandoffInstrumentedTest {
             releaseOld.countDown()
             assertTrue("new forwarder did not start", newForwarder.await(10, TimeUnit.SECONDS))
             assertEquals(2, calls.get())
+            val logs = InstrumentationRegistry.getInstrumentation().uiAutomation
+                .executeShellCommand("logcat -d -s VPN:I '*:S'")
+                .let { descriptor -> ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText() } }
+            val afterMarker = logs.substringAfter(marker, "")
+            val stopResult = Regex("service=([0-9]+) start_id=[0-9]+ stage=stop_result stopped=false").find(afterMarker)
+            assertNotNull("queued restart did not prevent the stop request from stopping the service", stopResult)
+            val serviceId = stopResult!!.groupValues[1]
+            assertTrue("queued restart did not confirm foreground on the same service", afterMarker.substring(stopResult.range.last + 1)
+                .contains("service=$serviceId start_id=3 stage=foreground_confirmed"))
         } finally {
             releaseMain.countDown()
             context.startService(stop)
