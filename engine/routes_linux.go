@@ -38,6 +38,15 @@ func (r *linuxRoutes) Apply(add, remove []string) (result routeResult, err error
 		outcome = "failed"
 		return result, fmt.Errorf("TUN 文件未打开")
 	}
+	defer func() {
+		if err != nil && len(result.Added) > 0 {
+			op.Step("close_partial_interface")
+			if closeErr := r.device.Close(); closeErr != nil {
+				err = fmt.Errorf("%w; close TUN: %v", err, closeErr)
+			}
+			result.Added = nil
+		}
+	}()
 	for _, value := range add {
 		p, parseErr := netip.ParsePrefix(value)
 		if parseErr != nil || !p.Addr().Is4() || p.Bits() == 0 || p != p.Masked() {
