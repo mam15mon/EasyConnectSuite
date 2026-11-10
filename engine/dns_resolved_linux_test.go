@@ -349,3 +349,11 @@ func TestResolvedDNSOwnerDoesNotRollbackUnsentRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestResolvedSystemCallConnectFailureIsUnsent(t *testing.T) {
+	t.Setenv("DBUS_SYSTEM_BUS_ADDRESS", "unix:path="+t.TempDir()+"/missing")
+	err := resolvedSystemCall(context.Background(), "SetLinkDNS", int32(7), []resolvedAddress{})
+	if !errors.Is(err, errResolvedNotSent) || errors.Is(err, errResolvedOutcomeUnknown) {
+		t.Fatalf("connect failure classification: %v", err)
+	}
+}
