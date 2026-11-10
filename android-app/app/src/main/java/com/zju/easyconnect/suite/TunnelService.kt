@@ -103,7 +103,7 @@ class TunnelService : VpnService() {
         return START_NOT_STICKY
     }
 
-    /** 单次:登录 → 建立 VPN 接口 → 转发(阻塞到隧道断开)。返回是否已进入过转发。 */
+    /** 单次:登录 → 建立 VPN 接口 → 转发(阻塞到隧道断开)。返回转发时长，未进入转发时返回 null。 */
     private fun connectOnce(server: String, user: String, pass: String, totp: String, isRetry: Boolean): Long? {
         val ip = if (totp.isEmpty()) {
             Mobile.login(server, user, pass)
@@ -149,9 +149,11 @@ class TunnelService : VpnService() {
         // startStack 阻塞直到隧道断开。不 detach:pfd 保持在 Java 侧,
         // 停止时 close() 会关闭 fd,解除 Go 侧的读阻塞
         val forwardingStarted = SystemClock.elapsedRealtime()
+        var forwardingMs = 0L
         try {
             Mobile.startStack(pfd.fd.toLong())
         } finally {
+            forwardingMs = SystemClock.elapsedRealtime() - forwardingStarted
             tunnelFd = null
             val cleanupStarted = SystemClock.elapsedRealtime()
             try {
@@ -162,7 +164,7 @@ class TunnelService : VpnService() {
             }
             if (wantConnected) Mobile.logout()
         }
-        return SystemClock.elapsedRealtime() - forwardingStarted
+        return forwardingMs
     }
 
     private fun stopTunnel() {
