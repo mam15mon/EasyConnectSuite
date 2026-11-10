@@ -1,6 +1,7 @@
 package tun
 
 import (
+	"bytes"
 	"io"
 	"net"
 	"os"
@@ -8,6 +9,40 @@ import (
 	"testing"
 	"time"
 )
+
+type packetDevice struct {
+	packets chan []byte
+	closed chan struct{}
+}
+
+func (d *packetDevice) Read([]byte) (int, error) { <-d.closed; return 0, io.EOF }
+func (d *packetDevice) Write(p []byte) (int, error) {
+	d.packets <- append([]byte(nil), p...)
+	return len(p), nil
+}
+func (d *packetDevice) Close() error { close(d.closed); return nil }
+
+func TestForwardPacketsFramesFragmentedAndCoalescedIPv4(t *testing.T) {
+	local, remote := net.Pipe()
+	device := &packetDevice{packets: make(chan []byte, 3), closed: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() { done <- forwardPackets(local, device) }()
+	packet := []byte{0x45, 0, 0, 20, 0, 0, 0, 0, 64, 17, 0, 0, 10, 0, 0, 1, 10, 0, 0, 2}
+	go func() {
+		_, _ = remote.Write(packet[:7])
+		_, _ = remote.Write(append(append([]byte(nil), packet[7:]...), packet...))
+	}()
+	for i := 0; i < 2; i++ {
+		select {
+		case got := <-device.packets:
+			if !bytes.Equal(got, packet) { t.Fatalf("packet %d: %x", i, got) }
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for complete packet")
+		}
+	}
+	_ = remote.Close()
+	select { case <-done: case <-time.After(3 * time.Second): t.Fatal("forwarding did not stop") }
+}
 
 func TestForwardPacketsStopsWhenServerDisconnects(t *testing.T) {
 	local, remote := net.Pipe()
