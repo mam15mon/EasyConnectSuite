@@ -259,4 +259,60 @@ class TunnelServiceHandoffTest {
         }
     }
 
+    @Test fun staleTunDenialCannotStopOrOverwriteNewRequest() {
+        val establishStarted = CountDownLatch(1)
+        val releaseEstablish = CountDownLatch(1)
+        val newLogin = CountDownLatch(1)
+        val releaseNew = CountDownLatch(1)
+        val calls = AtomicInteger()
+        TunnelService.tunFactory = { _, _, _ ->
+            establishStarted.countDown()
+            awaitWithoutInterruption(releaseEstablish)
+            null
+        }
+        TunnelService.mobileBridge = object : MobileBridge {
+            override fun loginEpoch() = 0L
+            override fun loginForEpoch(server: String, user: String, password: String, totp: String, epoch: Long): String {
+                if (calls.incrementAndGet() == 1) return "10.0.0.2"
+                newLogin.countDown()
+                awaitWithoutInterruption(releaseNew)
+                return ""
+            }
+            override fun loginRejected() = false
+            override fun dnsServer() = "10.0.0.1"
+            override fun startStack(fd: Long) = Unit
+            override fun logout() = Unit
+            override fun stopStack() = Unit
+        }
+        val oldController = Robolectric.buildService(TunnelService::class.java).create()
+        val oldService = oldController.get()
+        val newController = Robolectric.buildService(TunnelService::class.java).create()
+        val newService = newController.get()
+        val intent = Intent(oldService, TunnelService::class.java).apply {
+            putExtra("server", "test")
+            putExtra("username", "test")
+            putExtra("password", "test")
+        }
+        try {
+            oldService.onStartCommand(intent, 0, 1)
+            assertTrue(establishStarted.await(2, TimeUnit.SECONDS))
+            oldService.onStartCommand(null, 0, 2)
+            newService.onStartCommand(intent, 0, 3)
+            releaseEstablish.countDown()
+            assertTrue(newLogin.await(2, TimeUnit.SECONDS))
+            assertTrue(TunnelService.currentState() is TunnelService.State.Connecting)
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertTrue(TunnelService.currentState() is TunnelService.State.Connecting)
+            assertEquals(2, calls.get())
+        } finally {
+            newService.onStartCommand(null, 0, 4)
+            releaseEstablish.countDown()
+            releaseNew.countDown()
+            oldController.destroy()
+            newController.destroy()
+            TunnelService.mobileBridge = GoMobileBridge
+            TunnelService.tunFactory = TunnelService.defaultTunFactory
+        }
+    }
+
 }
