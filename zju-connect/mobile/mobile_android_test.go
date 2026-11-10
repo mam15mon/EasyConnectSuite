@@ -79,3 +79,21 @@ func TestSupersededLoginCannotPublishRejection(t *testing.T) {
 	}
 	loginRejected.Store(false)
 }
+
+func TestLoginForEpochCancelledBeforeWorkerStarts(t *testing.T) {
+	Logout()
+	epoch := LoginEpoch()
+	Logout()
+	vpnClientMu.Lock()
+	stopped := loginGeneration
+	vpnClientMu.Unlock()
+	if got := LoginForEpoch("127.0.0.1:1", "test", "test", "", epoch); got != "" {
+		t.Fatalf("cancelled request returned %q", got)
+	}
+	vpnClientMu.Lock()
+	client, underlay, generation := vpnClient, vpnUnderlay, loginGeneration
+	vpnClientMu.Unlock()
+	if client != nil || underlay != nil || generation != stopped {
+		t.Fatal("request cancelled before entry started a login")
+	}
+}

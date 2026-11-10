@@ -32,6 +32,22 @@ func Login(server string, username string, password string) string {
 	return login(server, username, password, "")
 }
 
+// LoginEpoch captures the cancellation boundary before a request is queued.
+func LoginEpoch() int64 {
+	vpnClientMu.Lock()
+	defer vpnClientMu.Unlock()
+	return int64(logoutGeneration)
+}
+
+// LoginForEpoch rejects a request cancelled before its worker entered Login.
+func LoginForEpoch(server, username, password, totpSecret string, epoch int64) string {
+	log.Init()
+	if epoch < 0 {
+		return ""
+	}
+	return loginAtEpoch(server, username, password, totpSecret, uint64(epoch))
+}
+
 // LoginWithTOTP logs in with a TOTP second factor (EasyConnect Suite fork:
 // servers that require 2FA reject plain Login).
 func LoginWithTOTP(server string, username string, password string, totpSecret string) string {
