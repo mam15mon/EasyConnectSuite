@@ -31,6 +31,10 @@ class TunnelService : VpnService() {
         fun currentState(): State = state
 
         @Volatile internal var mobileBridge: MobileBridge = GoMobileBridge
+        internal val defaultTunFactory: (TunnelService, String, String) -> ParcelFileDescriptor? = { service, ip, dns ->
+            service.establishTun(ip, dns)
+        }
+        @Volatile internal var tunFactory = defaultTunFactory
         private val handoff = SessionHandoff()
         private val mainHandler = Handler(Looper.getMainLooper())
         private val stateLock = Any()
@@ -56,7 +60,11 @@ class TunnelService : VpnService() {
         }
     }
 
-    private class ConnectionRequest(val handoff: SessionHandoff.Session, val mobile: MobileBridge) {
+    private class ConnectionRequest(
+        val handoff: SessionHandoff.Session,
+        val mobile: MobileBridge,
+        val tunFactory: (TunnelService, String, String) -> ParcelFileDescriptor?
+    ) {
         val cancelled = AtomicBoolean(false)
         val terminal = AtomicBoolean(false)
         private var fd: ParcelFileDescriptor? = null
@@ -120,7 +128,7 @@ class TunnelService : VpnService() {
 
         val request = synchronized(stateLock) {
             if (wantConnected) return START_NOT_STICKY
-            ConnectionRequest(handoff.next(), mobileBridge).also {
+            ConnectionRequest(handoff.next(), mobileBridge, tunFactory).also {
                 wantConnected = true
                 currentRequest = it
                 terminalError = false
@@ -200,20 +208,8 @@ class TunnelService : VpnService() {
         }
 
         val dns = request.mobile.dnsServer().ifEmpty { "172.31.112.1" }
-        val builder = Builder()
-            .setSession("EC 隧道")
-            .setMtu(1400)
-            .addAddress(ip, 32)
-            .addRoute("0.0.0.0", 0)
-            .addDnsServer(dns)
-        // 本 App 自身流量不走 VPN,避免引擎到服务器的连接被回环进隧道
-        try {
-            builder.addDisallowedApplication(packageName)
-        } catch (_: Exception) {
-        }
-
         val establishStarted = SystemClock.elapsedRealtime()
-        val pfd = builder.establish() ?: run {
+        val pfd = request.tunFactory(this, ip, dns) ?: run {
             Log.e("VPN", "android_session pid=${android.os.Process.myPid()} request=${System.identityHashCode(request)} stage=tun_establish outcome=denied elapsed_ms=${SystemClock.elapsedRealtime() - establishStarted} cancelled=${request.cancelled.get()}")
             finishWithError(request, "VPN 权限被拒绝")
             return null
@@ -249,6 +245,21 @@ class TunnelService : VpnService() {
                 if (!request.cancelled.get()) request.mobile.logout()
             }
         }
+    }
+
+    private fun establishTun(ip: String, dns: String): ParcelFileDescriptor? {
+        val builder = Builder()
+            .setSession("EC 隧道")
+            .setMtu(1400)
+            .addAddress(ip, 32)
+            .addRoute("0.0.0.0", 0)
+            .addDnsServer(dns)
+        // 本 App 自身流量不走 VPN,避免引擎到服务器的连接被回环进隧道
+        try {
+            builder.addDisallowedApplication(packageName)
+        } catch (_: Exception) {
+        }
+        return builder.establish()
     }
 
     private fun <T> observeWait(request: ConnectionRequest, stage: String, block: () -> T): T {
