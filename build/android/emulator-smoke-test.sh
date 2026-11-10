@@ -380,6 +380,9 @@ if ! adb shell /data/local/tmp/android-tcp-probe; then
   echo 'TCP payload did not return through VPN' >&2
   exit 1
 fi
+# The connected session has been up for only a few seconds. Its expiration
+# must continue the prior backoff instead of resetting it to the first retry.
+adb logcat -d -s VPN:I > "$RUNNER_TEMP/retry-before-expire.log"
 touch "$RUNNER_TEMP/expire-session"
 for attempt in $(seq 1 60); do
   if grep -q 'login=2' "$RUNNER_TEMP/success-gateway.log" && [ "$(grep -c 'handshake=6' "$RUNNER_TEMP/success-gateway.log" || true)" -ge 3 ]; then break; fi
@@ -391,6 +394,23 @@ if ! grep -q 'login=2' "$RUNNER_TEMP/success-gateway.log" || [ "$(grep -c 'hands
   echo 'VPN did not reauthenticate after session expiration' >&2
   exit 1
 fi
+adb logcat -d -s VPN:I > "$RUNNER_TEMP/retry-after-expire.log"
+python3 - "$RUNNER_TEMP/retry-before-expire.log" "$RUNNER_TEMP/retry-after-expire.log" <<'PY'
+import re
+import sys
+
+def attempts(path):
+    with open(path, encoding='utf-8') as f:
+        return [(int(a), int(ms)) for a, ms in re.findall(r'stage=retry_wait attempt=(\d+) delay_s=\d+ connected_ms=(-?\d+)', f.read())]
+
+before, after = attempts(sys.argv[1]), attempts(sys.argv[2])
+if not before or len(after) <= len(before):
+    raise SystemExit('Missing retry evidence after short-lived tunnel')
+previous, (current, duration) = before[-1][0], after[len(before)]
+if current != min(previous + 1, 8) or not 0 <= duration < 60000:
+    raise SystemExit(f'Unexpected short-tunnel backoff: previous={previous} current={current} connected_ms={duration}')
+print(f'Short-lived tunnel retained backoff: attempt={current} connected_ms={duration}')
+PY
 if ! adb shell /data/local/tmp/android-udp-probe; then
   cat "$RUNNER_TEMP/success-gateway.log"
   echo 'UDP failed after reauthentication' >&2
