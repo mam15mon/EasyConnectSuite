@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"EasyConnectSuite/engine"
 	"EasyConnectSuite/internal/tunipc"
 )
 
@@ -156,6 +157,80 @@ func TestLinuxWorkerProcessLifecycle(t *testing.T) {
 	for _, iface := range ifaces {
 		if len(iface.Name) >= 3 && iface.Name[:3] == "ecs" {
 			t.Fatal("worker left an interface behind")
+		}
+	}
+}
+
+type linuxManagerEcho struct{}
+
+func (linuxManagerEcho) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+	a, b := net.Pipe()
+	go func() { defer b.Close(); _, _ = io.Copy(b, b) }()
+	return a, nil
+}
+func (linuxManagerEcho) DNS(context.Context, []byte) ([]byte, []string, error) { return nil, nil, nil }
+
+func TestLinuxManagerWorkerLifecycle(t *testing.T) {
+	if os.Getenv("ECS_LINUX_TUN_SYSTEM_TEST") != "1" {
+		t.Skip("requires isolated Linux network namespace and TUN privileges")
+	}
+	manager := newLinuxTUNManager()
+	manager.launch = func(name string) (*exec.Cmd, error) {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestLinuxWorkerHelper$")
+		cmd.Env = append(os.Environ(), "ECS_LINUX_WORKER_HELPER=1", "ECS_LINUX_WORKER_SOCKET="+name, "ECS_LINUX_PARENT_PID="+strconv.Itoa(os.Getpid()))
+		cmd.Stderr = os.Stderr
+		if err := cmd.Start(); err != nil {
+			return nil, err
+		}
+		return cmd, nil
+	}
+	defer manager.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	spec := engine.TUNSpec{Ref: tunipc.Ref{Profile: "manager", Session: "session", Attachment: "attachment", Policy: 1}, Slot: 7, Prefixes: []string{"198.18.72.0/24"}}
+	if err := manager.Prepare(ctx, spec.Profile); err != nil {
+		t.Fatal(err)
+	}
+	attachment, err := manager.Attach(ctx, spec, linuxManagerEcho{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, network := range []string{"tcp4", "udp4"} {
+		conn, err := net.DialTimeout(network, "198.18.72.2:23456", 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+		payload := []byte("manager-" + network)
+		if _, err = conn.Write(payload); err != nil {
+			conn.Close()
+			t.Fatal(err)
+		}
+		result := make([]byte, len(payload))
+		if _, err = io.ReadFull(conn, result); err != nil {
+			conn.Close()
+			t.Fatal(err)
+		}
+		conn.Close()
+		if string(result) != string(payload) {
+			t.Fatalf("unexpected %s data", network)
+		}
+	}
+	if err := attachment.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-attachment.Done():
+	case <-ctx.Done():
+		t.Fatal("attachment did not stop")
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, iface := range ifaces {
+		if len(iface.Name) >= 3 && iface.Name[:3] == "ecs" {
+			t.Fatal("manager left an interface behind")
 		}
 	}
 }
