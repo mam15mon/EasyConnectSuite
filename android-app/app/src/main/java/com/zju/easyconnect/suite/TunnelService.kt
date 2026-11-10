@@ -165,6 +165,9 @@ class TunnelService : VpnService() {
                 }
             } catch (_: InterruptedException) {
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=await_predecessor outcome=interrupted cancelled=${request.cancelled.get()}")
+            } catch (error: Exception) {
+                Log.e("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=worker outcome=failed elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=${request.cancelled.get()} error_type=${error.javaClass.simpleName}")
+                finishWithError(request, "连接失败")
             } finally {
                 synchronized(stateLock) { request.cancelled.set(true) }
                 request.handoff.cancel()
