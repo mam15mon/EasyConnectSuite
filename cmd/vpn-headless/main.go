@@ -43,6 +43,7 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 	domain := flags.String("domain", "", "UniVPN 认证域")
 	socks := flags.Int("socks-port", 1080, "本地 SOCKS5 端口")
 	httpPort := flags.Int("http-port", 1081, "本地 HTTP 代理端口")
+	proxyAll := flags.Bool("proxy-all", false, "将代理请求路由至 VPN（仍遵守网关资源限制）")
 	totp := flags.Bool("totp-stdin", false, "从标准输入的第二行读取 TOTP 密钥")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -92,6 +93,7 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 	conf.SocksBind = net.JoinHostPort("127.0.0.1", strconv.Itoa(*socks))
 	conf.HTTPBind = net.JoinHostPort("127.0.0.1", strconv.Itoa(*httpPort))
 	conf.AutoDetectInterface, conf.DisableZJUConfig = true, true
+	conf.ProxyAll = *proxyAll
 	if *protocol == "univpn" {
 		conf.DisableRemoteDNS, conf.DisableKeepAlive = true, true
 	}

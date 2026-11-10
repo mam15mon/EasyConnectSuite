@@ -20,12 +20,15 @@ func TestRunCancelsAndStopsWithLocalProxyAndPrivateSecrets(t *testing.T) {
 	defer cancel()
 	fake := &fakeEngine{}
 	var out, diagnostic bytes.Buffer
-	err := run(ctx, []string{"-server", "vpn.invalid", "-username", "test", "-totp-stdin"}, strings.NewReader("password-canary\ntotp-canary\n"), &out, &diagnostic, func(o engine.Options) (runningEngine, error) {
+	err := run(ctx, []string{"-server", "vpn.invalid", "-username", "test", "-totp-stdin", "-proxy-all"}, strings.NewReader("password-canary\ntotp-canary\n"), &out, &diagnostic, func(o engine.Options) (runningEngine, error) {
 		if o.Config.Password != "password-canary" || o.Config.TOTPSecret != "totp-canary" {
 			t.Fatal("secrets were not passed to engine")
 		}
 		if o.Config.SocksBind != "127.0.0.1:1080" || o.Config.HTTPBind != "127.0.0.1:1081" {
 			t.Fatal("proxy is not loopback-only")
+		}
+		if !o.Config.ProxyAll {
+			t.Fatal("proxy-all was not passed to engine")
 		}
 		if o.Config.TUNMode || o.TUNEnabled {
 			t.Fatal("TUN unexpectedly enabled")
