@@ -56,12 +56,14 @@ func forwardPackets(l3, device io.ReadWriteCloser) error {
 		for {
 			var n int
 			var err error
+			stage := "receive"
 			if isStream {
 				n, pending, streamID, haveStream, err = readStreamPacket(stream, buf, chunk, pending, streamID, haveStream)
 			} else {
 				n, err = l3.Read(buf)
 			}
 			if err == nil {
+				stage = "write_device"
 				var written int
 				written, err = device.Write(buf[:n])
 				if err == nil && written != n {
@@ -69,6 +71,7 @@ func forwardPackets(l3, device io.ReadWriteCloser) error {
 				}
 			}
 			if err != nil {
+				log.Printf("[android pid=%d stream=%p] inbound_forward phase=failed stage=%s error_type=%T eof=%t", os.Getpid(), l3, stage, err, err == io.EOF)
 				closeBoth()
 				done <- err
 				return
