@@ -27,7 +27,7 @@ if ! grep -q tcp_gateway_ready "$work_dir/tcp-gateway.log"; then
 fi
 
 go build -o "$work_dir/gateway" build/android/success-gateway.go
-"$work_dir/gateway" "$work_dir/close-receive" "$work_dir/expire-session" >"$work_dir/gateway.log" 2>&1 &
+ECS_MOCK_GUI_RESOURCES="$work_dir/gui-resources" "$work_dir/gateway" "$work_dir/close-receive" "$work_dir/expire-session" >"$work_dir/gateway.log" 2>&1 &
 gateway_pid=$!
 python3 - <<'PY'
 import socket, time
@@ -125,6 +125,8 @@ print('Mock login, SOCKS/HTTP TCP round trips, signal cleanup and credential red
 PY
 
 # Exercise the desktop application's profile and connection backend with the same mock gateway.
+touch "$work_dir/gui-resources"
+tcp_before=$(grep -c 'tcp_packet_forwarded' "$work_dir/gateway.log" || true)
 ECS_GUI_GATEWAY_TEST=1 go test -tags webkit2_41 . -run '^TestLinuxGUIBackendMockGateway$' -count=1 -timeout=90s -v >"$work_dir/gui-backend.log" 2>&1 || {
   cat "$work_dir/gui-backend.log" "$work_dir/gateway.log"
   exit 1
@@ -134,6 +136,11 @@ if grep -q 'gui-private-canary' "$work_dir/gui-backend.log" "$work_dir/gateway.l
   exit 1
 fi
 cat "$work_dir/gui-backend.log"
+tcp_after=$(grep -c 'tcp_packet_forwarded' "$work_dir/gateway.log" || true)
+if [ "$tcp_after" -le "$tcp_before" ]; then
+  echo 'GUI proxy traffic did not pass through the VPN tunnel' >&2
+  exit 1
+fi
 
 # Verify an explicit rejection ends the real headless process without retries.
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$work_dir/key.pem" \

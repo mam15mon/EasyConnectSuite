@@ -133,6 +133,7 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 					continue
 				}
 				if packet[9] == 6 {
+					fmt.Fprintln(os.Stdout, "tcp_packet_forwarded")
 					if _, err := tcpBridge.Write(packet); err != nil {
 						fmt.Fprintf(os.Stderr, "tcp bridge: %v\n", err)
 						return
@@ -226,6 +227,15 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 		fmt.Fprintln(os.Stdout, "session_keepalive")
 		body = "<Auth><Message>success</Message><ErrorCode>1</ErrorCode></Auth>"
 	case "/por/conf.csp":
+	case "/por/rclist.csp":
+		marker := os.Getenv("ECS_MOCK_GUI_RESOURCES")
+		if marker == "" {
+			return
+		}
+		if _, err := os.Stat(marker); err != nil {
+			return
+		}
+		body = `<Resource><Rcs><Rc type="1" proto="0" host="10.90.0.3" port="12345~12345"/></Rcs><Dns data="" dnsserver="10.90.0.1"/></Resource>`
 	default:
 		fmt.Fprintf(os.Stderr, "unexpected HTTP path: %s\n", request.URL.Path)
 		return
