@@ -149,6 +149,32 @@ func TestLinuxTUNConfiguredPacket(t *testing.T) {
 	if n < 28 || packet[0]>>4 != 4 || packet[9] != 17 || !bytes.Contains(packet[:n], []byte("linux-tun-packet")) {
 		t.Fatalf("unexpected packet length %d", n)
 	}
+	readResult := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 1500)
+		for {
+			n, e := file.Read(buf)
+			if e != nil {
+				readResult <- e
+				return
+			}
+			if n >= 28 && buf[0]>>4 == 4 && buf[9] == 17 && bytes.Contains(buf[:n], []byte("linux-tun-poll-read")) {
+				readResult <- nil
+				return
+			}
+		}
+	}()
+	if _, err = conn.Write([]byte("linux-tun-poll-read")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err = <-readResult:
+		if err != nil {
+			t.Fatalf("pollable read: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("pollable read did not receive packet")
+	}
 }
 
 func TestLinuxTUNConfigureFailureCleansDevice(t *testing.T) {
