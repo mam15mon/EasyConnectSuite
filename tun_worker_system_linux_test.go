@@ -349,7 +349,32 @@ func TestLinuxManagerPolicyReplacement(t *testing.T) {
 		t.Fatalf("old route remained: %+v %v", routes, err)
 	}
 	checkFlow("198.18.75.2:23456")
-	if err := attachment.Close(ctx); err != nil {
+	lo, err := netlink.LinkByName("lo")
+	if err != nil {
 		t.Fatal(err)
 	}
+	if err = netlink.LinkSetUp(lo); err != nil {
+		t.Fatal(err)
+	}
+	_, otherPrefix, _ := net.ParseCIDR("198.18.76.0/24")
+	other := &netlink.Route{LinkIndex: lo.Attrs().Index, Dst: otherPrefix, Scope: netlink.SCOPE_LINK, Table: unix.RT_TABLE_MAIN}
+	if err = netlink.RouteAdd(other); err != nil {
+		t.Fatal(err)
+	}
+	defer netlink.RouteDel(other)
+	spec.Policy++
+	spec.Prefixes = []string{otherPrefix.String()}
+	if err = attachment.Update(ctx, spec); err == nil {
+		t.Fatal("conflicting replacement accepted")
+	}
+	routes, err = netlink.RouteListFiltered(netlink.FAMILY_V4, &netlink.Route{Dst: otherPrefix, Table: unix.RT_TABLE_MAIN}, netlink.RT_FILTER_DST|netlink.RT_FILTER_TABLE)
+	if err != nil || len(routes) != 1 || routes[0].LinkIndex != lo.Attrs().Index {
+		t.Fatalf("other route changed: %+v %v", routes, err)
+	}
+	_, failedPrefix, _ := net.ParseCIDR("198.18.75.0/24")
+	routes, err = netlink.RouteListFiltered(netlink.FAMILY_V4, &netlink.Route{Dst: failedPrefix, Table: unix.RT_TABLE_MAIN}, netlink.RT_FILTER_DST|netlink.RT_FILTER_TABLE)
+	if err != nil || len(routes) != 0 {
+		t.Fatalf("failed attachment route remained: %+v %v", routes, err)
+	}
+	_ = attachment.Close(ctx)
 }
