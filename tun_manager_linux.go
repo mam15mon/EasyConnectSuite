@@ -1,0 +1,166 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"strconv"
+	"sync"
+	"time"
+
+	"EasyConnectSuite/internal/tunipc"
+	vpnlog "EasyConnectSuite/vpncore/log"
+)
+
+type tunManager struct {
+	op           sync.Mutex
+	mu           sync.Mutex
+	peer         *tunipc.Peer
+	pid          uint32
+	workerDone   chan struct{}
+	recoveryErr  error
+	attachments  map[string]*remoteTUN
+	reservations map[string]bool
+	flows        chan struct{}
+	launch       func(string) (*exec.Cmd, error)
+}
+
+func newLinuxTUNManager() *tunManager {
+	return &tunManager{attachments: map[string]*remoteTUN{}, reservations: map[string]bool{}, flows: make(chan struct{}, tunipc.MaxFlows), launch: launchLinuxWorker}
+}
+
+func launchLinuxWorker(name string) (*exec.Cmd, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command("pkexec", executable, "--tun-worker", name, strconv.Itoa(os.Getpid()))
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("启动 Linux 管理员授权失败: %w", err)
+	}
+	return cmd, nil
+}
+
+func (m *tunManager) ensure(ctx context.Context) (err error) {
+	trace := vpnlog.BeginOperation(fmt.Sprintf("[TUN pid=%d] ", os.Getpid()), "linux_worker_launch", ctx.Done())
+	outcome := "interrupted"
+	defer func() {
+		if err != nil {
+			outcome = "failed"
+		}
+		trace.Finish(outcome, err)
+	}()
+	m.mu.Lock()
+	peer, recoveryErr := m.peer, m.recoveryErr
+	m.mu.Unlock()
+	if recoveryErr != nil {
+		return recoveryErr
+	}
+	if peer != nil {
+		select {
+		case <-peer.Done():
+			return errors.New("TUN Worker 已退出，请等待清理")
+		default:
+			outcome = "already_running"
+			return nil
+		}
+	}
+	trace.Step("create_control_socket")
+	name := tunipc.NewName()
+	listener, err := tunipc.Listen(name)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	trace.Step("request_admin_authorization")
+	cmd, err := m.launch(name)
+	if err != nil {
+		return err
+	}
+	processDone := make(chan struct{})
+	var processErr error
+	go func() { processErr = cmd.Wait(); close(processDone) }()
+	handshake, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	go func() {
+		select {
+		case <-processDone:
+			cancel()
+		case <-handshake.Done():
+		}
+	}()
+	trace.Step("accept_authenticated_worker")
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	conn, pid, err := listener.AcceptWorker(handshake, executable)
+	if err != nil {
+		select {
+		case <-processDone:
+			return fmt.Errorf("Linux TUN Worker 未启动或授权已取消: %w", errors.Join(err, processErr))
+		default:
+			unknown := errors.New("Linux TUN Worker 授权进程仍在退出，请等待后重试")
+			m.mu.Lock()
+			m.recoveryErr = unknown
+			m.mu.Unlock()
+			go func() {
+				wait := vpnlog.BeginOperation(fmt.Sprintf("[TUN pid=%d authorization_pid=%d] ", os.Getpid(), cmd.Process.Pid), "linux_authorization_retirement", nil)
+				wait.Step("wait_authorization_process_exit")
+				<-processDone
+				m.mu.Lock()
+				if m.recoveryErr == unknown {
+					m.recoveryErr = nil
+				}
+				m.mu.Unlock()
+				wait.Finish("exited_without_session", processErr)
+			}()
+			return errors.Join(err, unknown)
+		}
+	}
+	peer = tunipc.NewPeer(conn, m.handle, func(msg tunipc.Message) {
+		if msg.Op == "log" || msg.Op == "progress" {
+			log.Printf("[TUN worker=%d profile=%q] %s", pid, msg.Ref.Profile, msg.Text)
+		}
+	})
+	m.mu.Lock()
+	m.peer, m.pid, m.workerDone = peer, pid, make(chan struct{})
+	workerDone := m.workerDone
+	m.mu.Unlock()
+	peer.Heartbeat()
+	go func() {
+		defer close(workerDone)
+		select {
+		case <-processDone:
+			peer.Close()
+			m.lost(peer, processErr)
+		case <-peer.Done():
+			var cleanupErr error
+			select {
+			case <-processDone:
+				cleanupErr = processErr
+			case <-time.After(45 * time.Second):
+				cleanupErr = errors.New("Linux TUN Worker 清理超时")
+			}
+			m.lost(peer, cleanupErr)
+		}
+	}()
+	trace.Step("worker_hello")
+	if _, err = peer.Call(handshake, tunipc.Message{Op: "hello"}); err != nil {
+		peer.Close()
+		select {
+		case <-workerDone:
+			m.mu.Lock()
+			cleanupErr := m.recoveryErr
+			m.mu.Unlock()
+			return errors.Join(err, cleanupErr)
+		case <-time.After(45 * time.Second):
+			return errors.Join(err, errors.New("Linux TUN Worker 清理超时"))
+		}
+	}
+	outcome = "ready"
+	return nil
+}
