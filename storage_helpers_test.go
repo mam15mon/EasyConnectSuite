@@ -10,6 +10,7 @@ func setTestStorage(t *testing.T) string {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("APPDATA", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	root := applicationStorageRoot()
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
