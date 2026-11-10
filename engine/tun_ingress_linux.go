@@ -63,6 +63,18 @@ func StartLinuxTUNIngress(ctx context.Context, spec TUNSpec, service TUNBackend)
 	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), spec.Profile, spec.Session, spec.Attachment), "linux_tun_attach", ctx.Done())
 	outcome := "interrupted"
 	defer func() { op.Finish(outcome, err) }()
+	if err = spec.Validate(); err != nil {
+		outcome = "invalid_spec"
+		return nil, err
+	}
+	if len(spec.Names) != 0 {
+		outcome = "dns_unsupported"
+		return nil, errors.New("Linux TUN DNS 分流尚未实现")
+	}
+	if err = ctx.Err(); err != nil {
+		outcome = "cancelled"
+		return nil, err
+	}
 	attachCtx, cancel := context.WithCancel(ctx)
 	obj := &tunIngress{service: service, ctx: attachCtx, cancel: cancel}
 	defer func() {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -161,5 +162,19 @@ func TestLinuxTUNIngressPartialRouteFailure(t *testing.T) {
 		if len(iface.Name) >= 3 && iface.Name[:3] == "ecs" && iface.Name != name {
 			t.Fatal("failed ingress interface remained")
 		}
+	}
+}
+
+func TestLinuxTUNIngressRejectsUnsupportedDNSBeforeCreatingInterface(t *testing.T) {
+	spec := linuxTestSpec()
+	spec.Names = []string{"example.invalid"}
+	// This runs without TUN privileges: DNS rejection must precede device creation.
+	ingress, err := StartLinuxTUNIngress(context.Background(), spec, linuxEchoBackend{})
+	if ingress != nil {
+		ingress.Close()
+		t.Fatal("unsupported DNS attachment created")
+	}
+	if err == nil || !strings.Contains(err.Error(), "DNS 分流尚未实现") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
