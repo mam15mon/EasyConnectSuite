@@ -238,3 +238,22 @@ func (p *packetProtocol) Read(b []byte) (int, error) {
 }
 func (p *packetProtocol) Write(b []byte) (int, error) { return len(b), nil }
 func (p *packetProtocol) Close() error                { p.once.Do(func() { close(p.done) }); return nil }
+
+func TestStreamPacketFramesIPv6AndIPv4(t *testing.T) {
+	ipv6 := make([]byte, 44)
+	ipv6[0], ipv6[5], ipv6[6] = 0x60, 4, 17
+	copy(ipv6[40:], []byte{1, 2, 3, 4})
+	ipv4 := []byte{0x45, 0, 0, 20, 0, 0, 0, 0, 64, 17, 0, 0, 10, 0, 0, 1, 10, 0, 0, 2}
+	s := &scriptedStream{chunks: []streamChunk{{ipv6[:10], 1}, {append(append([]byte(nil), ipv6[10:]...), ipv4...), 1}}}
+	out, chunk := make([]byte, maxInboundPacketSize), make([]byte, maxInboundPacketSize)
+	var pending []byte
+	var id uint64
+	var have bool
+	for i, want := range [][]byte{ipv6, ipv4} {
+		n, rest, nextID, nextHave, err := readStreamPacket(s, out, chunk, pending, id, have)
+		if err != nil || !bytes.Equal(out[:n], want) {
+			t.Fatalf("packet %d: got %x, error %v", i, out[:n], err)
+		}
+		pending, id, have = rest, nextID, nextHave
+	}
+}

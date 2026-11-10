@@ -103,17 +103,25 @@ func forwardPackets(l3, device io.ReadWriteCloser) error {
 	return result
 }
 
-// Buffer bytes across reads, discarding an incomplete packet when the stream changes.
+// Buffer IP packets across reads, discarding an incomplete packet when the stream changes.
 func readStreamPacket(stream interface {
 	ReadStream([]byte) (int, uint64, error)
 }, packet, chunk, pending []byte, streamID uint64, haveStream bool) (int, []byte, uint64, bool, error) {
 	for {
 		if len(pending) >= 20 {
-			headerLen := int(pending[0]&15) * 4
-			packetLen := int(binary.BigEndian.Uint16(pending[2:4]))
-			if pending[0]>>4 != 4 || headerLen < 20 || packetLen < headerLen || packetLen > len(packet) {
-				log.Printf("[android pid=%d stream=%p] inbound_packet phase=invalid_header version=%d header_length=%d packet_length=%d", os.Getpid(), stream, pending[0]>>4, headerLen, packetLen)
-				return 0, pending, streamID, haveStream, fmt.Errorf("invalid inbound IPv4 packet header")
+			version := pending[0] >> 4
+			headerLen, packetLen := 0, 0
+			switch version {
+			case 4:
+				headerLen = int(pending[0]&15) * 4
+				packetLen = int(binary.BigEndian.Uint16(pending[2:4]))
+			case 6:
+				headerLen = 40
+				packetLen = headerLen + int(binary.BigEndian.Uint16(pending[4:6]))
+			}
+			if headerLen < 20 || packetLen < headerLen || packetLen > len(packet) {
+				log.Printf("[android pid=%d stream=%p] inbound_packet phase=invalid_header version=%d header_length=%d packet_length=%d", os.Getpid(), stream, version, headerLen, packetLen)
+				return 0, pending, streamID, haveStream, fmt.Errorf("invalid inbound IP packet header")
 			}
 			if len(pending) >= packetLen {
 				copy(packet, pending[:packetLen])
