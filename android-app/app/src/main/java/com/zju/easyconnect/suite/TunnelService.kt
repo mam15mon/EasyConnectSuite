@@ -43,10 +43,40 @@ class TunnelService : VpnService() {
     private class ConnectionRequest(val handoff: SessionHandoff.Session) {
         val cancelled = AtomicBoolean(false)
         val terminal = AtomicBoolean(false)
+        private var fd: ParcelFileDescriptor? = null
+        val cleanup = SessionCleanup {
+            val started = SystemClock.elapsedRealtime()
+            val requestId = System.identityHashCode(this)
+            Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=cleanup_start cancelled=${cancelled.get()}")
+            closeFd()
+            Mobile.logout()
+            Mobile.stopStack()
+            Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=cleanup_finished elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=${cancelled.get()}")
+        }
+
+        @Synchronized fun registerFd(value: ParcelFileDescriptor): Boolean {
+            if (cancelled.get()) return false
+            fd = value
+            return true
+        }
+
+        fun closeFd() {
+            val old = synchronized(this) { fd.also { fd = null } }
+            try {
+                old?.close()
+            } catch (error: java.io.IOException) {
+                Log.e("VPN", "android_session pid=${android.os.Process.myPid()} request=${System.identityHashCode(this)} stage=tun_close outcome=failed error_type=${error.javaClass.simpleName}")
+            }
+        }
+
+        fun cancel() {
+            cancelled.set(true)
+            handoff.cancel()
+            cleanup.cancel()
+        }
     }
     @Volatile private var currentRequest: ConnectionRequest? = null
     @Volatile private var wantConnected = false
-    private var tunnelFd: ParcelFileDescriptor? = null
     @Volatile private var worker: Thread? = null
     @Volatile private var terminalError = false
 
@@ -83,11 +113,9 @@ class TunnelService : VpnService() {
         val thread = Thread {
             val started = SystemClock.elapsedRealtime()
             val requestId = System.identityHashCode(request)
-            var ownsClient = false
             try {
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=await_predecessor")
-                if (!request.handoff.awaitPredecessor() || request.cancelled.get()) return@Thread
-                ownsClient = true
+                if (!request.handoff.awaitPredecessor() || !request.cleanup.acquire() || request.cancelled.get()) return@Thread
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=handoff_ready elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=false")
                 var attempt = 0
                 while (!request.cancelled.get()) {
@@ -117,13 +145,9 @@ class TunnelService : VpnService() {
             } catch (_: InterruptedException) {
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=await_predecessor outcome=interrupted cancelled=${request.cancelled.get()}")
             } finally {
-                if (!request.cancelled.getAndSet(true)) {
-                    request.handoff.cancel()
-                    if (ownsClient) {
-                        Mobile.logout()
-                        Mobile.stopStack()
-                    }
-                }
+                request.cancelled.set(true)
+                request.handoff.cancel()
+                request.cleanup.finish()
                 request.handoff.finish()
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=handoff_finished elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=${request.cancelled.get()}")
             }
@@ -170,8 +194,11 @@ class TunnelService : VpnService() {
             return null
         }
 
+        if (!request.registerFd(pfd)) {
+            pfd.close()
+            return null
+        }
         updateNotification("IPv4 流量经 VPN")
-        tunnelFd = pfd
         publish(State.Connected)
 
         // startStack 阻塞直到隧道断开。不 detach:pfd 保持在 Java 侧,
@@ -182,28 +209,16 @@ class TunnelService : VpnService() {
             Mobile.startStack(pfd.fd.toLong())
         } finally {
             forwardingMs = SystemClock.elapsedRealtime() - forwardingStarted
-            tunnelFd = null
-            val cleanupStarted = SystemClock.elapsedRealtime()
-            try {
-                pfd.close()
-                Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=tun_close outcome=success elapsed_ms=${SystemClock.elapsedRealtime() - cleanupStarted} cancelled=${!wantConnected}")
-            } catch (error: java.io.IOException) {
-                Log.e("VPN", "android_session pid=${android.os.Process.myPid()} stage=tun_close outcome=failed elapsed_ms=${SystemClock.elapsedRealtime() - cleanupStarted} cancelled=${!wantConnected} error_type=${error.javaClass.simpleName}")
-            }
+            request.closeFd()
             if (!request.cancelled.get()) Mobile.logout()
         }
         return forwardingMs
     }
 
     private fun stopTunnel() {
-        currentRequest?.let { it.cancelled.set(true); it.handoff.cancel() }
+        currentRequest?.cancel()
         wantConnected = false
         worker?.interrupt()
-        Mobile.logout()
-        Mobile.stopStack()
-        // 关闭 fd 解除 startStack 的读阻塞
-        runCatching { tunnelFd?.close() }
-        tunnelFd = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         publish(State.Disconnected)
@@ -212,13 +227,9 @@ class TunnelService : VpnService() {
     override fun onDestroy() {
         val request = currentRequest
         if (request != null && !request.cancelled.getAndSet(true)) {
-            request.handoff.cancel()
+            request.cancel()
             wantConnected = false
             worker?.interrupt()
-            Mobile.logout()
-            Mobile.stopStack()
-            runCatching { tunnelFd?.close() }
-            tunnelFd = null
             stopForeground(STOP_FOREGROUND_REMOVE)
             if (!terminalError) publish(State.Disconnected)
         }
