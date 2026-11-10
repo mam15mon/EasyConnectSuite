@@ -33,10 +33,26 @@ class TunnelService : VpnService() {
 
         private val handoff = SessionHandoff()
         private val mainHandler = Handler(Looper.getMainLooper())
-        private fun publish(state: State) {
+        private val stateLock = Any()
+        private var stateOwner: ConnectionRequest? = null
+        private var stateVersion = 0L
+
+        private fun publishLocked(state: State) {
             this.state = state
             active = state != State.Disconnected && (state !is State.Error || state.retrying)
-            mainHandler.post { if (this.state === state) onState?.invoke(state) }
+            val version = ++stateVersion
+            mainHandler.post {
+                val current = synchronized(stateLock) { stateVersion == version }
+                if (current) onState?.invoke(state)
+            }
+        }
+
+        private fun publish(request: ConnectionRequest, state: State, allowCancelled: Boolean = false) {
+            synchronized(stateLock) {
+                if (stateOwner === request && (allowCancelled || !request.cancelled.get())) {
+                    publishLocked(state)
+                }
+            }
         }
     }
 
@@ -70,7 +86,7 @@ class TunnelService : VpnService() {
         }
 
         fun cancel() {
-            cancelled.set(true)
+            synchronized(stateLock) { cancelled.set(true) }
             handoff.cancel()
             cleanup.cancel()
         }
@@ -103,7 +119,10 @@ class TunnelService : VpnService() {
         currentRequest = request
         terminalError = false
         startInForeground("正在登录并建立隧道")
-        publish(State.Connecting)
+        synchronized(stateLock) {
+            stateOwner = request
+            publishLocked(State.Connecting)
+        }
 
         val server = intent.getStringExtra("server")!!
         val username = intent.getStringExtra("username")!!
@@ -127,7 +146,7 @@ class TunnelService : VpnService() {
                     wantConnected = false
                     terminalError = true
                     Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=authentication outcome=rejected elapsed_ms=${SystemClock.elapsedRealtime() - started}")
-                    publish(State.Error("认证被服务器拒绝", retrying = false))
+                    publish(request, State.Error("认证被服务器拒绝", retrying = false))
                     stopSelf()
                     break
                 }
@@ -135,7 +154,7 @@ class TunnelService : VpnService() {
                 val delay = retryDelay(attempt)
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=retry_wait attempt=$attempt delay_s=$delay connected_ms=${connectedMs ?: -1} cancelled=${!wantConnected}")
                 updateNotification("连接中断或失败，${delay}秒后重试")
-                publish(State.Error("连接中断或失败,${delay}秒后重试"))
+                publish(request, State.Error("连接中断或失败,${delay}秒后重试"))
                 try {
                     Thread.sleep(delay * 1000L)
                 } catch (_: InterruptedException) {
@@ -145,7 +164,7 @@ class TunnelService : VpnService() {
             } catch (_: InterruptedException) {
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=await_predecessor outcome=interrupted cancelled=${request.cancelled.get()}")
             } finally {
-                request.cancelled.set(true)
+                synchronized(stateLock) { request.cancelled.set(true) }
                 request.handoff.cancel()
                 try {
                     request.cleanup.finish()
@@ -170,7 +189,7 @@ class TunnelService : VpnService() {
             return null
         }
         if (ip.isEmpty()) {
-            if (!isRetry) publish(State.Error("登录失败,请检查配置"))
+            if (!isRetry) publish(request, State.Error("登录失败,请检查配置"))
             return null
         }
 
@@ -194,7 +213,7 @@ class TunnelService : VpnService() {
             terminalError = true
             Log.e("VPN", "android_session pid=${android.os.Process.myPid()} stage=tun_establish outcome=denied elapsed_ms=${SystemClock.elapsedRealtime() - establishStarted} cancelled=false")
             Mobile.logout()
-            publish(State.Error("VPN 权限被拒绝", retrying = false))
+            publish(request, State.Error("VPN 权限被拒绝", retrying = false))
             stopSelf()
             return null
         }
@@ -204,7 +223,7 @@ class TunnelService : VpnService() {
             return null
         }
         updateNotification("IPv4 流量经 VPN")
-        publish(State.Connected)
+        publish(request, State.Connected)
 
         // startStack 阻塞直到隧道断开。不 detach:pfd 保持在 Java 侧,
         // 停止时 close() 会关闭 fd,解除 Go 侧的读阻塞
@@ -226,17 +245,17 @@ class TunnelService : VpnService() {
         worker?.interrupt()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
-        publish(State.Disconnected)
+        currentRequest?.let { publish(it, State.Disconnected, allowCancelled = true) }
     }
 
     override fun onDestroy() {
         val request = currentRequest
-        if (request != null && !request.cancelled.getAndSet(true)) {
+        if (request != null && !request.cancelled.get()) {
             request.cancel()
             wantConnected = false
             worker?.interrupt()
             stopForeground(STOP_FOREGROUND_REMOVE)
-            if (!terminalError) publish(State.Disconnected)
+            if (!terminalError) publish(request, State.Disconnected, allowCancelled = true)
         }
         super.onDestroy()
     }
