@@ -78,7 +78,13 @@ func resolvedSystemCall(ctx context.Context, method string, args ...any) error {
 	}
 	defer conn.Close()
 	obj := conn.Object("org.freedesktop.resolve1", dbus.ObjectPath("/org/freedesktop/resolve1"))
-	return obj.CallWithContext(ctx, "org.freedesktop.resolve1.Manager."+method, dbus.FlagNoAutoStart, args...).Err
+	err = obj.CallWithContext(ctx, "org.freedesktop.resolve1.Manager."+method, dbus.FlagNoAutoStart, args...).Err
+	if err != nil {
+		// A bus/transport error does not establish whether the service executed
+		// the request. Preserve uncertainty even when the error is not a timeout.
+		return errors.Join(err, errResolvedOutcomeUnknown)
+	}
+	return nil
 }
 
 // resolvedDNSOwner tracks attempted changes until RevertLink succeeds. The
@@ -122,7 +128,7 @@ func (d *resolvedDNSOwner) Apply(ctx context.Context, names []string) (err error
 	// A timed-out D-Bus call may still have changed the service's state.
 	d.touched = true
 	if err = resolvedLinkDNS(ctx, d.call, d.index, d.server, names); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, errResolvedOutcomeUnknown) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			d.unknown = true
 			op.Step("dns_outcome_unconfirmed")
 			return errors.Join(err, errResolvedOutcomeUnknown)
@@ -148,7 +154,7 @@ func (d *resolvedDNSOwner) revert(ctx context.Context) error {
 		return fmt.Errorf("verify DNS interface: %w", err)
 	}
 	if err := d.call(ctx, "RevertLink", int32(d.index)); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, errResolvedOutcomeUnknown) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			d.unknown = true
 			return errors.Join(fmt.Errorf("revert link DNS: %w", err), errResolvedOutcomeUnknown)
 		}

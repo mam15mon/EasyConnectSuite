@@ -180,15 +180,15 @@ func TestResolvedPrivateBus(t *testing.T) {
 	service.failDomains = true
 	service.methods = nil
 	service.mu.Unlock()
-	if err = owner.Apply(context.Background(), []string{"example.invalid"}); err == nil {
-		t.Fatal("rejected domain update accepted")
+	if err = owner.Apply(context.Background(), []string{"example.invalid"}); !errors.Is(err, errResolvedOutcomeUnknown) {
+		t.Fatalf("D-Bus error did not retain uncertainty: %v", err)
 	}
 	service.mu.Lock()
 	methods := append([]string(nil), service.methods...)
 	remaining := len(service.addresses)
 	service.mu.Unlock()
-	if !reflect.DeepEqual(methods, []string{"SetLinkDNS", "SetLinkDomains", "RevertLink"}) || remaining != 0 || owner.touched {
-		t.Fatalf("rollback: %v remaining=%d", methods, remaining)
+	if !reflect.DeepEqual(methods, []string{"SetLinkDNS", "SetLinkDomains"}) || remaining != 1 || !owner.touched || !owner.unknown {
+		t.Fatalf("unconfirmed outcome: %v remaining=%d", methods, remaining)
 	}
 }
 
