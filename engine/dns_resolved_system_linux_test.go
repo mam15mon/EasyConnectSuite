@@ -132,4 +132,28 @@ func TestResolvedRealIsolatedLinkLifecycle(t *testing.T) {
 		t.Fatalf("unexpected link state after RevertLink: %v", domains)
 	}
 	t.Log("RevertLink removed a separately configured domain; coexistence remains unproven")
+
+	// Observe the real service after the kernel removes the non-persistent TUN.
+	if err = owner.Apply(context.Background(), []string{"example.invalid"}); err != nil {
+		t.Fatal(err)
+	}
+	if err = file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(10 * time.Second)
+	for {
+		var removedPath dbus.ObjectPath
+		err = manager.Call("org.freedesktop.resolve1.Manager.GetLink", 0, int32(iface.Index)).Store(&removedPath)
+		if busErr, ok := err.(dbus.Error); ok && busErr.Name == "org.freedesktop.resolve1.NoSuchLink" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("resolved still reports removed link or returned an unexpected error: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	// Prevent the deferred owner cleanup from issuing a request for the removed
+	// index; this test deliberately observes link removal without RevertLink.
+	owner.touched = false
+	t.Log("resolved removed the link after its TUN descriptor closed; index reuse was not tested")
 }
