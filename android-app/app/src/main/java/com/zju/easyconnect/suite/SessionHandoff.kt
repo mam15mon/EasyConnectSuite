@@ -5,7 +5,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Orders process-wide session cleanup before a successor can use Mobile. */
 internal class SessionHandoff {
-    internal class Session internal constructor(internal val predecessor: Session?) {
+    internal class Session internal constructor(predecessor: Session?) {
+        @Volatile internal var predecessor: Session? = predecessor
+            private set
         internal val done = CountDownLatch(1)
         private val cancelled = AtomicBoolean(false)
         fun cancel() { cancelled.set(true) }
@@ -26,6 +28,7 @@ internal class SessionHandoff {
                     interrupted = true
                 }
             }
+            predecessor = null
             done.countDown()
             if (interrupted) Thread.currentThread().interrupt()
         }

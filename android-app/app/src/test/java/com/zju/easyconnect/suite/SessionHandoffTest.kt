@@ -63,4 +63,19 @@ class SessionHandoffTest {
         assertFalse(nextThread.isAlive)
     }
 
+    @Test fun completedSessionsReleasePredecessorReferences() {
+        val handoff = SessionHandoff()
+        val first = handoff.next()
+        first.finish()
+        var previous = first
+        repeat(100) {
+            val next = handoff.next()
+            assertSame(previous, next.predecessor)
+            assertTrue(next.awaitPredecessor())
+            next.finish()
+            assertNull(next.predecessor)
+            previous = next
+        }
+    }
+
 }
