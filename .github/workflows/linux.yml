@@ -88,8 +88,14 @@ jobs:
                 exit 1
               fi
               kill -TERM "$app_pid"
-              wait "$app_pid"
+              result=0
+              wait "$app_pid" || result=$?
               app_pid=
+              if [ "$result" -ne 0 ] && { [ "$result" -ne 143 ] || grep -q "Ctrl+C detected" "$RUNNER_TEMP/gui-$attempt.log"; }; then
+                cat "$RUNNER_TEMP/gui-$attempt.log"
+                echo "Unexpected GUI exit status: $result" >&2
+                exit 1
+              fi
               if grep -q "gtk_main_quit: assertion" "$RUNNER_TEMP/gui-$attempt.log"; then
                 cat "$RUNNER_TEMP/gui-$attempt.log"
                 exit 1
