@@ -140,16 +140,11 @@ func (d *resolvedDNSOwner) Apply(ctx context.Context, names []string) (err error
 			op.Step("dns_request_not_sent")
 			return err
 		}
-		if errors.Is(err, errResolvedOutcomeUnknown) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			d.unknown = true
-			op.Step("dns_outcome_unconfirmed")
-			return errors.Join(err, errResolvedOutcomeUnknown)
-		}
-		op.Step("rollback_link_dns")
-		rollbackCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		err = errors.Join(err, d.revert(rollbackCtx))
-		return err
+		// The call may have changed the link, and RevertLink clears changes
+		// from other clients too. Retain uncertainty rather than rollback.
+		d.unknown = true
+		op.Step("dns_outcome_unconfirmed")
+		return errors.Join(err, errResolvedOutcomeUnknown)
 	}
 	outcome = "configured"
 	return nil

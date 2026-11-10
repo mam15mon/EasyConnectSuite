@@ -61,7 +61,7 @@ func TestResolvedLinkDNSOrderAndFailure(t *testing.T) {
 	}
 }
 
-func TestResolvedDNSOwnerRollbackAndIdentity(t *testing.T) {
+func TestResolvedDNSOwnerFailureAndIdentity(t *testing.T) {
 	fail := errors.New("domain update failed")
 	var methods []string
 	verify := func() error { return nil }
@@ -75,10 +75,14 @@ func TestResolvedDNSOwnerRollbackAndIdentity(t *testing.T) {
 	if err := owner.Apply(context.Background(), []string{"example.invalid"}); !errors.Is(err, fail) {
 		t.Fatalf("apply error: %v", err)
 	}
-	if !reflect.DeepEqual(methods, []string{"SetLinkDNS", "SetLinkDomains", "RevertLink"}) || owner.touched {
-		t.Fatalf("rollback: %v touched=%v", methods, owner.touched)
+	if !reflect.DeepEqual(methods, []string{"SetLinkDNS", "SetLinkDomains"}) || !owner.touched || !owner.unknown {
+		t.Fatalf("failure state: %v touched=%v unknown=%v", methods, owner.touched, owner.unknown)
+	}
+	if err := owner.Close(context.Background()); !errors.Is(err, errResolvedOutcomeUnknown) {
+		t.Fatalf("cleanup must preserve uncertainty: %v", err)
 	}
 	methods = nil
+	owner.unknown = false
 	verify = func() error { return errors.New("interface changed") }
 	if err := owner.Apply(context.Background(), []string{"example.invalid"}); err == nil || len(methods) != 0 {
 		t.Fatal("changed interface reached D-Bus")

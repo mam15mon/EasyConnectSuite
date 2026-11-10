@@ -246,13 +246,10 @@ func TestLinuxTUNIngressDNSFailureCleanup(t *testing.T) {
 			if !errors.Is(err, domainErr) {
 				t.Fatalf("missing configuration error: %v", err)
 			}
-			if rollbackFails && !errors.Is(err, rollbackErr) {
-				t.Fatalf("missing rollback error: %v", err)
+			if !errors.Is(err, errResolvedOutcomeUnknown) {
+				t.Fatalf("missing unconfirmed cleanup state: %v", err)
 			}
-			want := []string{"SetLinkDNS", "SetLinkDomains", "RevertLink"}
-			if rollbackFails {
-				want = append(want, "RevertLink")
-			}
+			want := []string{"SetLinkDNS", "SetLinkDomains"}
 			if !reflect.DeepEqual(calls, want) {
 				t.Fatalf("calls: %v", calls)
 			}
