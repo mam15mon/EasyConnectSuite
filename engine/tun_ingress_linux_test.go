@@ -90,9 +90,24 @@ func TestLinuxTUNIngressTCPUDP(t *testing.T) {
 			}
 		})
 	}
+	active, err := net.DialTimeout("tcp4", "198.18.61.2:12345", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer active.Close()
+	if _, err = active.Write([]byte("still-active")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = io.ReadFull(active, make([]byte, len("still-active"))); err != nil {
+		t.Fatal(err)
+	}
 	name := ingress.name
 	if err := ingress.Close(); err != nil {
 		t.Fatal(err)
+	}
+	_ = active.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err = active.Read(make([]byte, 1)); err == nil {
+		t.Fatal("active connection survived ingress close")
 	}
 	if _, err := net.InterfaceByName(name); err == nil {
 		t.Fatal("interface still exists after ingress close")
