@@ -62,6 +62,15 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 	if *totp && *protocol != "easyconnect" {
 		return errors.New("此协议暂不支持 TOTP")
 	}
+	if file, ok := input.(*os.File); ok {
+		info, err := file.Stat()
+		if err != nil {
+			return fmt.Errorf("检查标准输入失败: %w", err)
+		}
+		if info.Mode()&os.ModeCharDevice != 0 {
+			return errors.New("请通过管道或受限权限的文件提供密码，避免终端回显")
+		}
+	}
 	reader := bufio.NewReader(io.LimitReader(input, 8193))
 	password, err := readSecret(reader)
 	if err != nil {
