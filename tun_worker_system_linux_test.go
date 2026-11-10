@@ -13,6 +13,7 @@ import (
 
 	"EasyConnectSuite/engine"
 	"EasyConnectSuite/internal/tunipc"
+	"github.com/miekg/dns"
 	"github.com/sagernet/netlink"
 	"golang.org/x/sys/unix"
 )
@@ -170,7 +171,17 @@ func (linuxManagerEcho) Dial(ctx context.Context, network, address string) (net.
 	go func() { defer b.Close(); _, _ = io.Copy(b, b) }()
 	return a, nil
 }
-func (linuxManagerEcho) DNS(context.Context, []byte) ([]byte, []string, error) { return nil, nil, nil }
+func (linuxManagerEcho) DNS(_ context.Context, data []byte) ([]byte, []string, error) {
+	request := new(dns.Msg)
+	if err := request.Unpack(data); err != nil {
+		return nil, nil, err
+	}
+	response := new(dns.Msg)
+	response.SetReply(request)
+	response.Answer = []dns.RR{&dns.A{Hdr: dns.RR_Header{Name: request.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: net.IPv4(198, 18, 72, 2)}}
+	answer, err := response.Pack()
+	return answer, nil, err
+}
 
 func TestLinuxManagerWorkerLifecycle(t *testing.T) {
 	if os.Getenv("ECS_LINUX_TUN_SYSTEM_TEST") != "1" {
@@ -217,6 +228,20 @@ func TestLinuxManagerWorkerLifecycle(t *testing.T) {
 		if string(result) != string(payload) {
 			t.Fatalf("unexpected %s data", network)
 		}
+	}
+	request := new(dns.Msg)
+	request.SetQuestion("synthetic.invalid.", dns.TypeA)
+	client := &dns.Client{Net: "udp", Timeout: 5 * time.Second}
+	response, _, err := client.Exchange(request, "198.19.128.30:53")
+	if err != nil {
+		t.Fatalf("DNS over worker: %v", err)
+	}
+	if len(response.Answer) != 1 {
+		t.Fatalf("unexpected DNS answer count: %d", len(response.Answer))
+	}
+	answer, ok := response.Answer[0].(*dns.A)
+	if !ok || !answer.A.Equal(net.IPv4(198, 18, 72, 2)) {
+		t.Fatalf("unexpected DNS answer: %v", response.Answer[0])
 	}
 	if err := attachment.Close(ctx); err != nil {
 		t.Fatal(err)
