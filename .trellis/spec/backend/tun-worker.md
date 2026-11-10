@@ -66,3 +66,7 @@ Opt-in ECS_TUN_SYSTEM_TEST=accept/cancel/crash runs real elevation and reserved 
 Wrong: hot toggle overwrites conf.TUNMode, reloads policy/resolver and calls Stop/Setup. Correct: retain policy and use Engine.SetTUN with a strict view and independent attachment lifecycle.
 
 Wrong: one os.File object drives both pipe directions, ignoring race detector failures. Correct: DuplicateHandle to separate directional File state, preserve overlapped deadlines and test concurrent full-duplex traffic with race.
+
+### Worker cleanup failure gate
+
+Once an attachment cleanup fails, the running Worker retains the cause and rejects subsequent `prepare` and `attach` requests. Other existing attachments can still be detached and Worker shutdown must retain the failure. `TestWorkerRejectsNewAttachmentsAfterCleanupFailure` exercises a failed detach followed by rejected new operations, independent cleanup of another attachment, and error propagation on shutdown; Linux CI runs it with the race detector. This in-memory gate does not establish crash recovery or prevent a new process from reusing an unconfirmed Linux DNS interface; those require separate ownership and recovery mechanisms.
