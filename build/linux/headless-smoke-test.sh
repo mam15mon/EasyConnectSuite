@@ -3,11 +3,13 @@ set -euo pipefail
 
 work_dir=$(mktemp -d)
 gateway_pid=
+reject_pid=
 tcp_pid=
 client_pid=
 cleanup() {
   if [ -n "$client_pid" ]; then kill "$client_pid" 2>/dev/null || true; wait "$client_pid" 2>/dev/null || true; fi
   if [ -n "$gateway_pid" ]; then kill "$gateway_pid" 2>/dev/null || true; wait "$gateway_pid" 2>/dev/null || true; fi
+  if [ -n "$reject_pid" ]; then kill "$reject_pid" 2>/dev/null || true; wait "$reject_pid" 2>/dev/null || true; fi
   if [ -n "$tcp_pid" ]; then sudo pkill -P "$tcp_pid" 2>/dev/null || true; sudo kill "$tcp_pid" 2>/dev/null || true; wait "$tcp_pid" 2>/dev/null || true; fi
   rm -rf "$work_dir"
 }
@@ -107,4 +109,50 @@ for port in (19080, 19081):
         if sock.connect_ex(('127.0.0.1', port)) == 0:
             raise SystemExit(f'proxy port {port} remained open after exit')
 print('Mock login, TCP round trip, signal cleanup and credential redaction passed')
+PY
+
+# Verify an explicit rejection ends the real headless process without retries.
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$work_dir/key.pem" \
+  -out "$work_dir/cert.pem" -days 1 -subj '/CN=localhost' >/dev/null 2>&1
+modulus=$(openssl rsa -in "$work_dir/key.pem" -noout -modulus | cut -d= -f2)
+python3 build/android/reject-gateway.py "$work_dir/cert.pem" "$work_dir/key.pem" "$modulus" "$work_dir/rejections" >"$work_dir/reject.log" 2>&1 &
+reject_pid=$!
+python3 - <<'PY'
+import socket, time
+for _ in range(100):
+    try:
+        with socket.create_connection(('127.0.0.1', 18444), timeout=.2):
+            break
+    except OSError:
+        time.sleep(.1)
+else:
+    raise SystemExit('reject gateway did not start')
+PY
+set +e
+printf '%s\n' 'rejection-private-canary' | timeout 20s "$RUNNER_TEMP/vpn-headless-linux-amd64" \
+  -server 127.0.0.1 -port 18444 -username mock-user -socks-port 19080 -http-port 19081 >"$work_dir/rejected-client.log" 2>&1
+reject_status=$?
+set -e
+if [ "$reject_status" -eq 0 ] || [ "$reject_status" -eq 124 ] || [ "$reject_status" -eq 137 ]; then
+  cat "$work_dir/rejected-client.log" "$work_dir/reject.log"
+  echo "Authentication rejection returned unexpected status: $reject_status" >&2
+  exit 1
+fi
+if [ ! -f "$work_dir/rejections" ] || [ "$(wc -l < "$work_dir/rejections")" -ne 1 ]; then
+  cat "$work_dir/rejected-client.log" "$work_dir/reject.log"
+  echo 'Expected exactly one rejected password attempt' >&2
+  exit 1
+fi
+if grep -q 'rejection-private-canary' "$work_dir/rejected-client.log" "$work_dir/reject.log"; then
+  echo 'Rejected credential leaked to test logs' >&2
+  exit 1
+fi
+python3 - <<'PY'
+import socket
+for port in (19080, 19081):
+    with socket.socket() as sock:
+        sock.settimeout(1)
+        if sock.connect_ex(('127.0.0.1', port)) == 0:
+            raise SystemExit(f'proxy port {port} remained open after rejection')
+print('Authentication rejection exited without retry, leaked credentials or open proxy ports')
 PY
