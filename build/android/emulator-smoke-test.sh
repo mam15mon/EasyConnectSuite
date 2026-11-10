@@ -355,6 +355,17 @@ if ! adb shell /data/local/tmp/android-udp-probe; then
   echo 'UDP payload did not return through VPN' >&2
   exit 1
 fi
+if ! adb shell ping -c 1 -W 3 198.18.0.1; then
+  cat "$RUNNER_TEMP/success-gateway.log"
+  adb logcat -d -s VPN:I GoLog:I AndroidRuntime:E
+  echo 'ICMP echo did not return through VPN' >&2
+  exit 1
+fi
+if ! grep -q 'icmp_echo' "$RUNNER_TEMP/success-gateway.log"; then
+  echo 'Mock gateway did not receive ICMP echo' >&2
+  exit 1
+fi
+echo 'ICMP echo returned through VPN'
 touch "$RUNNER_TEMP/close-receive"
 # The first receive stream closes after the first echo. Wait for a new receive
 # stream and confirm another datagram traverses the recovered channel.

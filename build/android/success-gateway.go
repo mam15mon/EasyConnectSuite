@@ -112,6 +112,25 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 				if _, err := io.ReadFull(reader, packet[20:]); err != nil {
 					return
 				}
+				if packet[9] == 1 && length >= 28 && packet[20] == 8 && packet[21] == 0 {
+					copy(packet[12:16], ip[16:20])
+					copy(packet[16:20], ip[12:16])
+					packet[20], packet[22], packet[23] = 0, 0, 0
+					var sum uint32
+					for i := 20; i < len(packet); i += 2 {
+						sum += uint32(packet[i]) << 8
+						if i+1 < len(packet) {
+							sum += uint32(packet[i+1])
+						}
+					}
+					for sum>>16 != 0 {
+						sum = sum&0xffff + sum>>16
+					}
+					binary.BigEndian.PutUint16(packet[22:24], ^uint16(sum))
+					udpReplies <- packet
+					fmt.Fprintln(os.Stdout, "icmp_echo")
+					continue
+				}
 				if packet[9] == 6 {
 					if _, err := tcpBridge.Write(packet); err != nil {
 						fmt.Fprintf(os.Stderr, "tcp bridge: %v\n", err)
