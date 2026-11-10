@@ -19,6 +19,7 @@ class WaitEvidenceTest {
             release.await()
             operation.finish()
         }
+        worker.name = "private-canary-credential"
         worker.start()
         assertTrue(entered.await(1, TimeUnit.SECONDS))
         cancelled.set(true)
@@ -31,6 +32,7 @@ class WaitEvidenceTest {
         assertTrue(snapshot.any { it.contains("phase=pending") && it.contains("cancelled=true") && it.contains("root_cause=undetermined") })
         assertTrue(snapshot.any { it.contains("thread_id=${worker.id}") && it.contains("state=WAITING") })
         assertTrue(snapshot.any { it.contains("phase=snapshot_end") && it.contains("truncated=") })
+        assertTrue(snapshot.none { it.contains("private-canary-credential") })
         assertEquals(1, snapshot.count { it.contains("phase=end") })
         Thread.sleep(80)
         assertEquals(snapshot.size, lines.size)
