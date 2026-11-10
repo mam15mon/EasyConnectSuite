@@ -214,25 +214,33 @@ class TunnelService : VpnService() {
             return null
         }
 
-        if (!request.registerFd(pfd)) {
+        // Keep the descriptor passed to Go open until StartStack returns. The
+        // cancellation thread may close the service-owned descriptor at any time.
+        val stackFd = try {
+            ParcelFileDescriptor.dup(pfd.fileDescriptor)
+        } catch (error: java.io.IOException) {
             pfd.close()
-            return null
+            throw error
         }
-        updateNotification(request, "IPv4 流量经 VPN")
-        publish(request, State.Connected)
-
-        // startStack 阻塞直到隧道断开。不 detach:pfd 保持在 Java 侧,
-        // 停止时 close() 会关闭 fd,解除 Go 侧的读阻塞
-        val forwardingStarted = SystemClock.elapsedRealtime()
-        var forwardingMs = 0L
+        var forwardingStarted = 0L
         try {
-            Mobile.startStack(pfd.fd.toLong())
+            if (!request.registerFd(pfd)) {
+                pfd.close()
+                return null
+            }
+            updateNotification(request, "IPv4 流量经 VPN")
+            publish(request, State.Connected)
+            forwardingStarted = SystemClock.elapsedRealtime()
+            Mobile.startStack(stackFd.fd.toLong())
+            return SystemClock.elapsedRealtime() - forwardingStarted
         } finally {
-            forwardingMs = SystemClock.elapsedRealtime() - forwardingStarted
-            request.closeFd()
-            if (!request.cancelled.get()) Mobile.logout()
+            try {
+                stackFd.close()
+            } finally {
+                request.closeFd()
+                if (!request.cancelled.get()) Mobile.logout()
+            }
         }
-        return forwardingMs
     }
 
     private fun finishWithError(request: ConnectionRequest, message: String) {
