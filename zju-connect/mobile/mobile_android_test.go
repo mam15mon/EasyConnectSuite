@@ -37,6 +37,9 @@ func TestQueuedLoginDoesNotStartAfterLogout(t *testing.T) {
 	done := make(chan string, 1)
 	go func() { done <- loginAtEpoch("127.0.0.1:1", "test", "test", "", epoch) }()
 	Logout()
+	vpnClientMu.Lock()
+	stoppedGeneration := loginGeneration
+	vpnClientMu.Unlock()
 	loginMu.Unlock()
 	select {
 	case got := <-done:
@@ -47,8 +50,11 @@ func TestQueuedLoginDoesNotStartAfterLogout(t *testing.T) {
 		t.Fatal("cancelled queued login did not return")
 	}
 	vpnClientMu.Lock()
-	client, underlay := vpnClient, vpnUnderlay
+	client, underlay, generation := vpnClient, vpnUnderlay, loginGeneration
 	vpnClientMu.Unlock()
+	if generation != stoppedGeneration {
+		t.Fatal("cancelled queued login started a new generation")
+	}
 	if client != nil || underlay != nil {
 		t.Fatal("cancelled queued login installed a client")
 	}
