@@ -18,10 +18,10 @@ type tunControl interface {
 type unsupportedTUNManager struct{}
 
 func (unsupportedTUNManager) Attach(context.Context, engine.TUNSpec, engine.TUNBackend) (engine.TUNAttachment, error) {
-	return nil, errors.New("macOS TUN 尚未实现")
+	return nil, errors.New("当前平台 TUN 尚未完成")
 }
 func (unsupportedTUNManager) Prepare(context.Context, string) error {
-	return errors.New("macOS TUN 尚未实现")
+	return errors.New("当前平台 TUN 尚未完成")
 }
 func (unsupportedTUNManager) Release(context.Context, string) error {
 	return nil
@@ -46,7 +46,7 @@ func (a *App) SetTUNMode(enabled bool) error {
 
 func (a *App) SetProfileTUNMode(id string, enabled bool) error {
 	if enabled {
-		return errors.New("macOS TUN 尚未实现")
+		return errors.New("当前平台 TUN 尚未完成")
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
