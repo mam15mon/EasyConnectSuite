@@ -109,6 +109,7 @@ func readStreamPacket(stream interface {
 			headerLen := int(pending[0]&15) * 4
 			packetLen := int(binary.BigEndian.Uint16(pending[2:4]))
 			if pending[0]>>4 != 4 || headerLen < 20 || packetLen < headerLen || packetLen > len(packet) {
+				log.Printf("[android pid=%d stream=%p] inbound_packet phase=invalid_header version=%d header_length=%d packet_length=%d", os.Getpid(), stream, pending[0]>>4, headerLen, packetLen)
 				return 0, pending, streamID, haveStream, fmt.Errorf("invalid inbound IPv4 packet header")
 			}
 			if len(pending) >= packetLen {
@@ -132,6 +133,7 @@ func readStreamPacket(stream interface {
 			return 0, pending, streamID, haveStream, err
 		}
 		if n == 0 {
+			log.Printf("[android pid=%d stream=%p] inbound_stream phase=no_progress", os.Getpid(), stream)
 			return 0, pending, streamID, haveStream, io.ErrNoProgress
 		}
 	}
