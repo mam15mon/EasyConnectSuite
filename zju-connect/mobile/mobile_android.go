@@ -23,6 +23,7 @@ var tunnelMu sync.Mutex
 var activeTunnel *tun.Stack
 var loginRejected atomic.Bool
 var loginGeneration uint64
+var logoutGeneration uint64
 var loginCancelled chan struct{}
 
 func Login(server string, username string, password string) string {
@@ -52,6 +53,7 @@ func Logout() {
 	op.Step("acquire_client_lock")
 	vpnClientMu.Lock()
 	loginGeneration++
+	logoutGeneration++
 	if loginCancelled != nil {
 		close(loginCancelled)
 		loginCancelled = nil
@@ -74,11 +76,25 @@ func LoginRejected() bool {
 }
 
 func login(server string, username string, password string, totpSecret string) string {
+	vpnClientMu.Lock()
+	epoch := logoutGeneration
+	vpnClientMu.Unlock()
+	return loginAtEpoch(server, username, password, totpSecret, epoch)
+}
+
+func loginAtEpoch(server string, username string, password string, totpSecret string, epoch uint64) string {
+	op := log.BeginOperation(fmt.Sprintf("[android pid=%d login_epoch=%d] ", os.Getpid(), epoch), "android_login_wait", nil)
+	op.Step("acquire_login_lock")
 	loginMu.Lock()
 	defer loginMu.Unlock()
-	loginRejected.Store(false)
-
 	vpnClientMu.Lock()
+	if epoch != logoutGeneration {
+		vpnClientMu.Unlock()
+		op.Finish("cancelled", context.Canceled)
+		return ""
+	}
+	op.Finish("success", nil)
+	loginRejected.Store(false)
 	loginGeneration++
 	generation := loginGeneration
 	cancelled := make(chan struct{})
