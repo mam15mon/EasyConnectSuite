@@ -315,4 +315,63 @@ class TunnelServiceHandoffTest {
         }
     }
 
+    @Test fun oldInstanceDestructionDoesNotRemoveNewForegroundNotification() {
+        val oldLogin = CountDownLatch(1)
+        val releaseOld = CountDownLatch(1)
+        val newLogin = CountDownLatch(1)
+        val releaseNew = CountDownLatch(1)
+        val calls = AtomicInteger()
+        TunnelService.mobileBridge = object : MobileBridge {
+            override fun loginEpoch() = 0L
+            override fun loginForEpoch(server: String, user: String, password: String, totp: String, epoch: Long): String {
+                if (calls.incrementAndGet() == 1) {
+                    oldLogin.countDown()
+                    awaitWithoutInterruption(releaseOld)
+                } else {
+                    newLogin.countDown()
+                    awaitWithoutInterruption(releaseNew)
+                }
+                return ""
+            }
+            override fun loginRejected() = false
+            override fun dnsServer() = ""
+            override fun startStack(fd: Long) = Unit
+            override fun logout() = Unit
+            override fun stopStack() = Unit
+        }
+        val oldController = Robolectric.buildService(TunnelService::class.java).create()
+        val oldService = oldController.get()
+        val newController = Robolectric.buildService(TunnelService::class.java).create()
+        val newService = newController.get()
+        var destroyed = false
+        val intent = Intent(oldService, TunnelService::class.java).apply {
+            putExtra("server", "test")
+            putExtra("username", "test")
+            putExtra("password", "test")
+        }
+        try {
+            oldService.onStartCommand(intent, 0, 1)
+            assertTrue(oldLogin.await(2, TimeUnit.SECONDS))
+            newService.onStartCommand(intent, 0, 2)
+            val manager = newService.getSystemService(android.app.NotificationManager::class.java)
+            val notification = org.robolectric.Shadows.shadowOf(newService).lastForegroundNotification
+            assertNotNull(notification)
+            assertSame(notification, org.robolectric.Shadows.shadowOf(manager).getNotification(1))
+            oldController.destroy()
+            destroyed = true
+            assertFalse(org.robolectric.Shadows.shadowOf(oldService).isLastForegroundNotificationAttached)
+            assertSame(notification, org.robolectric.Shadows.shadowOf(manager).getNotification(1))
+            releaseOld.countDown()
+            assertTrue(newLogin.await(2, TimeUnit.SECONDS))
+            assertTrue(TunnelService.currentState() is TunnelService.State.Connecting)
+        } finally {
+            newService.onStartCommand(null, 0, 3)
+            releaseOld.countDown()
+            releaseNew.countDown()
+            if (!destroyed) oldController.destroy()
+            newController.destroy()
+            TunnelService.mobileBridge = GoMobileBridge
+        }
+    }
+
 }
