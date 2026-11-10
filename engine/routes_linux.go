@@ -44,7 +44,7 @@ func (r *linuxRoutes) Apply(add, remove []string) (result routeResult, err error
 		if err != nil && len(result.Added) > 0 {
 			op.Step("close_partial_interface")
 			if closeErr := r.device.Close(); closeErr != nil {
-				err = fmt.Errorf("%w; close TUN: %v", err, closeErr)
+				err = joinTUNCleanupError(err, fmt.Errorf("close TUN: %w", closeErr))
 			} else {
 				r.closedOnFailure = true
 				result.Added = nil

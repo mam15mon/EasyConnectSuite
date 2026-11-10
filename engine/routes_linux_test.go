@@ -3,6 +3,7 @@ package engine
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -321,5 +322,39 @@ func TestLinuxTUNCrashCleanup(t *testing.T) {
 	routes, err = netlink.RouteListFiltered(netlink.FAMILY_V4, &netlink.Route{Dst: otherPrefix, Table: unix.RT_TABLE_MAIN}, netlink.RT_FILTER_DST|netlink.RT_FILTER_TABLE)
 	if err != nil || len(routes) != 1 || routes[0].LinkIndex != otherLink.Attrs().Index {
 		t.Fatalf("other route changed: %+v %v", routes, err)
+	}
+}
+
+func TestLinuxRoutesPartialFailurePreservesCloseError(t *testing.T) {
+	if os.Getenv("ECS_LINUX_TUN_SYSTEM_TEST") != "1" {
+		t.Skip("requires isolated Linux network namespace and TUN privileges")
+	}
+	file, name, err := createLinuxTUN(context.Background(), linuxTestSpec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	link, err := netlink.LinkByName(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = netlink.LinkSetUp(link); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	var injected error
+	r := &linuxRoutes{device: file, name: name, index: link.Attrs().Index, ref: linuxTestSpec(), beforeAdd: func() {
+		calls++
+		if calls == 2 {
+			injected = file.Close()
+		}
+	}}
+	result, err := r.Apply([]string{"198.18.20.0/24", "198.18.21.0/24"}, nil)
+	if injected != nil {
+		t.Fatal(injected)
+	}
+	var cleanup *TUNCleanupError
+	if calls != 2 || err == nil || !errors.As(err, &cleanup) || !errors.Is(err, os.ErrClosed) || len(result.Added) != 1 {
+		t.Fatalf("partial cleanup failure lost: calls=%d result=%+v err=%v", calls, result, err)
 	}
 }

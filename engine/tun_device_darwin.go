@@ -44,7 +44,7 @@ func createDarwinTUN(ctx context.Context, spec TUNSpec) (device tun.Tun, name st
 	if err = ctx.Err(); err != nil {
 		operation.Step("cancel_cleanup")
 		if closeErr := device.Close(); closeErr != nil {
-			err = fmt.Errorf("%w; close TUN: %v", err, closeErr)
+			err = joinTUNCleanupError(err, fmt.Errorf("close TUN: %w", closeErr))
 		}
 		device = nil
 		outcome = "cancelled"
