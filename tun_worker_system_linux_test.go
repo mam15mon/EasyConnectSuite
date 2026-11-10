@@ -83,14 +83,19 @@ func TestLinuxWorkerProcessLifecycle(t *testing.T) {
 	if !found {
 		t.Fatal("worker did not create an interface")
 	}
-	if _, err = peer.Call(ctx, tunipc.Message{Op: "detach", Ref: ref}); err != nil {
+	// Simulate the parent disappearing while the attachment is active.
+	if err = peer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = peer.Call(ctx, tunipc.Message{Op: "shutdown"}); err != nil {
-		t.Fatal(err)
-	}
-	if err = cmd.Wait(); err != nil {
-		t.Fatal(err)
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	select {
+	case err = <-waited:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("worker did not exit after control channel closed")
 	}
 	ifaces, err = net.Interfaces()
 	if err != nil {
