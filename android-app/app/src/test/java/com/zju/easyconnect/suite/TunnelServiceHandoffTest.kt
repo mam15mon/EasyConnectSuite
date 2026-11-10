@@ -197,4 +197,66 @@ class TunnelServiceHandoffTest {
         }
     }
 
+    @Test fun oldTunDescriptorRemainsValidUntilForwarderReturns() {
+        val oldForwarder = CountDownLatch(1)
+        val newForwarder = CountDownLatch(1)
+        val cleanupDone = CountDownLatch(1)
+        val releaseOld = CountDownLatch(1)
+        val releaseNew = CountDownLatch(1)
+        val calls = AtomicInteger()
+        val oldFd = java.util.concurrent.atomic.AtomicLong(-1)
+        val firstPipe = android.os.ParcelFileDescriptor.createPipe()
+        val secondPipe = android.os.ParcelFileDescriptor.createPipe()
+        val tunCalls = AtomicInteger()
+        TunnelService.tunFactory = { _, _, _ ->
+            if (tunCalls.incrementAndGet() == 1) firstPipe[0] else secondPipe[0]
+        }
+        TunnelService.mobileBridge = object : MobileBridge {
+            override fun loginEpoch() = 0L
+            override fun loginForEpoch(server: String, user: String, password: String, totp: String, epoch: Long) = "10.0.0.2"
+            override fun loginRejected() = false
+            override fun dnsServer() = "10.0.0.1"
+            override fun startStack(fd: Long) {
+                if (calls.incrementAndGet() == 1) {
+                    oldFd.set(fd)
+                    oldForwarder.countDown()
+                    awaitWithoutInterruption(releaseOld)
+                } else {
+                    newForwarder.countDown()
+                    awaitWithoutInterruption(releaseNew)
+                }
+            }
+            override fun logout() = Unit
+            override fun stopStack() { cleanupDone.countDown() }
+        }
+        val controller = Robolectric.buildService(TunnelService::class.java).create()
+        val service = controller.get()
+        val intent = Intent(service, TunnelService::class.java).apply {
+            putExtra("server", "test")
+            putExtra("username", "test")
+            putExtra("password", "test")
+        }
+        try {
+            service.onStartCommand(intent, 0, 1)
+            assertTrue(oldForwarder.await(2, TimeUnit.SECONDS))
+            service.onStartCommand(null, 0, 2)
+            assertTrue(cleanupDone.await(2, TimeUnit.SECONDS))
+            android.os.ParcelFileDescriptor.fromFd(oldFd.get().toInt()).use { assertTrue(it.fd >= 0) }
+            service.onStartCommand(intent, 0, 3)
+            assertFalse(newForwarder.await(150, TimeUnit.MILLISECONDS))
+            releaseOld.countDown()
+            assertTrue(newForwarder.await(2, TimeUnit.SECONDS))
+            assertEquals(2, calls.get())
+        } finally {
+            service.onStartCommand(null, 0, 4)
+            releaseOld.countDown()
+            releaseNew.countDown()
+            controller.destroy()
+            TunnelService.mobileBridge = GoMobileBridge
+            TunnelService.tunFactory = TunnelService.defaultTunFactory
+            firstPipe[1].close()
+            secondPipe[1].close()
+        }
+    }
+
 }
