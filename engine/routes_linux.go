@@ -62,7 +62,17 @@ func (r *linuxRoutes) Apply(add, remove []string) (result routeResult, err error
 		outcome = "failed"
 		return
 	}
-	if err = unix.IoctlIfreq(int(r.device.Fd()), unix.TUNGETIFF, ifr); err != nil {
+	raw, rawErr := r.device.SyscallConn()
+	if rawErr != nil {
+		outcome = "failed"
+		return result, rawErr
+	}
+	var ioctlErr error
+	if err = raw.Control(func(fd uintptr) { ioctlErr = unix.IoctlIfreq(int(fd), unix.TUNGETIFF, ifr) }); err != nil {
+		outcome = "failed"
+		return
+	}
+	if err = ioctlErr; err != nil {
 		outcome = "failed"
 		return
 	}
