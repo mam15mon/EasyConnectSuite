@@ -144,6 +144,7 @@ for _ in range(300):
 else:
     raise SystemExit('GUI did not reconnect before window close')
 PY
+echo 'Sending window close to connected GUI'
 xdotool windowclose "$window"
 for attempt in $(seq 1 200); do
   if ! kill -0 "$app_pid" 2>/dev/null; then break; fi
@@ -153,8 +154,17 @@ if kill -0 "$app_pid" 2>/dev/null; then
   echo 'GUI did not exit after closing its connected window' >&2
   exit 1
 fi
-wait "$app_pid"
+exit_status=0
+wait "$app_pid" || exit_status=$?
 app_pid=
+if [ "$exit_status" -ne 0 ]; then
+  echo "GUI exited with status $exit_status after window close" >&2
+  sed 's/synthetic-password/[redacted]/g' "$work_dir/app.log" >&2
+  if [ -f "$XDG_CONFIG_HOME/VPN/logs/crash.log" ]; then
+    sed 's/synthetic-password/[redacted]/g' "$XDG_CONFIG_HOME/VPN/logs/crash.log" >&2
+  fi
+  exit 1
+fi
 python3 - <<'PY'
 import socket
 for port in (19180, 19181):
