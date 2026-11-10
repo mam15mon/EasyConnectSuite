@@ -138,7 +138,7 @@ class TunnelService : VpnService() {
             val requestId = System.identityHashCode(request)
             try {
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=await_predecessor")
-                if (!request.handoff.awaitPredecessor() || !request.cleanup.acquire() || request.cancelled.get()) return@Thread
+                if (!observeWait(request, "await_predecessor") { request.handoff.awaitPredecessor() } || !request.cleanup.acquire() || request.cancelled.get()) return@Thread
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=handoff_ready elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=false")
                 var attempt = 0
                 while (!request.cancelled.get()) {
@@ -168,12 +168,12 @@ class TunnelService : VpnService() {
                 synchronized(stateLock) { request.cancelled.set(true) }
                 request.handoff.cancel()
                 try {
-                    request.cleanup.finish()
+                    observeWait(request, "await_cleanup") { request.cleanup.finish() }
                 } catch (error: Throwable) {
                     Log.e("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=cleanup_finished outcome=failed elapsed_ms=${SystemClock.elapsedRealtime() - started} error_type=${error.javaClass.simpleName}")
                     throw error
                 }
-                request.handoff.finish()
+                observeWait(request, "finish_handoff") { request.handoff.finish() }
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=handoff_finished elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=${request.cancelled.get()}")
             }
         }
@@ -243,6 +243,20 @@ class TunnelService : VpnService() {
                 request.closeFd()
                 if (!request.cancelled.get()) Mobile.logout()
             }
+        }
+    }
+
+    private fun <T> observeWait(request: ConnectionRequest, stage: String, block: () -> T): T {
+        val evidence = WaitEvidence.begin(System.identityHashCode(request), stage, { request.cancelled.get() }) {
+            Log.i("VPN", "pid=${android.os.Process.myPid()} $it")
+        }
+        try {
+            return block()
+        } catch (error: Throwable) {
+            evidence.finish(error)
+            throw error
+        } finally {
+            evidence.finish()
         }
     }
 
