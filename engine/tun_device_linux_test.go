@@ -130,7 +130,13 @@ func TestLinuxTUNConfiguredPacket(t *testing.T) {
 				pollErr = nil
 				continue
 			}
-			return
+			if pollErr != nil {
+				return
+			}
+			// A newly enabled interface can emit unrelated IPv6 control packets.
+			if n >= 28 && packet[0]>>4 == 4 && packet[9] == 17 && bytes.Contains(packet[:n], []byte("linux-tun-packet")) {
+				return
+			}
 		}
 		pollErr = fmt.Errorf("TUN packet did not arrive")
 	}); err != nil {
