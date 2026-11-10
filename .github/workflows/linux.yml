@@ -36,7 +36,7 @@ jobs:
       - name: Test Linux TUN device in isolated network namespace
         run: |
           go test -c -o "$RUNNER_TEMP/linux-engine-test" ./engine
-          sudo env ECS_LINUX_TUN_SYSTEM_TEST=1 unshare --net "$RUNNER_TEMP/linux-engine-test" -test.run '^TestLinux(TUNDeviceOwnership|RoutesOwnership|RoutesConcurrentConflict|RoutesPartialFailureClosesOwner|TUNCrashCleanup|TUNConfiguredPacket|TUNConfigureFailureCleansDevice|TUNBlockedReadCloses|TUNIngressTCPUDP|TUNIngressPartialRouteFailure|TUNIngressDNSLifecycle)$' -test.v
+          sudo env ECS_LINUX_TUN_SYSTEM_TEST=1 unshare --net "$RUNNER_TEMP/linux-engine-test" -test.run '^TestLinux(TUNDeviceOwnership|RoutesOwnership|RoutesConcurrentConflict|RoutesPartialFailureClosesOwner|TUNCrashCleanup|TUNConfiguredPacket|TUNConfigureFailureCleansDevice|TUNBlockedReadCloses|TUNIngressTCPUDP|TUNIngressPartialRouteFailure|TUNIngressDNSLifecycle|TUNIngressDNSFailureCleanup)$' -test.v
       - name: Test Linux TUN worker in isolated network namespace
         run: |
           go test -tags webkit2_41 -c -o "$RUNNER_TEMP/linux-worker-test" .

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -207,5 +208,66 @@ func TestLinuxTUNIngressDNSLifecycle(t *testing.T) {
 	}
 	if _, err = net.InterfaceByName(name); err == nil {
 		t.Fatal("TUN survived DNS cleanup")
+	}
+}
+
+func TestLinuxTUNIngressDNSFailureCleanup(t *testing.T) {
+	if os.Getenv("ECS_LINUX_TUN_SYSTEM_TEST") != "1" {
+		t.Skip("requires isolated Linux network namespace and TUN privileges")
+	}
+	for _, rollbackFails := range []bool{false, true} {
+		t.Run(fmt.Sprintf("rollbackFails=%t", rollbackFails), func(t *testing.T) {
+			other, otherName, err := createLinuxTUN(context.Background(), linuxTestSpec())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer other.Close()
+			spec := linuxTestSpec()
+			spec.Slot = 12
+			spec.Names = []string{"example.invalid"}
+			domainErr := errors.New("synthetic domain error")
+			rollbackErr := errors.New("synthetic rollback error")
+			var calls []string
+			call := func(_ context.Context, method string, _ ...any) error {
+				calls = append(calls, method)
+				if method == "SetLinkDomains" {
+					return domainErr
+				}
+				if method == "RevertLink" && rollbackFails {
+					return rollbackErr
+				}
+				return nil
+			}
+			ingress, err := startLinuxTUNIngressWithDNS(context.Background(), spec, linuxEchoBackend{}, call)
+			if ingress != nil {
+				ingress.Close()
+				t.Fatal("failed DNS attached")
+			}
+			if !errors.Is(err, domainErr) {
+				t.Fatalf("missing configuration error: %v", err)
+			}
+			if rollbackFails && !errors.Is(err, rollbackErr) {
+				t.Fatalf("missing rollback error: %v", err)
+			}
+			want := []string{"SetLinkDNS", "SetLinkDomains", "RevertLink"}
+			if rollbackFails {
+				want = append(want, "RevertLink")
+			}
+			if !reflect.DeepEqual(calls, want) {
+				t.Fatalf("calls: %v", calls)
+			}
+			if _, err := net.InterfaceByName(otherName); err != nil {
+				t.Fatalf("other interface removed: %v", err)
+			}
+			ifaces, err := net.Interfaces()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, iface := range ifaces {
+				if strings.HasPrefix(iface.Name, "ecs") && iface.Name != otherName {
+					t.Fatalf("failed TUN remained: %s", iface.Name)
+				}
+			}
+		})
 	}
 }
