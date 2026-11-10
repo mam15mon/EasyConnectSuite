@@ -37,6 +37,24 @@ func TestNewAutoDetectDisabled(t *testing.T) {
 	}
 }
 
+func TestLoopbackDialDoesNotBindPhysicalInterface(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	dialer, err := New(Options{InterfaceName: "nonexistent-physical-interface"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dialer.Close()
+	conn, err := dialer.DialContext(t.Context(), "tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("loopback dial: %v", err)
+	}
+	conn.Close()
+}
+
 func TestMissingUnderlayInterfaceReturnsDialError(t *testing.T) {
 	originalFind := findDefaultInterface
 	findDefaultInterface = func() string { return "" }
