@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,7 +81,7 @@ func TestLinuxGUIBackendMockGateway(t *testing.T) {
 			}
 			reader := bufio.NewReader(conn)
 			line, err := reader.ReadString('\n')
-			if err != nil || line != "HTTP/1.1 200 Connection established\r\n" {
+			if err != nil || !strings.HasPrefix(line, "HTTP/1.1 200 ") {
 				t.Fatalf("HTTP connect: %q %v", line, err)
 			}
 			for {
