@@ -13,6 +13,8 @@ import (
 
 	"EasyConnectSuite/engine"
 	"EasyConnectSuite/internal/tunipc"
+	"github.com/sagernet/netlink"
+	"golang.org/x/sys/unix"
 )
 
 func TestLinuxWorkerHelper(t *testing.T) {
@@ -293,5 +295,61 @@ func TestLinuxManagerWorkerCrash(t *testing.T) {
 		if len(iface.Name) >= 3 && iface.Name[:3] == "ecs" {
 			t.Fatal("worker crash left an interface behind")
 		}
+	}
+}
+
+func TestLinuxManagerPolicyReplacement(t *testing.T) {
+	if os.Getenv("ECS_LINUX_TUN_SYSTEM_TEST") != "1" {
+		t.Skip("requires isolated Linux network namespace and TUN privileges")
+	}
+	manager := newLinuxTUNManager()
+	manager.launch = func(name string) (*exec.Cmd, error) {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestLinuxWorkerHelper$")
+		cmd.Env = append(os.Environ(), "ECS_LINUX_WORKER_HELPER=1", "ECS_LINUX_WORKER_SOCKET="+name, "ECS_LINUX_PARENT_PID="+strconv.Itoa(os.Getpid()))
+		cmd.Stderr = os.Stderr
+		if err := cmd.Start(); err != nil {
+			return nil, err
+		}
+		return cmd, nil
+	}
+	defer manager.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	spec := engine.TUNSpec{Ref: tunipc.Ref{Profile: "update", Session: "session", Attachment: "attachment", Policy: 1}, Slot: 9, Prefixes: []string{"198.18.74.0/24"}}
+	attachment, err := manager.Attach(ctx, spec, linuxManagerEcho{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer attachment.Close(ctx)
+	checkFlow := func(address string) {
+		t.Helper()
+		conn, err := net.DialTimeout("tcp4", address, 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+		if _, err = conn.Write([]byte("policy")); err != nil {
+			t.Fatal(err)
+		}
+		reply := make([]byte, 6)
+		if _, err = io.ReadFull(conn, reply); err != nil || string(reply) != "policy" {
+			t.Fatalf("echo %q: %v", reply, err)
+		}
+	}
+	checkFlow("198.18.74.2:23456")
+	spec.Policy++
+	spec.Prefixes = []string{"198.18.75.0/24"}
+	if err := attachment.Update(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	_, oldPrefix, _ := net.ParseCIDR("198.18.74.0/24")
+	routes, err := netlink.RouteListFiltered(netlink.FAMILY_V4, &netlink.Route{Dst: oldPrefix, Table: unix.RT_TABLE_MAIN}, netlink.RT_FILTER_DST|netlink.RT_FILTER_TABLE)
+	if err != nil || len(routes) != 0 {
+		t.Fatalf("old route remained: %+v %v", routes, err)
+	}
+	checkFlow("198.18.75.2:23456")
+	if err := attachment.Close(ctx); err != nil {
+		t.Fatal(err)
 	}
 }
