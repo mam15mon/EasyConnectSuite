@@ -102,4 +102,41 @@ class TunnelServiceHandoffTest {
             TunnelService.mobileBridge = GoMobileBridge
         }
     }
+    @Test fun workerExceptionPublishesTerminalErrorAndCleansUp() {
+        val cleaned = CountDownLatch(1)
+        val calls = AtomicInteger()
+        TunnelService.mobileBridge = object : MobileBridge {
+            override fun loginEpoch() = 0L
+            override fun loginForEpoch(server: String, user: String, password: String, totp: String, epoch: Long): String {
+                calls.incrementAndGet()
+                throw IllegalStateException("private-canary")
+            }
+            override fun loginRejected() = false
+            override fun dnsServer() = ""
+            override fun startStack(fd: Long) = Unit
+            override fun logout() { cleaned.countDown() }
+            override fun stopStack() = Unit
+        }
+        val controller = Robolectric.buildService(TunnelService::class.java).create()
+        val service = controller.get()
+        val intent = Intent(service, TunnelService::class.java).apply {
+            putExtra("server", "test")
+            putExtra("username", "test")
+            putExtra("password", "test")
+        }
+        try {
+            service.onStartCommand(intent, 0, 1)
+            assertTrue(cleaned.await(2, TimeUnit.SECONDS))
+            val state = TunnelService.currentState()
+            assertTrue(state is TunnelService.State.Error)
+            state as TunnelService.State.Error
+            assertFalse(state.retrying)
+            assertEquals("连接失败", state.message)
+            assertEquals(1, calls.get())
+        } finally {
+            controller.destroy()
+            TunnelService.mobileBridge = GoMobileBridge
+        }
+    }
+
 }
