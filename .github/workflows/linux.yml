@@ -62,7 +62,10 @@ jobs:
           timeout -k 5s 120s xvfb-run -a bash -c '
             set -eu
             app_pid=
-            trap "if [ -n \"$app_pid\" ]; then kill \"$app_pid\" 2>/dev/null || true; wait \"$app_pid\" 2>/dev/null || true; fi" EXIT
+            cleanup() {
+              if [ -n "$app_pid" ]; then kill "$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true; fi
+            }
+            trap cleanup EXIT
             for attempt in $(seq 1 5); do
               build/bin/VPN >"$RUNNER_TEMP/gui-$attempt.log" 2>&1 &
               app_pid=$!
