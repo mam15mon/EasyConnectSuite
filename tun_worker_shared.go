@@ -113,6 +113,7 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 			_ = w.peer.Emit(tunipc.Message{Op: "progress", Ref: m.Ref, Text: stage + ": " + text})
 		})
 		if err != nil {
+			w.recordIngressCleanupFailure(err)
 			return tunipc.Message{}, err
 		}
 		if ctx.Err() != nil {
@@ -128,6 +129,7 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 			return tunipc.Message{}, errors.New("obsolete TUN update")
 		}
 		if err := entry.ingress.UpdateSpec(*m.Spec); err != nil {
+			w.recordIngressCleanupFailure(err)
 			cleanupErr := entry.ingress.Close()
 			w.cleanupErr = errors.Join(w.cleanupErr, cleanupErr)
 			err = errors.Join(err, cleanupErr)
@@ -159,6 +161,13 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 	}
 	return tunipc.Message{}, nil
 }
+func (w *workerServer) recordIngressCleanupFailure(err error) {
+	var cleanup *engine.TUNCleanupError
+	if errors.As(err, &cleanup) {
+		w.cleanupErr = errors.Join(w.cleanupErr, cleanup)
+	}
+}
+
 func (w *workerServer) cleanup() error {
 	err := w.cleanupErr
 	for id, e := range w.entries {

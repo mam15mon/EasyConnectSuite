@@ -49,3 +49,27 @@ func TestWorkerRejectsNewAttachmentsAfterCleanupFailure(t *testing.T) {
 		t.Fatalf("shutdown lost failure: %v", err)
 	}
 }
+
+type failedReplacementIngress struct{ failure error }
+
+func (i *failedReplacementIngress) Close() error { return nil }
+func (i *failedReplacementIngress) UpdateSpec(engine.TUNSpec) error {
+	return errors.Join(errors.New("replacement failed"), &engine.TUNCleanupError{Err: i.failure})
+}
+
+func TestWorkerBlocksAfterReplacementCleanupFailure(t *testing.T) {
+	failure := errors.New("synthetic failed attach cleanup")
+	ref := tunipc.Ref{Profile: "p", Session: "s", Attachment: "a", Policy: 1}
+	spec := engine.TUNSpec{Ref: ref}
+	w := &workerServer{authenticated: true, closing: make(chan struct{}), reservations: map[string]bool{}, entries: map[string]*workerEntry{"a": {spec: spec, ingress: &failedReplacementIngress{failure: failure}}}}
+	spec.Policy++
+	if _, err := w.handle(context.Background(), tunipc.Message{Op: "update", Ref: spec.Ref, Spec: &spec}); !errors.Is(err, failure) {
+		t.Fatalf("update: %v", err)
+	}
+	if _, err := w.handle(context.Background(), tunipc.Message{Op: "prepare", Ref: ref}); !errors.Is(err, failure) {
+		t.Fatalf("prepare was not blocked: %v", err)
+	}
+	if _, err := w.handle(context.Background(), tunipc.Message{Op: "shutdown"}); !errors.Is(err, failure) {
+		t.Fatalf("shutdown lost cause: %v", err)
+	}
+}

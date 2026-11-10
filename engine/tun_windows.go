@@ -42,7 +42,7 @@ func StartTUNIngress(spec TUNSpec, service TUNBackend, progress func(string, str
 	t := &tunIngress{name: name, dns: dnsIP, prefix: prefixText, service: service, ctx: ctx, cancel: cancel}
 	defer func() {
 		if err != nil {
-			_ = t.Close()
+			err = joinTUNCleanupError(err, t.Close())
 		}
 	}()
 	progress("创建 TUN", "正在创建 TUN 虚拟网卡…")

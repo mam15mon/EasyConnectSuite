@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/netip"
 	"os"
@@ -20,7 +19,7 @@ func StartDarwinTUNIngress(ctx context.Context, spec TUNSpec, service TUNBackend
 	defer func() {
 		if err != nil {
 			operation.Step("cleanup_failed_attach")
-			err = errors.Join(err, obj.Close())
+			err = joinTUNCleanupError(err, obj.Close())
 		}
 	}()
 	operation.Step("create_device")

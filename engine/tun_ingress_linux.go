@@ -92,7 +92,7 @@ func startLinuxTUNIngressWithDNS(ctx context.Context, spec TUNSpec, service TUNB
 	defer func() {
 		if err != nil {
 			op.Step("cleanup_failed_attach")
-			err = errors.Join(err, obj.Close())
+			err = joinTUNCleanupError(err, obj.Close())
 		}
 	}()
 	op.Step("create_device")

@@ -24,6 +24,19 @@ import (
 
 const tunDNS = "198.19.128.2"
 
+// TUNCleanupError identifies failed cleanup after an attachment operation.
+type TUNCleanupError struct{ Err error }
+
+func (e *TUNCleanupError) Error() string { return "TUN cleanup failed: " + e.Err.Error() }
+func (e *TUNCleanupError) Unwrap() error { return e.Err }
+
+func joinTUNCleanupError(operationErr, cleanupErr error) error {
+	if cleanupErr == nil {
+		return operationErr
+	}
+	return errors.Join(operationErr, &TUNCleanupError{Err: cleanupErr})
+}
+
 type tunNetworkBackend interface {
 	routeBackend
 	setDNS([]string) error
