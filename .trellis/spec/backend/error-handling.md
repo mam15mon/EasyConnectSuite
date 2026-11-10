@@ -14,6 +14,16 @@ Observed successful official UniVPN 10781.16.0.0729 authentication uses a 14-cha
 
 Do not add fallback methods, alternate protocols, insecure TLS behavior or speculative exception handling without a request. Unsupported authentication methods should return an explicit error.
 
+## VPN target connection failures
+
+1. Scope: startup `managedClient.Setup()` errors, including TopSAP control/data TCP connections. The operation stage `authentication` covers setup and does not prove authentication rejection.
+2. Signatures: preserve `Start(Options) (*Engine, error)` and the original error chain. No new status fields or protocol retries.
+3. Contract: when `errors.As` finds `*net.OpError` with `Op == "dial"` and the cause is not `context.Canceled`, return the local prefix `VPN 目标连接失败，请检查服务器地址、端口及网络连通性: ` with `%w`. Local error details retain the actual target and underlying error. This establishes a failed connection attempt, not a proven incorrect port, firewall fault or wrong password.
+4. Error matrix: TCP dial failure gets the target explanation; authentication rejection, certificate verification failure and cancellation retain their existing classification. Preserve startup operation identity, stage, timing, cancellation/timeout, error type/cause and cleanup observation.
+5. Cases: a refused local TCP connection is a target failure; a nonzero authentication result remains a login refusal; successful TCP followed by a certificate error must not become a target-port failure.
+6. Tests: `engine/startup_error_test.go` exercises real local TCP refusal through direct UniVPN and HTTP EasyConnect setup, checks endpoint/cause and persistent operation evidence, and distinguishes authentication, certificate and cancellation failures. `frontend/src/connection-feedback.test.mjs` checks the fixed diagnostic explanation without endpoints/credentials and rejects stale/non-target classifications.
+7. Wrong vs correct: do not infer a password problem from `stage=authentication` or copy arbitrary error text into diagnostics. `buildDiagnostics` exports only the fixed target explanation when an error status starts with the local target-failure prefix; preserve the existing address/credential exclusion.
+
 ## EasyConnect session recovery
 
 `easyconnect.Client.Setup() error` may reuse `Options.SessionID` only on its first attempt. Every subsequent setup attempt clears the old TWFID, tunnel token and line list, closes the retained IP connection, and executes the existing full authentication flow before requesting a new token and IP. This also applies after a failed password flow, because its intermediate TWFID is not an authorized session. A nonempty local ID alone does not establish server-side validity after `ErrSangforShutdown`.
