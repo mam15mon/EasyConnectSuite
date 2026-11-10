@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -176,5 +177,35 @@ func TestLinuxTUNIngressRejectsUnsupportedDNSBeforeCreatingInterface(t *testing.
 	}
 	if err == nil || !strings.Contains(err.Error(), "DNS 分流尚未实现") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLinuxTUNIngressDNSLifecycle(t *testing.T) {
+	if os.Getenv("ECS_LINUX_TUN_SYSTEM_TEST") != "1" {
+		t.Skip("requires isolated Linux network namespace and TUN privileges")
+	}
+	spec := linuxTestSpec()
+	spec.Names = []string{"example.invalid"}
+	var calls []string
+	call := func(_ context.Context, method string, args ...any) error {
+		calls = append(calls, method)
+		if len(args) == 0 || args[0].(int32) <= 0 {
+			t.Fatalf("invalid DNS interface: %v", args)
+		}
+		return nil
+	}
+	ingress, err := startLinuxTUNIngressWithDNS(context.Background(), spec, linuxEchoBackend{}, call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := ingress.name
+	if err = ingress.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(calls, []string{"SetLinkDNS", "SetLinkDomains", "RevertLink"}) {
+		t.Fatalf("DNS calls: %v", calls)
+	}
+	if _, err = net.InterfaceByName(name); err == nil {
+		t.Fatal("TUN survived DNS cleanup")
 	}
 }
