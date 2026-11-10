@@ -27,3 +27,16 @@ test('diagnostic export keeps typed evidence but excludes raw credentials and ar
  for(const field of ['operation=12','stage=worker_update_reply','elapsed=1m2.3s','timeout=true','error_type=*net.OpError']) assert.ok(report.includes(field),field);
  assert.match(buildDiagnostics({state:'disconnected'},[]),/暂无可导出的阶段记录/);
 });
+
+test('diagnostic export explains target connection failure without exporting its endpoint', () => {
+ const lastError='VPN 目标连接失败，请检查服务器地址、端口及网络连通性: TopSAP 获取认证参数: Post "https://PRIVATE_CANARY@vpn.private.test:7443/": dial tcp 192.0.2.9:7443: connect: connection refused';
+ const report=buildDiagnostics({protocol:'topsec',state:'error',lastError},[]);
+ assert.match(report,/失败原因: VPN 目标连接失败，请检查服务器地址、端口及网络连通性/);
+ for(const secret of ['PRIVATE_CANARY','vpn.private.test','192.0.2.9','7443','Post','dial tcp']) assert.ok(!report.includes(secret),secret);
+ for(const status of [
+  {state:'disconnected',lastError},
+  {state:'error',lastError:'VPN 登录失败: TopSAP 认证被拒绝 Ret=-1001'},
+  {state:'error',lastError:'VPN 登录失败: tls: failed to verify certificate'},
+  {state:'error',lastError:'VPN 登录失败: context canceled'},
+ ]) assert.ok(!buildDiagnostics(status,[]).includes('失败原因:'),status.lastError);
+});

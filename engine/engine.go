@@ -6,6 +6,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -194,6 +195,10 @@ func Start(opts Options) (_ *Engine, err error) {
 	if err := vpnClient.Setup(); err != nil {
 		vpnClient.Close()
 		_ = underlayDialer.Close()
+		var dialErr *net.OpError
+		if errors.As(err, &dialErr) && dialErr.Op == "dial" && !errors.Is(err, context.Canceled) {
+			return nil, fmt.Errorf("VPN 目标连接失败，请检查服务器地址、端口及网络连通性: %w", err)
+		}
 		return nil, fmt.Errorf("VPN 登录失败: %w", err)
 	}
 

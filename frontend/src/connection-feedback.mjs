@@ -34,6 +34,9 @@ export function buildDiagnostics(status, lines) {
   const report = ['VPN 诊断摘要（不含原始日志、地址和凭据）'];
   if (['easyconnect','univpn','topsec'].includes(status.protocol)) report.push(`协议: ${status.protocol}`);
   if (states[status.state]) report.push(`状态: ${states[status.state]}`);
+  if (status.state === 'error' && status.lastError?.startsWith('VPN 目标连接失败，')) {
+    report.push('失败原因: VPN 目标连接失败，请检查服务器地址、端口及网络连通性');
+  }
   for (const key of ['stage','stageDetail']) if (uiStages.has(status[key])) report.push(`${key}: ${status[key]}`);
   const feedback = connectionFeedback(status);
   if (feedback.waiting && feedback.seconds !== null) report.push(`本阶段秒数: ${feedback.seconds}`);
