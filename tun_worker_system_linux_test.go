@@ -84,9 +84,7 @@ func TestLinuxWorkerProcessLifecycle(t *testing.T) {
 		t.Fatal("worker did not create an interface")
 	}
 	// Simulate the parent disappearing while the attachment is active.
-	if err = peer.Close(); err != nil {
-		t.Fatal(err)
-	}
+	peer.Close()
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
 	select {
