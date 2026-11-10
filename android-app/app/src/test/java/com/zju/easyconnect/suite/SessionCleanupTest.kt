@@ -66,6 +66,17 @@ class SessionCleanupTest {
         assertFalse(newWorker.isAlive)
     }
 
+    @Test fun cleanupFailurePreventsSuccessfulFinish() {
+        val session = SessionCleanup { throw IllegalStateException("cleanup failed") }
+        assertTrue(session.acquire())
+        try {
+            session.finish()
+            fail("cleanup failure was lost")
+        } catch (error: IllegalStateException) {
+            assertEquals("cleanup failed", error.message)
+        }
+    }
+
     @Test fun naturalFinishCleansExactlyOnce() {
         val calls = AtomicInteger()
         val session = SessionCleanup { calls.incrementAndGet() }
