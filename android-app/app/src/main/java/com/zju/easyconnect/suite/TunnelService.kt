@@ -11,7 +11,6 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.util.Log
-import mobile.Mobile
 import java.util.concurrent.atomic.AtomicBoolean
 
 class TunnelService : VpnService() {
@@ -31,6 +30,7 @@ class TunnelService : VpnService() {
 
         fun currentState(): State = state
 
+        @Volatile internal var mobileBridge: MobileBridge = GoMobileBridge
         private val handoff = SessionHandoff()
         private val mainHandler = Handler(Looper.getMainLooper())
         private val stateLock = Any()
@@ -56,7 +56,7 @@ class TunnelService : VpnService() {
         }
     }
 
-    private class ConnectionRequest(val handoff: SessionHandoff.Session) {
+    private class ConnectionRequest(val handoff: SessionHandoff.Session, val mobile: MobileBridge) {
         val cancelled = AtomicBoolean(false)
         val terminal = AtomicBoolean(false)
         private var fd: ParcelFileDescriptor? = null
@@ -65,8 +65,8 @@ class TunnelService : VpnService() {
             val requestId = System.identityHashCode(this)
             Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=cleanup_start cancelled=${cancelled.get()}")
             closeFd()
-            Mobile.logout()
-            Mobile.stopStack()
+            mobile.logout()
+            mobile.stopStack()
             Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=cleanup_finished elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=${cancelled.get()}")
         }
 
@@ -119,7 +119,7 @@ class TunnelService : VpnService() {
 
         val request = synchronized(stateLock) {
             if (wantConnected) return START_NOT_STICKY
-            ConnectionRequest(handoff.next()).also {
+            ConnectionRequest(handoff.next(), mobileBridge).also {
                 wantConnected = true
                 currentRequest = it
                 terminalError = false
@@ -143,11 +143,11 @@ class TunnelService : VpnService() {
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=handoff_ready elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=false")
                 var attempt = 0
                 while (!request.cancelled.get()) {
-                val loginEpoch = Mobile.loginEpoch()
+                val loginEpoch = request.mobile.loginEpoch()
                 if (request.cancelled.get()) break
                 val connectedMs = connectOnce(server, username, password, totp, attempt > 0, request, loginEpoch)
                 if (request.cancelled.get() || request.terminal.get()) break
-                if (connectedMs == null && Mobile.loginRejected()) {
+                if (connectedMs == null && request.mobile.loginRejected()) {
                     Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=authentication outcome=rejected elapsed_ms=${SystemClock.elapsedRealtime() - started}")
                     finishWithError(request, "认证被服务器拒绝")
                     break
@@ -186,7 +186,7 @@ class TunnelService : VpnService() {
 
     /** 单次:登录 → 建立 VPN 接口 → 转发(阻塞到隧道断开)。返回转发时长，未进入转发时返回 null。 */
     private fun connectOnce(server: String, user: String, pass: String, totp: String, isRetry: Boolean, request: ConnectionRequest, loginEpoch: Long): Long? {
-        val ip = Mobile.loginForEpoch(server, user, pass, totp, loginEpoch)
+        val ip = request.mobile.loginForEpoch(server, user, pass, totp, loginEpoch)
         if (request.cancelled.get()) {
             return null
         }
@@ -195,7 +195,7 @@ class TunnelService : VpnService() {
             return null
         }
 
-        val dns = Mobile.dnsServer().ifEmpty { "172.31.112.1" }
+        val dns = request.mobile.dnsServer().ifEmpty { "172.31.112.1" }
         val builder = Builder()
             .setSession("EC 隧道")
             .setMtu(1400)
@@ -235,14 +235,14 @@ class TunnelService : VpnService() {
             updateNotification(request, "IPv4 流量经 VPN")
             publish(request, State.Connected)
             val forwardingStarted = SystemClock.elapsedRealtime()
-            Mobile.startStack(stackFd.fd.toLong())
+            request.mobile.startStack(stackFd.fd.toLong())
             return SystemClock.elapsedRealtime() - forwardingStarted
         } finally {
             try {
                 stackFd.close()
             } finally {
                 request.closeFd()
-                if (!request.cancelled.get()) Mobile.logout()
+                if (!request.cancelled.get()) request.mobile.logout()
             }
         }
     }
