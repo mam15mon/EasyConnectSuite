@@ -40,7 +40,10 @@ class TunnelService : VpnService() {
         }
     }
 
-    private class ConnectionRequest(val handoff: SessionHandoff.Session) { val cancelled = AtomicBoolean(false) }
+    private class ConnectionRequest(val handoff: SessionHandoff.Session) {
+        val cancelled = AtomicBoolean(false)
+        val terminal = AtomicBoolean(false)
+    }
     @Volatile private var currentRequest: ConnectionRequest? = null
     @Volatile private var wantConnected = false
     private var tunnelFd: ParcelFileDescriptor? = null
@@ -91,7 +94,7 @@ class TunnelService : VpnService() {
                 val loginEpoch = Mobile.loginEpoch()
                 if (request.cancelled.get()) break
                 val connectedMs = connectOnce(server, username, password, totp, attempt > 0, request, loginEpoch)
-                if (request.cancelled.get()) break
+                if (request.cancelled.get() || request.terminal.get()) break
                 if (connectedMs == null && Mobile.loginRejected()) {
                     wantConnected = false
                     terminalError = true
@@ -157,6 +160,7 @@ class TunnelService : VpnService() {
 
         val establishStarted = SystemClock.elapsedRealtime()
         val pfd = builder.establish() ?: run {
+            request.terminal.set(true)
             wantConnected = false
             terminalError = true
             Log.e("VPN", "android_session pid=${android.os.Process.myPid()} stage=tun_establish outcome=denied elapsed_ms=${SystemClock.elapsedRealtime() - establishStarted} cancelled=false")
