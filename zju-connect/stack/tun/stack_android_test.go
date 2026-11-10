@@ -2,9 +2,11 @@ package tun
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 	"os"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -154,3 +156,85 @@ func TestStopClosesTunnelCopyAndUnblocksForwarding(t *testing.T) {
 		t.Fatalf("original descriptor closed: %v", err)
 	}
 }
+
+type streamChunk struct {
+	data []byte
+	id   uint64
+}
+type scriptedStream struct{ chunks []streamChunk }
+
+func (s *scriptedStream) ReadStream(p []byte) (int, uint64, error) {
+	if len(s.chunks) == 0 {
+		return 0, 0, io.EOF
+	}
+	chunk := &s.chunks[0]
+	n := copy(p, chunk.data)
+	id := chunk.id
+	chunk.data = chunk.data[n:]
+	if len(chunk.data) == 0 {
+		s.chunks = s.chunks[1:]
+	}
+	return n, id, nil
+}
+
+func TestStreamPacketDiscardsPartialPacketOnReconnect(t *testing.T) {
+	packet := []byte{0x45, 0, 0, 24, 0, 0, 0, 0, 64, 17, 0, 0, 10, 0, 0, 1, 10, 0, 0, 2, 1, 2, 3, 4}
+	for _, partial := range []int{7, 22} {
+		t.Run(fmt.Sprintf("partial_%d", partial), func(t *testing.T) {
+			s := &scriptedStream{chunks: []streamChunk{{packet[:partial], 1}, {append(append([]byte(nil), packet...), packet...), 2}}}
+			out := make([]byte, maxInboundPacketSize)
+			var pending []byte
+			var id uint64
+			var have bool
+			for i := 0; i < 2; i++ {
+				n, rest, nextID, nextHave, err := readStreamPacket(s, out, pending, id, have)
+				if err != nil || !bytes.Equal(out[:n], packet) {
+					t.Fatalf("packet %d: got %x, error %v", i, out[:n], err)
+				}
+				pending, id, have = rest, nextID, nextHave
+			}
+		})
+	}
+}
+
+func TestForwardPacketsReadsWholePacketProtocol(t *testing.T) {
+	l3 := &packetProtocol{packet: []byte{0x45, 0, 0, 24, 0, 0, 0, 0, 64, 17, 0, 0, 10, 0, 0, 1, 10, 0, 0, 2, 1, 2, 3, 4}, done: make(chan struct{})}
+	device := &packetDevice{packets: make(chan []byte, 1), closed: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() { done <- forwardPackets(l3, device) }()
+	select {
+	case got := <-device.packets:
+		if !bytes.Equal(got, l3.packet) {
+			t.Fatalf("packet changed: %x", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for packet")
+	}
+	l3.Close()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("forwarding did not stop")
+	}
+}
+
+type packetProtocol struct {
+	packet []byte
+	sent   bool
+	done   chan struct{}
+	once   sync.Once
+}
+
+func (p *packetProtocol) Read(b []byte) (int, error) {
+	if !p.sent {
+		p.sent = true
+		if len(b) < len(p.packet) {
+			return 0, io.ErrShortBuffer
+		}
+		return copy(b, p.packet), nil
+	}
+	<-p.done
+	return 0, io.EOF
+}
+func (p *packetProtocol) Write(b []byte) (int, error) { return len(b), nil }
+func (p *packetProtocol) Close() error                { p.once.Do(func() { close(p.done) }); return nil }
