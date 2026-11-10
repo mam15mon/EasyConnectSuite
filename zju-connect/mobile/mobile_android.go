@@ -83,17 +83,17 @@ func login(server string, username string, password string, totpSecret string) s
 }
 
 func loginAtEpoch(server string, username string, password string, totpSecret string, epoch uint64) string {
-	op := log.BeginOperation(fmt.Sprintf("[android pid=%d login_epoch=%d] ", os.Getpid(), epoch), "android_login_wait", nil)
-	op.Step("acquire_login_lock")
+	waitOp := log.BeginOperation(fmt.Sprintf("[android pid=%d login_epoch=%d] ", os.Getpid(), epoch), "android_login_wait", nil)
+	waitOp.Step("acquire_login_lock")
 	loginMu.Lock()
 	defer loginMu.Unlock()
 	vpnClientMu.Lock()
 	if epoch != logoutGeneration {
 		vpnClientMu.Unlock()
-		op.Finish("cancelled", context.Canceled)
+		waitOp.Finish("cancelled", context.Canceled)
 		return ""
 	}
-	op.Finish("success", nil)
+	waitOp.Finish("success", nil)
 	loginRejected.Store(false)
 	loginGeneration++
 	generation := loginGeneration
