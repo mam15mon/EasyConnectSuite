@@ -223,7 +223,9 @@ func TestLinuxTUNCrashHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	fmt.Println("READY:", name)
-	select {}
+	for {
+		time.Sleep(time.Hour)
+	}
 }
 
 func TestLinuxTUNCrashCleanup(t *testing.T) {
