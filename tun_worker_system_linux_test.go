@@ -234,3 +234,64 @@ func TestLinuxManagerWorkerLifecycle(t *testing.T) {
 		}
 	}
 }
+
+func TestLinuxManagerWorkerCrash(t *testing.T) {
+	if os.Getenv("ECS_LINUX_TUN_SYSTEM_TEST") != "1" {
+		t.Skip("requires isolated Linux network namespace and TUN privileges")
+	}
+	manager := newLinuxTUNManager()
+	var worker *exec.Cmd
+	manager.launch = func(name string) (*exec.Cmd, error) {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestLinuxWorkerHelper$")
+		cmd.Env = append(os.Environ(), "ECS_LINUX_WORKER_HELPER=1", "ECS_LINUX_WORKER_SOCKET="+name, "ECS_LINUX_PARENT_PID="+strconv.Itoa(os.Getpid()))
+		cmd.Stderr = os.Stderr
+		if err := cmd.Start(); err != nil {
+			return nil, err
+		}
+		worker = cmd
+		return cmd, nil
+	}
+	defer manager.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	spec := engine.TUNSpec{Ref: tunipc.Ref{Profile: "crash", Session: "session", Attachment: "attachment", Policy: 1}, Slot: 8, Prefixes: []string{"198.18.73.0/24"}}
+	attachment, err := manager.Attach(ctx, spec, linuxManagerEcho{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.DialTimeout("tcp4", "198.18.73.2:23456", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	if _, err = conn.Write([]byte("before-crash")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = io.ReadFull(conn, make([]byte, len("before-crash"))); err != nil {
+		t.Fatal(err)
+	}
+	if err = worker.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-attachment.Done():
+	case <-ctx.Done():
+		t.Fatal("attachment did not terminate after worker crash")
+	}
+	if _, err = conn.Read(make([]byte, 1)); err == nil {
+		t.Fatal("active connection survived worker crash")
+	}
+	if err = attachment.Close(ctx); err == nil {
+		t.Fatal("worker crash was not reported")
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, iface := range ifaces {
+		if len(iface.Name) >= 3 && iface.Name[:3] == "ecs" {
+			t.Fatal("worker crash left an interface behind")
+		}
+	}
+}

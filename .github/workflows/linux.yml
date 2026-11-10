@@ -40,7 +40,7 @@ jobs:
       - name: Test Linux TUN worker in isolated network namespace
         run: |
           go test -tags webkit2_41 -c -o "$RUNNER_TEMP/linux-worker-test" .
-          sudo env ECS_LINUX_TUN_SYSTEM_TEST=1 unshare --net "$RUNNER_TEMP/linux-worker-test" -test.run '^TestLinux(WorkerProcessLifecycle|ManagerWorkerLifecycle)$' -test.v
+          sudo env ECS_LINUX_TUN_SYSTEM_TEST=1 unshare --net "$RUNNER_TEMP/linux-worker-test" -test.run '^TestLinux(WorkerProcessLifecycle|ManagerWorkerLifecycle|ManagerWorkerCrash)$' -test.v
       - name: Vet Linux packages
         run: go vet -tags webkit2_41 ./...
       - name: Test underlay networking
