@@ -62,17 +62,17 @@ internal class WaitEvidence private constructor(
         var truncated = all.size > 64
         for ((thread, frames) in all.take(64)) {
             val header = line("snapshot=$snapshotId thread_id=${thread.id} state=${thread.state}")
-            if (chars + header.length > 240000) { truncated = true; break }
+            if (chars + header.length > 180000) { truncated = true; break }
             write(header)
             chars += header.length
             if (frames.size > 32) truncated = true
             for (frame in frames.take(32)) {
                 val text = line("snapshot=$snapshotId thread_id=${thread.id} frame=${safeName(frame.className)}.${safeName(frame.methodName)} source=${safeName(frame.fileName ?: "unknown")}:${frame.lineNumber}")
-                if (chars + text.length > 240000) { truncated = true; break }
+                if (chars + text.length > 180000) { truncated = true; break }
                 write(text)
                 chars += text.length
             }
-            if (chars >= 240000) break
+            if (chars >= 180000) break
         }
         write(line("phase=snapshot_end snapshot=$snapshotId truncated=$truncated chars=$chars"))
     }
