@@ -124,6 +124,17 @@ for port in (19080, 19081):
 print('Mock login, SOCKS/HTTP TCP round trips, signal cleanup and credential redaction passed')
 PY
 
+# Exercise the desktop application's profile and connection backend with the same mock gateway.
+ECS_GUI_GATEWAY_TEST=1 go test -tags webkit2_41 . -run '^TestLinuxGUIBackendMockGateway$' -count=1 -timeout=90s -v >"$work_dir/gui-backend.log" 2>&1 || {
+  cat "$work_dir/gui-backend.log" "$work_dir/gateway.log"
+  exit 1
+}
+if grep -q 'gui-private-canary' "$work_dir/gui-backend.log" "$work_dir/gateway.log"; then
+  echo 'GUI credential leaked to test logs' >&2
+  exit 1
+fi
+cat "$work_dir/gui-backend.log"
+
 # Verify an explicit rejection ends the real headless process without retries.
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$work_dir/key.pem" \
   -out "$work_dir/cert.pem" -days 1 -subj '/CN=localhost' >/dev/null 2>&1
