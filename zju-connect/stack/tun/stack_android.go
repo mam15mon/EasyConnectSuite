@@ -1,6 +1,7 @@
 package tun
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -46,9 +47,17 @@ func forwardPackets(l3, device io.ReadWriteCloser) error {
 	go func() {
 		buf := make([]byte, maxInboundPacketSize)
 		for {
-			n, err := l3.Read(buf)
-			if err == nil && n > 0 {
-				_, err = device.Write(buf[:n])
+			_, err := io.ReadFull(l3, buf[:20])
+			if err == nil {
+				headerLen := int(buf[0]&15) * 4
+				packetLen := int(binary.BigEndian.Uint16(buf[2:4]))
+				if buf[0]>>4 != 4 || headerLen < 20 || packetLen < headerLen || packetLen > len(buf) {
+					err = fmt.Errorf("invalid inbound IPv4 packet header")
+				} else if _, err = io.ReadFull(l3, buf[20:packetLen]); err == nil {
+					var n int
+					n, err = device.Write(buf[:packetLen])
+					if err == nil && n != packetLen { err = io.ErrShortWrite }
+				}
 			}
 			if err != nil {
 				closeBoth()
