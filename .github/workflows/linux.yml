@@ -97,6 +97,8 @@ jobs:
               echo "GUI startup and immediate shutdown passed: $attempt"
             done
           '
+      - name: Test shutdown before GTK main loop
+        run: timeout -k 5s 60s xvfb-run -a bash build/linux/gtk-early-shutdown-test.sh
       - name: Build and smoke-test Suite headless command
         run: |
           go build -o "$RUNNER_TEMP/vpn-headless-linux-amd64" ./cmd/vpn-headless
