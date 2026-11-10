@@ -9,8 +9,10 @@ import (
 
 	"EasyConnectSuite/vpncore/log"
 	tun "github.com/mythologyli/sing-tun"
+	"github.com/sagernet/netlink"
 	"github.com/sagernet/sing/common/bufio"
 	N "github.com/sagernet/sing/common/network"
+	"golang.org/x/sys/unix"
 )
 
 type linuxTunFile struct{ *os.File }
@@ -22,10 +24,16 @@ func (t *tunIngress) dnsAddress() string { return t.dns }
 
 // Linux DNS ownership is not implemented; do not modify system DNS.
 func (r *linuxRoutes) setDNS(names []string) error {
-	if len(names) != 0 {
-		return errors.New("Linux TUN DNS 分流尚未实现")
+	if r.dnsOwner == nil {
+		if len(names) != 0 {
+			return errors.New("Linux TUN DNS 分流尚未实现")
+		}
+		return nil
 	}
-	return nil
+	if len(names) == 0 {
+		return r.dnsOwner.Close(context.Background())
+	}
+	return r.dnsOwner.Apply(context.Background(), names)
 }
 func validateIngressUpdate(t *tunIngress, spec TUNSpec) error {
 	if t.spec.Ref.Attachment != "" {
@@ -59,7 +67,11 @@ func releaseIngressRoutes(t *tunIngress) error {
 }
 
 // StartLinuxTUNIngress is currently exercised in an isolated namespace only.
-func StartLinuxTUNIngress(ctx context.Context, spec TUNSpec, service TUNBackend) (ingress *tunIngress, err error) {
+func StartLinuxTUNIngress(ctx context.Context, spec TUNSpec, service TUNBackend) (*tunIngress, error) {
+	return startLinuxTUNIngressWithDNS(ctx, spec, service, nil)
+}
+
+func startLinuxTUNIngressWithDNS(ctx context.Context, spec TUNSpec, service TUNBackend, call resolvedCall) (ingress *tunIngress, err error) {
 	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), spec.Profile, spec.Session, spec.Attachment), "linux_tun_attach", ctx.Done())
 	outcome := "interrupted"
 	defer func() { op.Finish(outcome, err) }()
@@ -67,7 +79,7 @@ func StartLinuxTUNIngress(ctx context.Context, spec TUNSpec, service TUNBackend)
 		outcome = "invalid_spec"
 		return nil, err
 	}
-	if len(spec.Names) != 0 {
+	if len(spec.Names) != 0 && call == nil {
 		outcome = "dns_unsupported"
 		return nil, errors.New("Linux TUN DNS 分流尚未实现")
 	}
@@ -102,6 +114,36 @@ func StartLinuxTUNIngress(ctx context.Context, spec TUNSpec, service TUNBackend)
 	obj.prefix = fmt.Sprintf("198.19.128.%d/30", spec.Slot*4+1)
 	obj.dns = fmt.Sprintf("198.19.128.%d", spec.Slot*4+2)
 	backend := &linuxRoutes{device: file, name: obj.name, index: index, ref: spec}
+	if call != nil {
+		backend.dnsOwner = &resolvedDNSOwner{index: index, server: obj.dns, ref: spec, call: call, verify: func() error {
+			ifr, err := unix.NewIfreq("")
+			if err != nil {
+				return err
+			}
+			raw, err := file.SyscallConn()
+			if err != nil {
+				return err
+			}
+			var ioctlErr error
+			if err = raw.Control(func(fd uintptr) { ioctlErr = unix.IoctlIfreq(int(fd), unix.TUNGETIFF, ifr) }); err != nil {
+				return err
+			}
+			if ioctlErr != nil {
+				return ioctlErr
+			}
+			if ifr.Name() != obj.name {
+				return errors.New("TUN interface identity changed")
+			}
+			link, err := netlink.LinkByName(obj.name)
+			if err != nil {
+				return err
+			}
+			if link.Attrs().Index != index {
+				return errors.New("TUN interface index changed")
+			}
+			return nil
+		}}
+	}
 	obj.backend = backend
 	obj.routes = newRouteManager(backend)
 	op.Step("create_stack")

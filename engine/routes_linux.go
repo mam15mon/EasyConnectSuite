@@ -20,6 +20,7 @@ type linuxRoutes struct {
 	index           int
 	ref             TUNSpec
 	closedOnFailure bool
+	dnsOwner        *resolvedDNSOwner
 	beforeAdd       func() // test seam for an external route arriving during installation
 }
 
