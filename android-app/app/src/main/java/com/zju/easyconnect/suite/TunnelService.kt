@@ -126,7 +126,7 @@ class TunnelService : VpnService() {
         Log.i("VPN", "android_service pid=${android.os.Process.myPid()} service=$serviceId start_id=$startId stage=command_received connect=$isConnect want_connected=$wantConnected")
         if (intent == null || !intent.hasExtra("server")) {
             // 无 extras 的 start = 停止
-            stopTunnel()
+            stopTunnel(startId)
             return START_NOT_STICKY
         }
 
@@ -313,15 +313,21 @@ class TunnelService : VpnService() {
         }
     }
 
-    private fun stopTunnel() {
+    private fun stopTunnel(startId: Int? = null) {
         val request = currentRequest
         Log.i("VPN", "android_service pid=${android.os.Process.myPid()} service=${System.identityHashCode(this)} request=${request?.let { System.identityHashCode(it) } ?: 0} stage=stop_requested want_connected=$wantConnected")
         request?.cancel()
         wantConnected = false
         worker?.interrupt()
         val ownsNotification = synchronized(stateLock) { request != null && stateOwner === request }
-        stopForeground(if (ownsNotification) STOP_FOREGROUND_REMOVE else STOP_FOREGROUND_DETACH)
-        stopSelf()
+        val stopped = if (startId == null) {
+            stopSelf()
+            true
+        } else {
+            stopSelfResult(startId)
+        }
+        Log.i("VPN", "android_service pid=${android.os.Process.myPid()} service=${System.identityHashCode(this)} start_id=${startId ?: 0} stage=stop_result stopped=$stopped")
+        if (stopped) stopForeground(if (ownsNotification) STOP_FOREGROUND_REMOVE else STOP_FOREGROUND_DETACH)
         request?.let { publish(it, State.Disconnected, allowCancelled = true) }
     }
 
