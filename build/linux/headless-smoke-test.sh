@@ -84,7 +84,20 @@ with socket.create_connection(('127.0.0.1', 19080), timeout=10) as sock:
     sock.sendall(payload)
     if read_exact(sock, len(payload)) != payload:
         raise SystemExit('TCP echo payload mismatch')
-print('TCP payload returned through the mock VPN gateway')
+with socket.create_connection(('127.0.0.1', 19081), timeout=10) as sock:
+    sock.sendall(b'CONNECT 10.90.0.3:12345 HTTP/1.1\r\nHost: 10.90.0.3:12345\r\n\r\n')
+    headers = b''
+    while not headers.endswith(b'\r\n\r\n'):
+        headers += read_exact(sock, 1)
+        if len(headers) > 8192:
+            raise SystemExit('HTTP CONNECT response headers too large')
+    if not headers.startswith(b'HTTP/1.1 200 '):
+        raise SystemExit(f'HTTP CONNECT failed: {headers!r}')
+    payload = b'linux-headless-http-round-trip'
+    sock.sendall(payload)
+    if read_exact(sock, len(payload)) != payload:
+        raise SystemExit('HTTP CONNECT echo payload mismatch')
+print('SOCKS and HTTP CONNECT TCP payloads returned through the mock VPN gateway')
 PY
 then
   cat "$work_dir/client.log" "$work_dir/gateway.log" "$work_dir/tcp-gateway.log"
@@ -108,7 +121,7 @@ for port in (19080, 19081):
         sock.settimeout(1)
         if sock.connect_ex(('127.0.0.1', port)) == 0:
             raise SystemExit(f'proxy port {port} remained open after exit')
-print('Mock login, TCP round trip, signal cleanup and credential redaction passed')
+print('Mock login, SOCKS/HTTP TCP round trips, signal cleanup and credential redaction passed')
 PY
 
 # Verify an explicit rejection ends the real headless process without retries.
