@@ -273,3 +273,40 @@ func TestResolvedPrivateBusLateRequestAfterRollback(t *testing.T) {
 		t.Fatal("expected late request to change state after rollback")
 	}
 }
+
+func TestResolvedDNSOwnerDoesNotClaimCanceledRequestClean(t *testing.T) {
+	for _, method := range []string{"SetLinkDNS", "SetLinkDomains", "RevertLink"} {
+		for _, failure := range []error{context.Canceled, context.DeadlineExceeded} {
+			t.Run(method+"/"+failure.Error(), func(t *testing.T) {
+				var calls []string
+				owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", verify: func() error { return nil }, call: func(_ context.Context, name string, _ ...any) error {
+					calls = append(calls, name)
+					if name == method {
+						return failure
+					}
+					return nil
+				}}
+				err := owner.Apply(context.Background(), []string{"example.invalid"})
+				if method == "RevertLink" {
+					if err != nil {
+						t.Fatal(err)
+					}
+					err = owner.Close(context.Background())
+				}
+				if !errors.Is(err, failure) || !errors.Is(err, errResolvedOutcomeUnknown) || !owner.unknown || !owner.touched {
+					t.Fatalf("lost unconfirmed outcome: %v", err)
+				}
+				count := len(calls)
+				if err = owner.Close(context.Background()); !errors.Is(err, errResolvedOutcomeUnknown) {
+					t.Fatalf("close reported clean: %v", err)
+				}
+				if err = owner.Apply(context.Background(), []string{"example.invalid"}); !errors.Is(err, errResolvedOutcomeUnknown) {
+					t.Fatalf("reapply accepted: %v", err)
+				}
+				if len(calls) != count {
+					t.Fatalf("unconfirmed request followed by another call: %v", calls)
+				}
+			})
+		}
+	}
+}

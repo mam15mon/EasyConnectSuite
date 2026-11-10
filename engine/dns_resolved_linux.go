@@ -27,6 +27,8 @@ type resolvedDomain struct {
 }
 type resolvedCall func(context.Context, string, ...any) error
 
+var errResolvedOutcomeUnknown = errors.New("Linux DNS 请求结果未确认，禁止自动重新配置或声称清理完成")
+
 func resolvedDNSArguments(server string, names []string) ([]resolvedAddress, []resolvedDomain, error) {
 	ip, err := netip.ParseAddr(server)
 	if err != nil || !ip.Is4() {
@@ -88,6 +90,7 @@ type resolvedDNSOwner struct {
 	call    resolvedCall
 	verify  func() error
 	touched bool
+	unknown bool
 }
 
 func (d *resolvedDNSOwner) Apply(ctx context.Context, names []string) (err error) {
@@ -99,6 +102,9 @@ func (d *resolvedDNSOwner) Apply(ctx context.Context, names []string) (err error
 		}
 		op.Finish(outcome, err)
 	}()
+	if d.unknown {
+		return errResolvedOutcomeUnknown
+	}
 	if d.index <= 0 || d.call == nil || d.verify == nil {
 		return fmt.Errorf("invalid DNS owner")
 	}
@@ -116,6 +122,11 @@ func (d *resolvedDNSOwner) Apply(ctx context.Context, names []string) (err error
 	// A timed-out D-Bus call may still have changed the service's state.
 	d.touched = true
 	if err = resolvedLinkDNS(ctx, d.call, d.index, d.server, names); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			d.unknown = true
+			op.Step("dns_outcome_unconfirmed")
+			return errors.Join(err, errResolvedOutcomeUnknown)
+		}
 		op.Step("rollback_link_dns")
 		rollbackCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -127,6 +138,9 @@ func (d *resolvedDNSOwner) Apply(ctx context.Context, names []string) (err error
 }
 
 func (d *resolvedDNSOwner) revert(ctx context.Context) error {
+	if d.unknown {
+		return errResolvedOutcomeUnknown
+	}
 	if !d.touched {
 		return nil
 	}
@@ -134,6 +148,10 @@ func (d *resolvedDNSOwner) revert(ctx context.Context) error {
 		return fmt.Errorf("verify DNS interface: %w", err)
 	}
 	if err := d.call(ctx, "RevertLink", int32(d.index)); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			d.unknown = true
+			return errors.Join(fmt.Errorf("revert link DNS: %w", err), errResolvedOutcomeUnknown)
+		}
 		return fmt.Errorf("revert link DNS: %w", err)
 	}
 	d.touched = false
