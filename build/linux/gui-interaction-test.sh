@@ -184,7 +184,7 @@ for port in (19180, 19181):
         if sock.connect_ex(('127.0.0.1', port)) == 0:
             raise SystemExit(f'proxy port {port} remained open after GUI window close')
 PY
-if ! grep -rq 'operation=app_shutdown' "$XDG_CONFIG_HOME/VPN/logs"; then
+if ! grep -rq 'name=app_shutdown' "$XDG_CONFIG_HOME/VPN/logs"; then
   echo 'GUI shutdown operation was not recorded' >&2
   exit 1
 fi
