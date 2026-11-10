@@ -418,7 +418,7 @@ keepalive_before=$(grep -c 'session_keepalive' "$RUNNER_TEMP/success-gateway.log
 sleep 70
 idle_after=$(adb shell cat "/proc/$idle_pid/stat" | tr -d '\r')
 keepalive_after=$(grep -c 'session_keepalive' "$RUNNER_TEMP/success-gateway.log" || true)
-python3 - "$idle_before" "$idle_after" "$keepalive_before" "$keepalive_after" <<'PY'
+if ! python3 - "$idle_before" "$idle_after" "$keepalive_before" "$keepalive_after" <<'PY'
 import sys
 def cpu_ticks(stat):
     fields = stat.rsplit(')', 1)[1].split()
@@ -428,6 +428,11 @@ if not 1 <= heartbeats <= 2:
     raise SystemExit(f'Unexpected keepalive count during idle window: {heartbeats}')
 print(f'70-second emulator idle: keepalives={heartbeats}, process_cpu_ticks={cpu_ticks(sys.argv[2]) - cpu_ticks(sys.argv[1])}')
 PY
+then
+  cat "$RUNNER_TEMP/success-gateway.log"
+  adb logcat -d -s VPN:I GoLog:I AndroidRuntime:E
+  exit 1
+fi
 if ! adb shell /data/local/tmp/android-udp-probe || ! adb shell /data/local/tmp/android-tcp-probe; then
   adb logcat -d -s VPN:I GoLog:I AndroidRuntime:E
   echo 'VPN traffic failed after the idle keepalive interval' >&2
