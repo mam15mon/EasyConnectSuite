@@ -112,23 +112,32 @@ func TestLinuxTUNConfiguredPacket(t *testing.T) {
 		t.Fatal(err)
 	}
 	var pollErr error
+	packet := make([]byte, 1500)
+	var n int
 	if err = raw.Control(func(fd uintptr) {
 		fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
-		var count int
-		count, pollErr = unix.Poll(fds, 5000)
-		if pollErr == nil && (count != 1 || fds[0].Revents&unix.POLLIN == 0) {
-			pollErr = fmt.Errorf("TUN packet did not arrive")
+		for attempt := 0; attempt < 10; attempt++ {
+			var count int
+			count, pollErr = unix.Poll(fds, 500)
+			if pollErr != nil {
+				return
+			}
+			if count == 0 || fds[0].Revents&unix.POLLIN == 0 {
+				continue
+			}
+			n, pollErr = unix.Read(int(fd), packet)
+			if pollErr == unix.EAGAIN {
+				pollErr = nil
+				continue
+			}
+			return
 		}
+		pollErr = fmt.Errorf("TUN packet did not arrive")
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if pollErr != nil {
 		t.Fatal(pollErr)
-	}
-	packet := make([]byte, 1500)
-	n, err := file.Read(packet)
-	if err != nil {
-		t.Fatal(err)
 	}
 	if n < 28 || packet[0]>>4 != 4 || packet[9] != 17 || !bytes.Contains(packet[:n], []byte("linux-tun-packet")) {
 		t.Fatalf("unexpected packet length %d", n)
