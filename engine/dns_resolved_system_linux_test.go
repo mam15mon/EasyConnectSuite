@@ -109,4 +109,27 @@ func TestResolvedRealIsolatedLinkLifecycle(t *testing.T) {
 	if len(addresses) != 0 || len(domains) != 0 {
 		t.Fatalf("resolved link not cleared: %v %v", addresses, domains)
 	}
+
+	// Model a second privileged client changing the same link after our apply.
+	// RevertLink clears the whole link, so a successful revert is not proof of
+	// safe coexistence with changes from other clients.
+	if err = owner.Apply(context.Background(), []string{"example.invalid"}); err != nil {
+		t.Fatal(err)
+	}
+	external := []resolvedDomain{{Name: "external.invalid", RouteOnly: true}}
+	if err = manager.Call("org.freedesktop.resolve1.Manager.SetLinkDomains", 0, int32(iface.Index), external).Err; err != nil {
+		t.Fatal(err)
+	}
+	_, domains = read()
+	if !reflect.DeepEqual(domains, external) {
+		t.Fatalf("external change not observed: %v", domains)
+	}
+	if err = owner.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, domains = read()
+	if len(domains) != 0 {
+		t.Fatalf("unexpected link state after RevertLink: %v", domains)
+	}
+	t.Log("RevertLink removed a separately configured domain; coexistence remains unproven")
 }
