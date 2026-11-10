@@ -80,9 +80,11 @@ class TunnelService : VpnService() {
         val thread = Thread {
             val started = SystemClock.elapsedRealtime()
             val requestId = System.identityHashCode(request)
+            var ownsClient = false
             try {
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=await_predecessor")
                 if (!request.handoff.awaitPredecessor() || request.cancelled.get()) return@Thread
+                ownsClient = true
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=handoff_ready elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=false")
                 var attempt = 0
                 while (!request.cancelled.get()) {
@@ -114,8 +116,10 @@ class TunnelService : VpnService() {
             } finally {
                 if (!request.cancelled.getAndSet(true)) {
                     request.handoff.cancel()
-                    Mobile.logout()
-                    Mobile.stopStack()
+                    if (ownsClient) {
+                        Mobile.logout()
+                        Mobile.stopStack()
+                    }
                 }
                 request.handoff.finish()
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=handoff_finished elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=${request.cancelled.get()}")
