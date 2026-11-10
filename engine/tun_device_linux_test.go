@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	"EasyConnectSuite/internal/tunipc"
 	"github.com/sagernet/netlink"
@@ -164,5 +165,34 @@ func TestLinuxTUNConfigureFailureCleansDevice(t *testing.T) {
 	}
 	if _, err = net.InterfaceByName(name); err == nil {
 		t.Fatal("failed configuration left interface behind")
+	}
+}
+
+func TestLinuxTUNBlockedReadCloses(t *testing.T) {
+	if os.Getenv("ECS_LINUX_TUN_SYSTEM_TEST") != "1" {
+		t.Skip("requires isolated Linux network namespace and TUN privileges")
+	}
+	file, _, err := createLinuxTUN(context.Background(), linuxTestSpec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan error, 1)
+	go func() { _, err := file.Read(make([]byte, 1500)); result <- err }()
+	select {
+	case err := <-result:
+		file.Close()
+		t.Fatalf("read returned before close: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if !errors.Is(err, os.ErrClosed) {
+			t.Fatalf("read after close: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("TUN read remained blocked after close")
 	}
 }

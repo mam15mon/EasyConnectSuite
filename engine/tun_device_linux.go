@@ -32,11 +32,16 @@ func createLinuxTUN(ctx context.Context, spec TUNSpec) (file *os.File, name stri
 		outcome = "failed"
 		return
 	}
-	file = os.NewFile(uintptr(fd), "linux-tun")
 	defer func() {
 		if err != nil {
 			op.Step("cleanup_failed_create")
-			if closeErr := file.Close(); closeErr != nil {
+			var closeErr error
+			if file != nil {
+				closeErr = file.Close()
+			} else {
+				closeErr = unix.Close(fd)
+			}
+			if closeErr != nil {
 				err = fmt.Errorf("%w; close TUN: %v", err, closeErr)
 			}
 			file = nil
@@ -55,6 +60,8 @@ func createLinuxTUN(ctx context.Context, spec TUNSpec) (file *os.File, name stri
 		return
 	}
 	name = ifr.Name()
+	// The TUN must be initialized before NewFile registers it with Go's poller.
+	file = os.NewFile(uintptr(fd), "linux-tun")
 	if err = ctx.Err(); err != nil {
 		outcome = "cancelled"
 		return
