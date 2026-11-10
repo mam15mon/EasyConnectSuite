@@ -303,12 +303,14 @@ class TunnelService : VpnService() {
     }
 
     private fun stopTunnel() {
-        currentRequest?.cancel()
+        val request = currentRequest
+        request?.cancel()
         wantConnected = false
         worker?.interrupt()
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        val ownsNotification = synchronized(stateLock) { request != null && stateOwner === request }
+        if (ownsNotification) stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
-        currentRequest?.let { publish(it, State.Disconnected, allowCancelled = true) }
+        request?.let { publish(it, State.Disconnected, allowCancelled = true) }
     }
 
     override fun onDestroy() {
@@ -316,7 +318,8 @@ class TunnelService : VpnService() {
         if (request != null && request.cancel()) {
             wantConnected = false
             worker?.interrupt()
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            val ownsNotification = synchronized(stateLock) { stateOwner === request }
+            if (ownsNotification) stopForeground(STOP_FOREGROUND_REMOVE)
             if (!terminalError) publish(request, State.Disconnected, allowCancelled = true)
         }
         super.onDestroy()
