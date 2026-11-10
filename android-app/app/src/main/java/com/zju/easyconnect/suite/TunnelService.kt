@@ -148,12 +148,11 @@ class TunnelService : VpnService() {
             val requestId = System.identityHashCode(request)
             try {
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=await_predecessor")
-                if (!observeWait(request, "await_predecessor") { request.handoff.awaitPredecessor() }) return@Thread
-                val loginEpoch = request.mobile.loginEpoch()
-                if (!request.cleanup.acquire() || request.cancelled.get()) return@Thread
+                if (!observeWait(request, "await_predecessor") { request.handoff.awaitPredecessor() } || !request.cleanup.acquire() || request.cancelled.get()) return@Thread
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=handoff_ready elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=false")
                 var attempt = 0
                 while (!request.cancelled.get()) {
+                val loginEpoch = request.mobile.loginEpoch()
                 if (request.cancelled.get()) break
                 val connectedMs = connectOnce(server, username, password, totp, attempt > 0, request, loginEpoch)
                 if (request.cancelled.get() || request.terminal.get()) break
