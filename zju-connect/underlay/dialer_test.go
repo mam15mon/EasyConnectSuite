@@ -60,7 +60,7 @@ func TestMissingUnderlayInterfaceReturnsDialError(t *testing.T) {
 	findDefaultInterface = func() string { return "" }
 	t.Cleanup(func() { findDefaultInterface = originalFind })
 	dialer := &Dialer{autoDetect: true, requireBound: true}
-	_, err := dialer.DialContext(t.Context(), "tcp", "127.0.0.1:0")
+	_, err := dialer.DialContext(t.Context(), "tcp", "192.0.2.1:1")
 	var opErr *net.OpError
 	if !errors.As(err, &opErr) || opErr.Op != "dial" {
 		t.Fatalf("missing interface did not produce a dial error: %v", err)
