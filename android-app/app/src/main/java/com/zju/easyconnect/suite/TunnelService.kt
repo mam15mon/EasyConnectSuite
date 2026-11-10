@@ -216,12 +216,16 @@ class TunnelService : VpnService() {
 
         // Keep the descriptor passed to Go open until StartStack returns. The
         // cancellation thread may close the service-owned descriptor at any time.
+        val dupStarted = SystemClock.elapsedRealtime()
+        Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=${System.identityHashCode(request)} stage=tun_duplicate_start cancelled=${request.cancelled.get()}")
         val stackFd = try {
             ParcelFileDescriptor.dup(pfd.fileDescriptor)
         } catch (error: java.io.IOException) {
+            Log.e("VPN", "android_session pid=${android.os.Process.myPid()} request=${System.identityHashCode(request)} stage=tun_duplicate_finished outcome=failed elapsed_ms=${SystemClock.elapsedRealtime() - dupStarted} cancelled=${request.cancelled.get()} error_type=${error.javaClass.simpleName}")
             pfd.close()
             throw error
         }
+        Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=${System.identityHashCode(request)} stage=tun_duplicate_finished outcome=success elapsed_ms=${SystemClock.elapsedRealtime() - dupStarted} cancelled=${request.cancelled.get()}")
         try {
             if (!request.registerFd(pfd)) {
                 pfd.close()
