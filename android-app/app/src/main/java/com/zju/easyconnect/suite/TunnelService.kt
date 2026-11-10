@@ -308,7 +308,7 @@ class TunnelService : VpnService() {
         wantConnected = false
         worker?.interrupt()
         val ownsNotification = synchronized(stateLock) { request != null && stateOwner === request }
-        if (ownsNotification) stopForeground(STOP_FOREGROUND_REMOVE)
+        stopForeground(if (ownsNotification) STOP_FOREGROUND_REMOVE else STOP_FOREGROUND_DETACH)
         stopSelf()
         request?.let { publish(it, State.Disconnected, allowCancelled = true) }
     }
@@ -318,9 +318,11 @@ class TunnelService : VpnService() {
         if (request != null && request.cancel()) {
             wantConnected = false
             worker?.interrupt()
-            val ownsNotification = synchronized(stateLock) { stateOwner === request }
-            if (ownsNotification) stopForeground(STOP_FOREGROUND_REMOVE)
             if (!terminalError) publish(request, State.Disconnected, allowCancelled = true)
+        }
+        if (request != null) {
+            val ownsNotification = synchronized(stateLock) { stateOwner === request }
+            if (!ownsNotification) stopForeground(STOP_FOREGROUND_DETACH)
         }
         super.onDestroy()
     }
