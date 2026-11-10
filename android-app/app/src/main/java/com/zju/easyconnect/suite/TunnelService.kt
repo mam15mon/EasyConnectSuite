@@ -222,7 +222,6 @@ class TunnelService : VpnService() {
             pfd.close()
             throw error
         }
-        var forwardingStarted = 0L
         try {
             if (!request.registerFd(pfd)) {
                 pfd.close()
@@ -230,7 +229,7 @@ class TunnelService : VpnService() {
             }
             updateNotification(request, "IPv4 流量经 VPN")
             publish(request, State.Connected)
-            forwardingStarted = SystemClock.elapsedRealtime()
+            val forwardingStarted = SystemClock.elapsedRealtime()
             Mobile.startStack(stackFd.fd.toLong())
             return SystemClock.elapsedRealtime() - forwardingStarted
         } finally {
