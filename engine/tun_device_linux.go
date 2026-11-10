@@ -3,9 +3,11 @@ package engine
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 
 	"EasyConnectSuite/vpncore/log"
+	"github.com/sagernet/netlink"
 	"golang.org/x/sys/unix"
 )
 
@@ -58,5 +60,110 @@ func createLinuxTUN(ctx context.Context, spec TUNSpec) (file *os.File, name stri
 		return
 	}
 	outcome = "created"
+	return
+}
+
+// configureLinuxTUN configures only the owned interface and leaves routing to
+// the route manager. On failure it closes the non-persistent interface.
+func configureLinuxTUN(ctx context.Context, file *os.File, name string, spec TUNSpec) (index int, err error) {
+	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), spec.Profile, spec.Session, spec.Attachment), "linux_tun_configure", ctx.Done())
+	outcome := "interrupted"
+	defer func() { op.Finish(outcome, err) }()
+	if file == nil {
+		outcome = "failed"
+		return 0, fmt.Errorf("TUN 文件未打开")
+	}
+	defer func() {
+		if err != nil {
+			op.Step("close_failed_interface")
+			if closeErr := file.Close(); closeErr != nil {
+				err = fmt.Errorf("%w; close TUN: %v", err, closeErr)
+			}
+			index = 0
+		}
+	}()
+	if err = spec.Validate(); err != nil {
+		outcome = "invalid_spec"
+		return
+	}
+	if err = ctx.Err(); err != nil {
+		outcome = "cancelled"
+		return
+	}
+	op.Step("verify_interface")
+	var ifr *unix.Ifreq
+	ifr, err = unix.NewIfreq("")
+	if err != nil {
+		outcome = "failed"
+		return
+	}
+	raw, rawErr := file.SyscallConn()
+	if rawErr != nil {
+		outcome = "failed"
+		err = rawErr
+		return
+	}
+	var ioctlErr error
+	if err = raw.Control(func(fd uintptr) { ioctlErr = unix.IoctlIfreq(int(fd), unix.TUNGETIFF, ifr) }); err != nil {
+		outcome = "failed"
+		return
+	}
+	if err = ioctlErr; err != nil {
+		outcome = "failed"
+		return
+	}
+	if ifr.Name() != name {
+		outcome = "failed"
+		err = fmt.Errorf("TUN interface identity changed")
+		return
+	}
+	var link netlink.Link
+	link, err = netlink.LinkByName(name)
+	if err != nil {
+		outcome = "failed"
+		return
+	}
+	index = link.Attrs().Index
+	if index <= 0 {
+		outcome = "failed"
+		err = fmt.Errorf("invalid TUN interface index")
+		return
+	}
+	op.Step("set_mtu")
+	if err = netlink.LinkSetMTU(link, 1400); err != nil {
+		outcome = "failed"
+		return
+	}
+	if err = ctx.Err(); err != nil {
+		outcome = "cancelled"
+		return
+	}
+	op.Step("set_address")
+	address := netip.MustParsePrefix(fmt.Sprintf("198.19.128.%d/30", spec.Slot*4+1))
+	var addr *netlink.Addr
+	addr, err = netlink.ParseAddr(address.String())
+	if err != nil {
+		outcome = "failed"
+		return
+	}
+	addr.Flags = unix.IFA_F_NOPREFIXROUTE
+	if err = netlink.AddrAdd(link, addr); err != nil {
+		outcome = "failed"
+		return
+	}
+	if err = ctx.Err(); err != nil {
+		outcome = "cancelled"
+		return
+	}
+	op.Step("activate_interface")
+	if err = netlink.LinkSetUp(link); err != nil {
+		outcome = "failed"
+		return
+	}
+	if err = ctx.Err(); err != nil {
+		outcome = "cancelled"
+		return
+	}
+	outcome = "configured"
 	return
 }
