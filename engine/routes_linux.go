@@ -43,8 +43,9 @@ func (r *linuxRoutes) Apply(add, remove []string) (result routeResult, err error
 			op.Step("close_partial_interface")
 			if closeErr := r.device.Close(); closeErr != nil {
 				err = fmt.Errorf("%w; close TUN: %v", err, closeErr)
+			} else {
+				result.Added = nil
 			}
-			result.Added = nil
 		}
 	}()
 	for _, value := range add {
@@ -108,11 +109,6 @@ func (r *linuxRoutes) Apply(add, remove []string) (result routeResult, err error
 			if err == nil {
 				err = fmt.Errorf("TUN route changed during installation: %s", value)
 			}
-			op.Step("close_conflicted_interface")
-			if closeErr := r.device.Close(); closeErr != nil {
-				err = fmt.Errorf("%w; close TUN: %v", err, closeErr)
-			}
-			result.Added = nil
 			outcome = "failed"
 			return
 		}
