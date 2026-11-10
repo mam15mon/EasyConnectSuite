@@ -55,8 +55,8 @@ func releaseIngressRoutes(t *tunIngress) error {
 	return nil
 }
 
-// startLinuxTUNIngress is currently exercised in an isolated namespace only.
-func startLinuxTUNIngress(ctx context.Context, spec TUNSpec, service TUNBackend) (ingress *tunIngress, err error) {
+// StartLinuxTUNIngress is currently exercised in an isolated namespace only.
+func StartLinuxTUNIngress(ctx context.Context, spec TUNSpec, service TUNBackend) (ingress *tunIngress, err error) {
 	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), spec.Profile, spec.Session, spec.Attachment), "linux_tun_attach", ctx.Done())
 	outcome := "interrupted"
 	defer func() { op.Finish(outcome, err) }()

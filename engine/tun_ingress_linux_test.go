@@ -64,7 +64,7 @@ func TestLinuxTUNIngressTCPUDP(t *testing.T) {
 	}()
 	spec := linuxTestSpec()
 	spec.Prefixes = []string{"198.18.61.0/24"}
-	ingress, err := startLinuxTUNIngress(context.Background(), spec, linuxEchoBackend{tcp: tcp.Addr().String(), udp: udp.LocalAddr().String()})
+	ingress, err := StartLinuxTUNIngress(context.Background(), spec, linuxEchoBackend{tcp: tcp.Addr().String(), udp: udp.LocalAddr().String()})
 	if err != nil {
 		t.Fatal(err)
 	}
