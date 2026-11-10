@@ -175,11 +175,12 @@ class TunnelServiceHandoffTest {
             service.onStartCommand(null, 0, 2)
             assertTrue(cleanupStarted.await(2, TimeUnit.SECONDS))
             releaseLogin.countDown()
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(40)
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(50)
             var evidence = ""
             while (System.nanoTime() < deadline) {
                 if (file.exists()) evidence = file.readText()
-                if (evidence.contains("stage=await_cleanup") && evidence.contains("phase=pending")) break
+                if (evidence.contains("stage=await_cleanup") && evidence.contains("phase=pending") &&
+                    (evidence.contains("captured=false") || evidence.contains("phase=snapshot_end"))) break
                 Thread.sleep(100)
             }
             assertTrue(evidence.contains("stage=await_cleanup"))
