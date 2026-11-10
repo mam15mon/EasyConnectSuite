@@ -12,6 +12,7 @@ import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.util.Log
 import mobile.Mobile
+import java.util.concurrent.atomic.AtomicBoolean
 
 class TunnelService : VpnService() {
 
@@ -38,6 +39,8 @@ class TunnelService : VpnService() {
         }
     }
 
+    private class ConnectionRequest { val cancelled = AtomicBoolean(false) }
+    @Volatile private var currentRequest: ConnectionRequest? = null
     @Volatile private var wantConnected = false
     private var tunnelFd: ParcelFileDescriptor? = null
     @Volatile private var worker: Thread? = null
@@ -62,6 +65,8 @@ class TunnelService : VpnService() {
 
         if (wantConnected) return START_NOT_STICKY
         wantConnected = true
+        val request = ConnectionRequest()
+        currentRequest = request
         terminalError = false
         startInForeground("正在登录并建立隧道")
         publish(State.Connecting)
@@ -74,9 +79,9 @@ class TunnelService : VpnService() {
         val thread = Thread {
             var attempt = 0
             val started = SystemClock.elapsedRealtime()
-            while (wantConnected) {
-                val connectedMs = connectOnce(server, username, password, totp, attempt > 0)
-                if (!wantConnected) break
+            while (!request.cancelled.get()) {
+                val connectedMs = connectOnce(server, username, password, totp, attempt > 0, request)
+                if (request.cancelled.get()) break
                 if (connectedMs == null && Mobile.loginRejected()) {
                     wantConnected = false
                     terminalError = true
@@ -104,13 +109,13 @@ class TunnelService : VpnService() {
     }
 
     /** 单次:登录 → 建立 VPN 接口 → 转发(阻塞到隧道断开)。返回转发时长，未进入转发时返回 null。 */
-    private fun connectOnce(server: String, user: String, pass: String, totp: String, isRetry: Boolean): Long? {
+    private fun connectOnce(server: String, user: String, pass: String, totp: String, isRetry: Boolean, request: ConnectionRequest): Long? {
         val ip = if (totp.isEmpty()) {
             Mobile.login(server, user, pass)
         } else {
             Mobile.loginWithTOTP(server, user, pass, totp)
         }
-        if (!wantConnected) {
+        if (request.cancelled.get()) {
             return null
         }
         if (ip.isEmpty()) {
@@ -162,12 +167,13 @@ class TunnelService : VpnService() {
             } catch (error: java.io.IOException) {
                 Log.e("VPN", "android_session pid=${android.os.Process.myPid()} stage=tun_close outcome=failed elapsed_ms=${SystemClock.elapsedRealtime() - cleanupStarted} cancelled=${!wantConnected} error_type=${error.javaClass.simpleName}")
             }
-            if (wantConnected) Mobile.logout()
+            if (!request.cancelled.get()) Mobile.logout()
         }
         return forwardingMs
     }
 
     private fun stopTunnel() {
+        currentRequest?.cancelled?.set(true)
         wantConnected = false
         worker?.interrupt()
         Mobile.logout()
@@ -181,6 +187,7 @@ class TunnelService : VpnService() {
     }
 
     override fun onDestroy() {
+        currentRequest?.cancelled?.set(true)
         wantConnected = false
         worker?.interrupt()
         Mobile.logout()
