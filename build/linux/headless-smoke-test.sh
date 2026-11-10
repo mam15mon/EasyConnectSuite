@@ -127,7 +127,7 @@ PY
 # Exercise the desktop application's profile and connection backend with the same mock gateway.
 touch "$work_dir/gui-resources"
 tcp_before=$(grep -c 'tcp_packet_forwarded' "$work_dir/gateway.log" || true)
-ECS_GUI_GATEWAY_TEST=1 go test -tags webkit2_41 . -run '^TestLinuxGUIBackendMockGateway$' -count=1 -timeout=90s -v >"$work_dir/gui-backend.log" 2>&1 || {
+ECS_GUI_GATEWAY_TEST=1 ECS_MOCK_GATEWAY_LOG="$work_dir/gateway.log" go test -tags webkit2_41 . -run '^TestLinuxGUIBackendMockGateway$' -count=1 -timeout=90s -v >"$work_dir/gui-backend.log" 2>&1 || {
   cat "$work_dir/gui-backend.log" "$work_dir/gateway.log"
   exit 1
 }

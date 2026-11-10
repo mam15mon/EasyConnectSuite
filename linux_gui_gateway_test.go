@@ -48,7 +48,15 @@ func TestLinuxGUIBackendMockGateway(t *testing.T) {
 		}
 		conn.Close()
 	}
+	packetCount := func() int {
+		data, err := os.ReadFile(os.Getenv("ECS_MOCK_GATEWAY_LOG"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Count(string(data), "tcp_packet_forwarded")
+	}
 	for _, proxy := range []string{"socks", "http"} {
+		before := packetCount()
 		addr := "127.0.0.1:19180"
 		if proxy == "http" {
 			addr = "127.0.0.1:19181"
@@ -103,6 +111,9 @@ func TestLinuxGUIBackendMockGateway(t *testing.T) {
 			t.Fatalf("%s payload: %q %v", proxy, received, err)
 		}
 		conn.Close()
+		if packetCount() <= before {
+			t.Fatalf("%s traffic did not pass through the mock VPN", proxy)
+		}
 	}
 	if result = reloaded.stopConnection(profile.ID); result != "OK" {
 		t.Fatalf("GUI stop: %s", result)
