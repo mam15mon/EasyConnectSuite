@@ -14,7 +14,7 @@ build/bin/VPN >"$work_dir/app.log" 2>&1 &
 app_pid=$!
 window=
 for attempt in $(seq 1 200); do
-  window=$(xdotool search --name '^VPN$' 2>/dev/null | head -n 1 || true)
+  window=$(xdotool search --onlyvisible --name '^VPN$' 2>/dev/null | head -n 1 || true)
   if [ -n "$window" ]; then break; fi
   if ! kill -0 "$app_pid" 2>/dev/null; then echo 'GUI exited before opening a window' >&2; exit 1; fi
   sleep .1
