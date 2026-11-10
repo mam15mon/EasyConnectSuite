@@ -59,24 +59,40 @@ jobs:
         run: |
           export XDG_CONFIG_HOME="$RUNNER_TEMP/gui-config"
           export WEBKIT_DISABLE_COMPOSITING_MODE=1
-          timeout -k 5s 60s xvfb-run -a bash -c '
-            build/bin/VPN &
-            app_pid=$!
-            trap "kill $app_pid 2>/dev/null || true; wait $app_pid 2>/dev/null || true" EXIT
-            for i in $(seq 1 100); do
-              if xdotool search --name "^VPN$" >/dev/null 2>&1; then
-                echo "GUI window appeared"
-                sleep 2
-                exit 0
-              fi
-              if ! kill -0 "$app_pid" 2>/dev/null; then
-                echo "GUI exited before opening a window" >&2
+          timeout -k 5s 120s xvfb-run -a bash -c '
+            set -eu
+            app_pid=
+            trap "if [ -n \"$app_pid\" ]; then kill \"$app_pid\" 2>/dev/null || true; wait \"$app_pid\" 2>/dev/null || true; fi" EXIT
+            for attempt in $(seq 1 5); do
+              build/bin/VPN >"$RUNNER_TEMP/gui-$attempt.log" 2>&1 &
+              app_pid=$!
+              found=false
+              for i in $(seq 1 200); do
+                if xdotool search --name "^VPN$" >/dev/null 2>&1; then
+                  found=true
+                  break
+                fi
+                if ! kill -0 "$app_pid" 2>/dev/null; then
+                  echo "GUI exited before opening a window" >&2
+                  cat "$RUNNER_TEMP/gui-$attempt.log"
+                  exit 1
+                fi
+                sleep .1
+              done
+              if [ "$found" != true ]; then
+                echo "GUI window did not appear" >&2
+                cat "$RUNNER_TEMP/gui-$attempt.log"
                 exit 1
               fi
-              sleep .2
+              kill -TERM "$app_pid"
+              wait "$app_pid"
+              app_pid=
+              if grep -q "gtk_main_quit: assertion" "$RUNNER_TEMP/gui-$attempt.log"; then
+                cat "$RUNNER_TEMP/gui-$attempt.log"
+                exit 1
+              fi
+              echo "GUI startup and immediate shutdown passed: $attempt"
             done
-            echo "GUI window did not appear" >&2
-            exit 1
           '
       - name: Build and smoke-test Suite headless command
         run: |
