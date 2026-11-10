@@ -93,7 +93,6 @@ func loginAtEpoch(server string, username string, password string, totpSecret st
 		waitOp.Finish("cancelled", context.Canceled)
 		return ""
 	}
-	waitOp.Finish("success", nil)
 	loginRejected.Store(false)
 	loginGeneration++
 	generation := loginGeneration
@@ -102,6 +101,7 @@ func loginAtEpoch(server string, username string, password string, totpSecret st
 	oldClient, oldUnderlay := vpnClient, vpnUnderlay
 	vpnClient, vpnUnderlay = nil, nil
 	vpnClientMu.Unlock()
+	waitOp.Finish("success", nil)
 	op := log.BeginOperation(fmt.Sprintf("[android pid=%d session=%d] ", os.Getpid(), generation), "android_login", cancelled)
 	var resultErr error
 	defer func() { op.Finish("success", resultErr) }()
