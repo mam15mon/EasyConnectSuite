@@ -28,6 +28,7 @@ type resolvedDomain struct {
 type resolvedCall func(context.Context, string, ...any) error
 
 var errResolvedOutcomeUnknown = errors.New("Linux DNS 请求结果未确认，禁止自动重新配置或声称清理完成")
+var errResolvedNotSent = errors.New("Linux DNS 请求未发送")
 
 func resolvedDNSArguments(server string, names []string) ([]resolvedAddress, []resolvedDomain, error) {
 	ip, err := netip.ParseAddr(server)
@@ -64,6 +65,11 @@ func resolvedLinkDNS(ctx context.Context, call resolvedCall, index int, server s
 		return fmt.Errorf("set link DNS: %w", err)
 	}
 	if err = call(ctx, "SetLinkDomains", int32(index), domains); err != nil {
+		// DNS was already changed; a failure to send the domains request
+		// cannot safely trigger a whole-link rollback.
+		if errors.Is(err, errResolvedNotSent) {
+			return errors.Join(fmt.Errorf("set link domains: %w", err), errResolvedOutcomeUnknown)
+		}
 		return fmt.Errorf("set link domains: %w", err)
 	}
 	return nil
@@ -74,7 +80,7 @@ func resolvedSystemCall(ctx context.Context, method string, args ...any) error {
 	defer cancel()
 	conn, err := dbus.ConnectSystemBus()
 	if err != nil {
-		return err
+		return errors.Join(err, errResolvedNotSent)
 	}
 	defer conn.Close()
 	obj := conn.Object("org.freedesktop.resolve1", dbus.ObjectPath("/org/freedesktop/resolve1"))
@@ -126,8 +132,14 @@ func (d *resolvedDNSOwner) Apply(ctx context.Context, names []string) (err error
 	}
 	op.Step("configure_link_dns")
 	// A timed-out D-Bus call may still have changed the service's state.
+	previouslyTouched := d.touched
 	d.touched = true
 	if err = resolvedLinkDNS(ctx, d.call, d.index, d.server, names); err != nil {
+		if errors.Is(err, errResolvedNotSent) && !errors.Is(err, errResolvedOutcomeUnknown) {
+			d.touched = previouslyTouched
+			op.Step("dns_request_not_sent")
+			return err
+		}
 		if errors.Is(err, errResolvedOutcomeUnknown) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			d.unknown = true
 			op.Step("dns_outcome_unconfirmed")

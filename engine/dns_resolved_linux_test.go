@@ -310,3 +310,42 @@ func TestResolvedDNSOwnerDoesNotClaimCanceledRequestClean(t *testing.T) {
 		}
 	}
 }
+
+func TestResolvedDNSOwnerDoesNotRollbackUnsentRequest(t *testing.T) {
+	for _, failingMethod := range []string{"SetLinkDNS", "SetLinkDomains"} {
+		t.Run(failingMethod, func(t *testing.T) {
+			var methods []string
+			owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", verify: func() error { return nil }, call: func(_ context.Context, method string, _ ...any) error {
+				methods = append(methods, method)
+				if method == failingMethod {
+					return errResolvedNotSent
+				}
+				return nil
+			}}
+			err := owner.Apply(context.Background(), []string{"example.invalid"})
+			if !errors.Is(err, errResolvedNotSent) {
+				t.Fatalf("missing unsent error: %v", err)
+			}
+			if failingMethod == "SetLinkDNS" {
+				if owner.touched || owner.unknown || !reflect.DeepEqual(methods, []string{"SetLinkDNS"}) {
+					t.Fatalf("first call changed state: %v %+v", methods, owner)
+				}
+				if err = owner.Close(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if !owner.touched || !owner.unknown || !errors.Is(err, errResolvedOutcomeUnknown) {
+					t.Fatalf("partial update not retained: %v %+v", err, owner)
+				}
+				if err = owner.Close(context.Background()); !errors.Is(err, errResolvedOutcomeUnknown) {
+					t.Fatalf("cleanup: %v", err)
+				}
+			}
+			for _, method := range methods {
+				if method == "RevertLink" {
+					t.Fatal("unsent request triggered whole-link rollback")
+				}
+			}
+		})
+	}
+}
