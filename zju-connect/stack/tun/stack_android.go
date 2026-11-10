@@ -50,13 +50,14 @@ func forwardPackets(l3, device io.ReadWriteCloser) error {
 			ReadStream([]byte) (int, uint64, error)
 		})
 		var pending []byte
+		chunk := make([]byte, maxInboundPacketSize)
 		var streamID uint64
 		var haveStream bool
 		for {
 			var n int
 			var err error
 			if isStream {
-				n, pending, streamID, haveStream, err = readStreamPacket(stream, buf, pending, streamID, haveStream)
+				n, pending, streamID, haveStream, err = readStreamPacket(stream, buf, chunk, pending, streamID, haveStream)
 			} else {
 				n, err = l3.Read(buf)
 			}
@@ -102,7 +103,7 @@ func forwardPackets(l3, device io.ReadWriteCloser) error {
 // Buffer bytes across reads, discarding an incomplete packet when the stream changes.
 func readStreamPacket(stream interface {
 	ReadStream([]byte) (int, uint64, error)
-}, packet, pending []byte, streamID uint64, haveStream bool) (int, []byte, uint64, bool, error) {
+}, packet, chunk, pending []byte, streamID uint64, haveStream bool) (int, []byte, uint64, bool, error) {
 	for {
 		if len(pending) >= 20 {
 			headerLen := int(pending[0]&15) * 4
@@ -116,10 +117,12 @@ func readStreamPacket(stream interface {
 				return packetLen, pending, streamID, haveStream, nil
 			}
 		}
-		chunk := make([]byte, maxInboundPacketSize-len(pending))
-		n, id, err := stream.ReadStream(chunk)
+		n, id, err := stream.ReadStream(chunk[:maxInboundPacketSize-len(pending)])
 		if n > 0 {
 			if haveStream && id != streamID {
+				if len(pending) > 0 {
+					log.Printf("[android pid=%d stream=%p] inbound_stream_switch discarded_partial_bytes=%d", os.Getpid(), stream, len(pending))
+				}
 				pending = pending[:0]
 			}
 			pending = append(pending, chunk[:n]...)

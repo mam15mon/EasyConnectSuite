@@ -187,7 +187,7 @@ func TestStreamPacketDiscardsPartialPacketOnReconnect(t *testing.T) {
 			var id uint64
 			var have bool
 			for i := 0; i < 2; i++ {
-				n, rest, nextID, nextHave, err := readStreamPacket(s, out, pending, id, have)
+				n, rest, nextID, nextHave, err := readStreamPacket(s, out, make([]byte, maxInboundPacketSize), pending, id, have)
 				if err != nil || !bytes.Equal(out[:n], packet) {
 					t.Fatalf("packet %d: got %x, error %v", i, out[:n], err)
 				}
