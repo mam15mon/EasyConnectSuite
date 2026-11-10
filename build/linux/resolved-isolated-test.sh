@@ -6,6 +6,8 @@ if [ "${ECS_RESOLVED_INNER:-}" != 1 ]; then
   [ "$(readlink /proc/self/ns/mnt)" != "$ECS_HOST_MNT_NS" ]
   mount --make-rprivate /
   mount -t tmpfs -o mode=755 tmpfs /run
+  mkdir -p /run/systemd
+  unset XDG_RUNTIME_DIR
   mount -t tmpfs -o mode=1777 tmpfs /tmp
   mount --bind /etc /etc
   mount -o remount,bind,ro /etc
