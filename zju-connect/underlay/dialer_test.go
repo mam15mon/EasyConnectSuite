@@ -43,10 +43,7 @@ func TestLoopbackDialDoesNotBindPhysicalInterface(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	dialer, err := New(Options{InterfaceName: "nonexistent-physical-interface"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	dialer := &Dialer{autoDetect: true, interfaceName: "nonexistent-physical-interface", requireBound: true}
 	defer dialer.Close()
 	conn, err := dialer.DialContext(t.Context(), "tcp", listener.Addr().String())
 	if err != nil {

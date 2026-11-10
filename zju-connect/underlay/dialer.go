@@ -106,8 +106,8 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 	if d == nil {
 		return (&net.Dialer{}).DialContext(ctx, network, address)
 	}
-	// Loopback traffic cannot use a physical underlay interface.
-	if isLoopbackAddress(address) {
+	// Auto-detected physical interfaces cannot carry loopback traffic.
+	if d.autoDetect && isLoopbackAddress(address) {
 		conn, err := dialOnInterface(ctx, network, address, "", d.localDNSServer)
 		if err != nil {
 			return nil, err
