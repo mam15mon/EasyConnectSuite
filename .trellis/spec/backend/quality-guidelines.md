@@ -12,6 +12,8 @@ For Go behavior changes:
 - Build the Windows desktop after exported Wails model or UI changes.
 - Distinguish compilation, mock integration, real TUN/routing tests and live gateway compatibility.
 
+Delivery covers Windows, macOS Intel/Apple Silicon and the current Android EasyConnect prototype. Push one source revision, wait for its GitHub Actions workflows to pass, and publish those workflow artifacts together in a GitHub Release with source revision, download links and validation limits. Windows CI uses `.github/workflows/windows.yml`. Its hosted VM can lack the required physical PCI device identity: `setupTopSAPIntegrationClient` skips only that exact hardware-unavailable error in adapter integration tests. All other errors still fail; synthetic TopSAP session and Windows device-enumeration tests remain required. Report these skipped hardware-dependent adapter cases rather than claiming they passed. Do not add a product identity override or alternate device algorithm to accommodate CI.
+
 Frontend checks are in ../frontend/index.md. build/bin outputs are ignored. Record source revisions, licenses and reproducible native build steps. Do not claim a live connection without testing an authorized gateway.
 
 ## Windows workspace reentry

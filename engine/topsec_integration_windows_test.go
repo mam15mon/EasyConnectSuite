@@ -30,6 +30,15 @@ import (
 
 // The mock uses independent headers and the existing IPv4 echo endpoint. It
 // exercises real gVisor TCP/UDP without installing a Windows TUN or routes.
+func setupTopSAPIntegrationClient(t *testing.T, c *topSAPClient) error {
+	t.Helper()
+	err := c.Setup()
+	if err != nil && err.Error() == "TopSAP 未找到已验证的物理 PCI 网卡标识" {
+		t.Skip("host has no physical PCI identity; synthetic protocol and device enumeration tests run in engine/topsec")
+	}
+	return err
+}
+
 func topSAPGateway(t *testing.T, reject bool) (*topSAPClient, *atomic.Int32) {
 	t.Helper()
 	var mu sync.Mutex
@@ -146,7 +155,7 @@ func TestTopSAPAdapterGVisorTCPAndUDP(t *testing.T) {
 	capture.startLogCapture()
 	defer capture.stopLogCapture()
 	c, _ := topSAPGateway(t, false)
-	if err := c.Setup(); err != nil {
+	if err := setupTopSAPIntegrationClient(t, c); err != nil {
 		t.Fatal(err)
 	}
 	stack, err := gvisor.NewOwnedStack(c, func() bool { return c.ctx.Err() != nil })
@@ -213,7 +222,7 @@ func TestTopSAPAdapterRefusalIsTerminal(t *testing.T) {
 	capture.startLogCapture()
 	defer capture.stopLogCapture()
 	c, count := topSAPGateway(t, true)
-	err := c.Setup()
+	err := setupTopSAPIntegrationClient(t, c)
 	if !errors.Is(err, topsec.ErrLoginRejected) || !errors.Is(err, easyconnect.ErrLoginRejected) || count.Load() != 1 {
 		t.Fatal("authentication refusal lost or retried", err)
 	}
@@ -251,7 +260,7 @@ func TestTopSAPMissingResourcesFailureIsPersisted(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &topSAPClient{ctx: ctx, cancel: cancel, options: topsec.Options{Server: strings.TrimPrefix(server.URL, "https://"), Username: "private-test-user", Password: "private-test-password", TLSConfig: &tls.Config{RootCAs: roots}}}
 	defer c.Close()
-	err := c.Setup()
+	err := setupTopSAPIntegrationClient(t, c)
 	if err == nil || !strings.Contains(err.Error(), "未返回完整资源列表") || logouts.Load() != 1 {
 		t.Fatal("missing resources were accepted or failed session was not revoked", err)
 	}
@@ -290,7 +299,7 @@ func TestTopSAPCertificateVerificationRequiresProfileOptIn(t *testing.T) {
 			conf.Password = "test"
 			c := newTopSAPClient(context.Background(), conf, skip, &certificateTestUnderlay{})
 			defer c.Close()
-			err = c.Setup()
+			err = setupTopSAPIntegrationClient(t, c)
 			if skip {
 				if err != nil || count.Load() != 1 {
 					t.Fatal("explicit opt-in did not connect", err)
