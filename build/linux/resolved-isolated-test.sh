@@ -15,6 +15,7 @@ if [ "${ECS_RESOLVED_INNER:-}" != 1 ]; then
 fi
 export DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"
 export ECS_REAL_RESOLVED_TEST=1
+export SYSTEMD_LOG_LEVEL=debug
 /usr/lib/systemd/systemd-resolved > /tmp/resolved-test.log 2>&1 &
 resolved_pid=$!
 cleanup() { kill "$resolved_pid" 2>/dev/null || true; wait "$resolved_pid" 2>/dev/null || true; }
@@ -25,5 +26,5 @@ for _ in $(seq 1 100); do
   if ! kill -0 "$resolved_pid" 2>/dev/null; then break; fi
   sleep .1
 done
-if [ "$ready" -ne 1 ]; then cat /tmp/resolved-test.log >&2; echo 'isolated resolved did not start' >&2; exit 1; fi
+if [ "$ready" -ne 1 ]; then busctl --address="$DBUS_SESSION_BUS_ADDRESS" --no-legend list >&2 || true; cat /tmp/resolved-test.log >&2; echo 'isolated resolved did not start' >&2; exit 1; fi
 "$ECS_TEST_BIN" -test.run '^TestResolvedRealIsolatedLinkLifecycle$' -test.v
