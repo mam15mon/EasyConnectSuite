@@ -42,6 +42,9 @@ func releaseIngressRoutes(t *tunIngress) error {
 	if t.device == nil {
 		return nil
 	}
+	if backend, ok := t.backend.(*linuxRoutes); ok && backend.closedOnFailure {
+		return nil
+	}
 	op := log.BeginOperation(fmt.Sprintf("[TUN interface=%q] ", t.name), "linux_tun_release", nil)
 	outcome := "interrupted"
 	var err error

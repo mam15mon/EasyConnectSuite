@@ -15,11 +15,12 @@ import (
 // routes when the owned non-persistent interface is closed. Explicit deletion
 // is rejected until policy updates have a safe ownership mechanism.
 type linuxRoutes struct {
-	device    *os.File
-	name      string
-	index     int
-	ref       TUNSpec
-	beforeAdd func() // test seam for an external route arriving during installation
+	device          *os.File
+	name            string
+	index           int
+	ref             TUNSpec
+	closedOnFailure bool
+	beforeAdd       func() // test seam for an external route arriving during installation
 }
 
 func (r *linuxRoutes) Apply(add, remove []string) (result routeResult, err error) {
@@ -44,6 +45,7 @@ func (r *linuxRoutes) Apply(add, remove []string) (result routeResult, err error
 			if closeErr := r.device.Close(); closeErr != nil {
 				err = fmt.Errorf("%w; close TUN: %v", err, closeErr)
 			} else {
+				r.closedOnFailure = true
 				result.Added = nil
 			}
 		}

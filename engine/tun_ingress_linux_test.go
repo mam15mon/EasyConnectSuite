@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sagernet/netlink"
+	"golang.org/x/sys/unix"
 )
 
 type linuxEchoBackend struct{ tcp, udp string }
@@ -111,5 +113,53 @@ func TestLinuxTUNIngressTCPUDP(t *testing.T) {
 	}
 	if _, err := net.InterfaceByName(name); err == nil {
 		t.Fatal("interface still exists after ingress close")
+	}
+}
+
+func TestLinuxTUNIngressPartialRouteFailure(t *testing.T) {
+	if os.Getenv("ECS_LINUX_TUN_SYSTEM_TEST") != "1" {
+		t.Skip("requires isolated Linux network namespace and TUN privileges")
+	}
+	other, name, err := createLinuxTUN(context.Background(), linuxTestSpec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	link, err := netlink.LinkByName(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = netlink.LinkSetUp(link); err != nil {
+		t.Fatal(err)
+	}
+	_, conflict, _ := net.ParseCIDR("198.18.82.0/24")
+	if err = netlink.RouteAdd(&netlink.Route{LinkIndex: link.Attrs().Index, Dst: conflict, Scope: netlink.SCOPE_LINK, Table: unix.RT_TABLE_MAIN}); err != nil {
+		t.Fatal(err)
+	}
+	spec := linuxTestSpec()
+	spec.Prefixes = []string{"198.18.81.0/24", "198.18.82.0/24"}
+	ingress, err := StartLinuxTUNIngress(context.Background(), spec, linuxEchoBackend{})
+	if ingress != nil {
+		ingress.Close()
+		t.Fatal("conflicting ingress created")
+	}
+	if err == nil {
+		t.Fatal("route conflict accepted")
+	}
+	if errors.Is(err, os.ErrClosed) {
+		t.Fatalf("successful cleanup reported as failure: %v", err)
+	}
+	routes, err := netlink.RouteListFiltered(netlink.FAMILY_V4, &netlink.Route{Dst: conflict, Table: unix.RT_TABLE_MAIN}, netlink.RT_FILTER_DST|netlink.RT_FILTER_TABLE)
+	if err != nil || len(routes) != 1 || routes[0].LinkIndex != link.Attrs().Index {
+		t.Fatalf("other route changed: %+v %v", routes, err)
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, iface := range ifaces {
+		if len(iface.Name) >= 3 && iface.Name[:3] == "ecs" && iface.Name != name {
+			t.Fatal("failed ingress interface remained")
+		}
 	}
 }
