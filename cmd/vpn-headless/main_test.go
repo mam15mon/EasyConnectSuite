@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"EasyConnectSuite/engine"
 )
@@ -131,5 +133,28 @@ func TestRunRejectsOversizedSecondSecret(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("oversized TOTP secret accepted")
+	}
+}
+
+func TestRunCancellationWhileReadingCredentials(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	defer writer.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- run(ctx, []string{"-server", "x", "-username", "u"}, reader, &bytes.Buffer{}, &bytes.Buffer{}, func(engine.Options) (runningEngine, error) {
+			t.Error("canceled credential read started engine")
+			return &fakeEngine{}, nil
+		})
+	}()
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("credential read did not respond to cancellation")
 	}
 }

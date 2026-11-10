@@ -75,21 +75,43 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 			return errors.New("请通过管道或受限权限的文件提供密码，避免终端回显")
 		}
 	}
-	reader := bufio.NewReader(io.LimitReader(input, 8196))
-	password, err := readSecret(reader)
-	if err != nil {
-		return fmt.Errorf("读取密码失败: %w", err)
+	type credentials struct {
+		password, secret string
+		err              error
 	}
-	secret := ""
-	if *totp {
-		secret, err = readSecret(reader)
+	credentialResult := make(chan credentials, 1)
+	go func() {
+		reader := bufio.NewReader(io.LimitReader(input, 8196))
+		password, err := readSecret(reader)
 		if err != nil {
-			return fmt.Errorf("读取 TOTP 密钥失败: %w", err)
+			credentialResult <- credentials{err: fmt.Errorf("读取密码失败: %w", err)}
+			return
 		}
+		secret := ""
+		if *totp {
+			secret, err = readSecret(reader)
+			if err != nil {
+				credentialResult <- credentials{err: fmt.Errorf("读取 TOTP 密钥失败: %w", err)}
+				return
+			}
+		}
+		credentialResult <- credentials{password: password, secret: secret}
+	}()
+	var values credentials
+	select {
+	case <-ctx.Done():
+		return nil
+	case values = <-credentialResult:
+	}
+	if values.err != nil {
+		return values.err
+	}
+	if ctx.Err() != nil {
+		return nil
 	}
 	conf := configs.Default()
 	conf.Protocol, conf.ServerAddress, conf.ServerPort = *protocol, *server, *port
-	conf.Username, conf.Password, conf.TOTPSecret = *username, password, secret
+	conf.Username, conf.Password, conf.TOTPSecret = *username, values.password, values.secret
 	conf.SocksBind = net.JoinHostPort("127.0.0.1", strconv.Itoa(*socks))
 	conf.HTTPBind = net.JoinHostPort("127.0.0.1", strconv.Itoa(*httpPort))
 	conf.AutoDetectInterface, conf.DisableZJUConfig = true, true
