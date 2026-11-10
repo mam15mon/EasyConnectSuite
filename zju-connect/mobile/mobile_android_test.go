@@ -1,6 +1,7 @@
 package mobile
 
 import (
+	"EasyConnectSuite/vpncore/client/easyconnect"
 	"EasyConnectSuite/vpncore/stack/tun"
 	"testing"
 	"time"
@@ -58,4 +59,23 @@ func TestQueuedLoginDoesNotStartAfterLogout(t *testing.T) {
 	if client != nil || underlay != nil {
 		t.Fatal("cancelled queued login installed a client")
 	}
+}
+
+func TestSupersededLoginCannotPublishRejection(t *testing.T) {
+	Logout()
+	vpnClientMu.Lock()
+	old := loginGeneration
+	loginGeneration++
+	current := loginGeneration
+	loginRejected.Store(false)
+	vpnClientMu.Unlock()
+	publishLoginFailure(old, easyconnect.ErrLoginRejected)
+	if LoginRejected() {
+		t.Fatal("stale rejection affected current session")
+	}
+	publishLoginFailure(current, easyconnect.ErrLoginRejected)
+	if !LoginRejected() {
+		t.Fatal("current rejection was lost")
+	}
+	loginRejected.Store(false)
 }

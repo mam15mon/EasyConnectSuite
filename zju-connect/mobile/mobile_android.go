@@ -156,22 +156,28 @@ func loginAtEpoch(server string, username string, password string, totpSecret st
 		}
 		err = ipErr
 	}
-	vpnClientMu.Lock()
-	if generation == loginGeneration {
-		vpnClient, vpnUnderlay = nil, nil
-	}
-	vpnClientMu.Unlock()
+	publishLoginFailure(generation, err)
 	newClient.Close()
 	_ = newUnderlay.Close()
-	if errors.Is(err, easyconnect.ErrLoginRejected) {
-		loginRejected.Store(true)
-	}
 	if errors.Is(err, context.Canceled) {
 		resultErr = context.Canceled
 	} else {
 		resultErr = err
 	}
 	return ""
+}
+
+// A cancelled or superseded login must not publish its outcome into a later session.
+func publishLoginFailure(generation uint64, err error) {
+	vpnClientMu.Lock()
+	defer vpnClientMu.Unlock()
+	if generation != loginGeneration {
+		return
+	}
+	vpnClient, vpnUnderlay = nil, nil
+	if errors.Is(err, easyconnect.ErrLoginRejected) {
+		loginRejected.Store(true)
+	}
 }
 
 // DNSServer returns the VPN-side DNS server of the current session, or ""
