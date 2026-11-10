@@ -43,6 +43,8 @@ jobs:
         run: |
           go build -o "$RUNNER_TEMP/vpn-headless-linux-amd64" ./cmd/vpn-headless
           "$RUNNER_TEMP/vpn-headless-linux-amd64" -h
+      - name: Test headless client against mock gateway
+        run: bash build/linux/headless-smoke-test.sh
       - name: Build existing upstream command line
         working-directory: zju-connect
         run: go build -o "$RUNNER_TEMP/zju-connect-linux-amd64" .
