@@ -169,3 +169,27 @@ for port in (19080, 19081):
             raise SystemExit(f'proxy port {port} remained open after rejection')
 print('Authentication rejection exited without retry, leaked credentials or open proxy ports')
 PY
+
+# A service manager may stop the process while its credential pipe is idle.
+python3 - <<'PY'
+import os, signal, subprocess
+process = subprocess.Popen([os.path.join(os.environ['RUNNER_TEMP'], 'vpn-headless-linux-amd64'),
+    '-server', '127.0.0.1', '-username', 'mock-user'], stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+try:
+    import time
+    time.sleep(.3)
+    process.send_signal(signal.SIGTERM)
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        raise SystemExit('headless process did not stop while waiting for credentials')
+finally:
+    if process.poll() is None:
+        process.kill()
+        process.wait()
+    process.stdin.close()
+    process.stdout.close()
+    process.stderr.close()
+print('SIGTERM stops a process waiting for credentials')
+PY
