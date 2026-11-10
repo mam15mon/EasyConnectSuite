@@ -89,6 +89,7 @@ class TunnelService : VpnService() {
             synchronized(stateLock) {
                 if (cancelled.getAndSet(true)) return false
             }
+            Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=${System.identityHashCode(this)} stage=cancel_requested cancelled=true")
             handoff.cancel()
             cleanup.cancel()
             return true

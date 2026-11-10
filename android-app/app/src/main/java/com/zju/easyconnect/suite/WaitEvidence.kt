@@ -81,8 +81,12 @@ internal class WaitEvidence private constructor(
         if (finished) return
         finished = true
         future?.cancel(false)
-        val outcome = if (error == null) "success" else "failed"
+        val outcome = when {
+            error is InterruptedException && cancelled() -> "cancelled"
+            error == null -> "success"
+            else -> "failed"
+        }
         val type = error?.javaClass?.simpleName ?: "none"
-        write(line("phase=end outcome=$outcome error_type=$type"))
+        write(line("phase=end outcome=$outcome timeout=false error_type=$type"))
     }
 }
