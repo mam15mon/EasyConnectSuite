@@ -14,7 +14,21 @@ internal class SessionHandoff {
             predecessor?.done?.await()
             return !isCancelled()
         }
-        fun finish() { done.countDown() }
+        fun finish() {
+            // A cancelled intermediate session must not let its successor
+            // overtake an older session still performing cleanup.
+            var interrupted = false
+            while (true) {
+                try {
+                    predecessor?.done?.await()
+                    break
+                } catch (_: InterruptedException) {
+                    interrupted = true
+                }
+            }
+            done.countDown()
+            if (interrupted) Thread.currentThread().interrupt()
+        }
     }
 
     private var latest: Session? = null
