@@ -120,6 +120,10 @@ class TunnelService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val commandStarted = SystemClock.elapsedRealtime()
+        val serviceId = System.identityHashCode(this)
+        val isConnect = intent?.hasExtra("server") == true
+        Log.i("VPN", "android_service pid=${android.os.Process.myPid()} service=$serviceId start_id=$startId stage=command_received connect=$isConnect want_connected=$wantConnected")
         if (intent == null || !intent.hasExtra("server")) {
             // 无 extras 的 start = 停止
             stopTunnel()
@@ -127,7 +131,10 @@ class TunnelService : VpnService() {
         }
 
         val request = synchronized(stateLock) {
-            if (wantConnected) return START_NOT_STICKY
+            if (wantConnected) {
+                Log.i("VPN", "android_service pid=${android.os.Process.myPid()} service=$serviceId start_id=$startId stage=duplicate_start elapsed_ms=${SystemClock.elapsedRealtime() - commandStarted}")
+                return START_NOT_STICKY
+            }
             ConnectionRequest(handoff.next(), mobileBridge, tunFactory).also {
                 wantConnected = true
                 currentRequest = it
@@ -137,6 +144,7 @@ class TunnelService : VpnService() {
             }
         }
         startInForeground("正在登录并建立隧道")
+        Log.i("VPN", "android_service pid=${android.os.Process.myPid()} service=$serviceId start_id=$startId stage=foreground_confirmed elapsed_ms=${SystemClock.elapsedRealtime() - commandStarted}")
 
         val server = intent.getStringExtra("server")!!
         val username = intent.getStringExtra("username")!!
@@ -307,6 +315,7 @@ class TunnelService : VpnService() {
 
     private fun stopTunnel() {
         val request = currentRequest
+        Log.i("VPN", "android_service pid=${android.os.Process.myPid()} service=${System.identityHashCode(this)} request=${request?.let { System.identityHashCode(it) } ?: 0} stage=stop_requested want_connected=$wantConnected")
         request?.cancel()
         wantConnected = false
         worker?.interrupt()
