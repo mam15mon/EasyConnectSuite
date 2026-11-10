@@ -147,7 +147,12 @@ class TunnelService : VpnService() {
             } finally {
                 request.cancelled.set(true)
                 request.handoff.cancel()
-                request.cleanup.finish()
+                try {
+                    request.cleanup.finish()
+                } catch (error: Throwable) {
+                    Log.e("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=cleanup_finished outcome=failed elapsed_ms=${SystemClock.elapsedRealtime() - started} error_type=${error.javaClass.simpleName}")
+                    throw error
+                }
                 request.handoff.finish()
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=handoff_finished elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=${request.cancelled.get()}")
             }
