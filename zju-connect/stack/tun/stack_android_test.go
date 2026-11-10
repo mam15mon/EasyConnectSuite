@@ -266,7 +266,12 @@ func TestForwardPacketsSendsICMPIPv4(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- forwardPackets(local, device) }()
 	packet := []byte{0x45, 0, 0, 28, 0, 0, 0, 0, 64, 1, 0, 0, 10, 0, 0, 1, 10, 0, 0, 2, 8, 0, 0, 0, 0, 1, 0, 1}
-	go func() { _, _ = app.Write(packet) }()
+	go func() {
+		ipv6 := make([]byte, 40)
+		ipv6[0] = 0x60
+		_, _ = app.Write(ipv6)
+		_, _ = app.Write(packet)
+	}()
 	_ = remote.SetReadDeadline(time.Now().Add(3 * time.Second))
 	got := make([]byte, len(packet))
 	if _, err := io.ReadFull(remote, got); err != nil {

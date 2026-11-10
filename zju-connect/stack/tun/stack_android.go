@@ -86,8 +86,8 @@ func forwardPackets(l3, device io.ReadWriteCloser) error {
 			result = err
 			break
 		}
-		_, err = ipv4.ParseHeader(buf[:n])
-		if err != nil {
+		header, err := ipv4.ParseHeader(buf[:n])
+		if err != nil || header.Version != 4 {
 			continue
 		}
 		if _, err = l3.Write(buf[:n]); err != nil {

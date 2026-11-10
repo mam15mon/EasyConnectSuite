@@ -105,6 +105,7 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 				}
 				length := int(binary.BigEndian.Uint16(ip[2:4]))
 				if ip[0] != 0x45 || length < 20 || length > 1500 {
+					fmt.Fprintf(os.Stdout, "invalid_send_header version=%d header_length=%d total_length=%d\n", ip[0]>>4, int(ip[0]&15)*4, length)
 					return
 				}
 				packet := make([]byte, length)
