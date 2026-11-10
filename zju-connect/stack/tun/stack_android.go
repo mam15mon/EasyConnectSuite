@@ -46,19 +46,25 @@ func forwardPackets(l3, device io.ReadWriteCloser) error {
 	done := make(chan error, 1)
 	go func() {
 		buf := make([]byte, maxInboundPacketSize)
+		stream, isStream := l3.(interface {
+			ReadStream([]byte) (int, uint64, error)
+		})
+		var pending []byte
+		var streamID uint64
+		var haveStream bool
 		for {
-			_, err := io.ReadFull(l3, buf[:20])
+			var n int
+			var err error
+			if isStream {
+				n, pending, streamID, haveStream, err = readStreamPacket(stream, buf, pending, streamID, haveStream)
+			} else {
+				n, err = l3.Read(buf)
+			}
 			if err == nil {
-				headerLen := int(buf[0]&15) * 4
-				packetLen := int(binary.BigEndian.Uint16(buf[2:4]))
-				if buf[0]>>4 != 4 || headerLen < 20 || packetLen < headerLen || packetLen > len(buf) {
-					err = fmt.Errorf("invalid inbound IPv4 packet header")
-				} else if _, err = io.ReadFull(l3, buf[20:packetLen]); err == nil {
-					var n int
-					n, err = device.Write(buf[:packetLen])
-					if err == nil && n != packetLen {
-						err = io.ErrShortWrite
-					}
+				var written int
+				written, err = device.Write(buf[:n])
+				if err == nil && written != n {
+					err = io.ErrShortWrite
 				}
 			}
 			if err != nil {
@@ -91,6 +97,41 @@ func forwardPackets(l3, device io.ReadWriteCloser) error {
 		log.Printf("android_tun_forward receive_error=%T send_error=%T", readErr, result)
 	}
 	return result
+}
+
+// Buffer bytes across reads, discarding an incomplete packet when the stream changes.
+func readStreamPacket(stream interface {
+	ReadStream([]byte) (int, uint64, error)
+}, packet, pending []byte, streamID uint64, haveStream bool) (int, []byte, uint64, bool, error) {
+	for {
+		if len(pending) >= 20 {
+			headerLen := int(pending[0]&15) * 4
+			packetLen := int(binary.BigEndian.Uint16(pending[2:4]))
+			if pending[0]>>4 != 4 || headerLen < 20 || packetLen < headerLen || packetLen > len(packet) {
+				return 0, pending, streamID, haveStream, fmt.Errorf("invalid inbound IPv4 packet header")
+			}
+			if len(pending) >= packetLen {
+				copy(packet, pending[:packetLen])
+				pending = append(pending[:0], pending[packetLen:]...)
+				return packetLen, pending, streamID, haveStream, nil
+			}
+		}
+		chunk := make([]byte, maxInboundPacketSize-len(pending))
+		n, id, err := stream.ReadStream(chunk)
+		if n > 0 {
+			if haveStream && id != streamID {
+				pending = pending[:0]
+			}
+			pending = append(pending, chunk[:n]...)
+			streamID, haveStream = id, true
+		}
+		if err != nil {
+			return 0, pending, streamID, haveStream, err
+		}
+		if n == 0 {
+			return 0, pending, streamID, haveStream, io.ErrNoProgress
+		}
+	}
 }
 
 type Endpoint struct {

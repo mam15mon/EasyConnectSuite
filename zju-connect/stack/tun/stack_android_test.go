@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+type streamConn struct{ net.Conn }
+
+func (c streamConn) ReadStream(p []byte) (int, uint64, error) { n, err := c.Read(p); return n, 0, err }
+
 type packetDevice struct {
 	packets chan []byte
 	closed  chan struct{}
@@ -26,7 +30,7 @@ func TestForwardPacketsFramesFragmentedAndCoalescedIPv4(t *testing.T) {
 	local, remote := net.Pipe()
 	device := &packetDevice{packets: make(chan []byte, 3), closed: make(chan struct{})}
 	done := make(chan error, 1)
-	go func() { done <- forwardPackets(local, device) }()
+	go func() { done <- forwardPackets(streamConn{local}, device) }()
 	packet := []byte{0x45, 0, 0, 20, 0, 0, 0, 0, 64, 17, 0, 0, 10, 0, 0, 1, 10, 0, 0, 2}
 	go func() {
 		_, _ = remote.Write(packet[:7])
