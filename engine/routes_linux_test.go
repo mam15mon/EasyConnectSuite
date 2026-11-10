@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"net"
 	"os"
 	"testing"
 
@@ -61,6 +62,16 @@ func TestLinuxRoutesOwnership(t *testing.T) {
 	}
 	if _, err := b.Apply([]string{"192.0.2.0/24"}, nil); err == nil {
 		t.Fatal("conflicting route accepted")
+	}
+	_, existingPrefix, err := net.ParseCIDR("203.0.113.0/24")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := netlink.RouteAdd(&netlink.Route{LinkIndex: firstLink.Attrs().Index, Dst: existingPrefix, Scope: netlink.SCOPE_LINK, Table: unix.RT_TABLE_MAIN, Priority: 77}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Apply([]string{"203.0.113.0/24"}, nil); err == nil {
+		t.Fatal("existing route with another metric was accepted")
 	}
 	if _, err := b.Apply([]string{"198.51.100.0/24"}, nil); err != nil {
 		t.Fatal(err)
