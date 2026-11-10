@@ -36,4 +36,4 @@ Linux TUN 数据路径：先完成 TUNSETIFF 再用 os.NewFile 注册 Go 轮询�
 
 Linux TUN 数据栈已在隔离命名空间的测试入口复用现有系统栈：本地模拟后端的 TCP、UDP 双向收发和活动连接关闭通过。此入口尚未接入 GUI、无图形客户端或提权 Worker；未测试真实 VPN 网关。Linux 系统 DNS 分流和运行中的路由策略更新仍明确拒绝，须完成后再暴露给用户。
 
-Linux Worker 已实现并在隔离网络命名空间中以独立 root 进程验证父进程身份、IPC 握手、TUN 创建，以及控制连接断开后的进程退出和网卡清理；root 诊断日志使用受限目录和文件。尚未接入 GUI 授权与客户端生命周期，也没有验证真实 polkit 交互或 Worker 到引擎的完整数据流。Linux DNS 与路由更新仍未完成。
+Linux Worker 已实现并在隔离网络命名空间中以独立 root 进程验证父进程身份、IPC 握手、TUN 创建，以及控制连接断开后的进程退出和网卡清理；root 诊断日志使用受限目录和文件。隔离测试还验证了 TCP、UDP 经 Worker 和 IPC 到模拟父进程的双向数据；尚未接入 GUI 授权与客户端生命周期，也没有验证真实 polkit 交互或 Worker 到真实 VPN 引擎的完整数据流。Linux DNS 与路由更新仍未完成。
