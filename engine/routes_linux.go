@@ -15,10 +15,11 @@ import (
 // routes when the owned non-persistent interface is closed. Explicit deletion
 // is rejected until policy updates have a safe ownership mechanism.
 type linuxRoutes struct {
-	device *os.File
-	name   string
-	index  int
-	ref    TUNSpec
+	device    *os.File
+	name      string
+	index     int
+	ref       TUNSpec
+	beforeAdd func() // test seam for an external route arriving during installation
 }
 
 func (r *linuxRoutes) Apply(add, remove []string) (result routeResult, err error) {
@@ -82,6 +83,9 @@ func (r *linuxRoutes) Apply(add, remove []string) (result routeResult, err error
 			outcome = "failed"
 			return result, fmt.Errorf("TUN route conflict: %s", value)
 		}
+		if r.beforeAdd != nil {
+			r.beforeAdd()
+		}
 		op.Step("add_route")
 		err = netlink.RouteAdd(&netlink.Route{LinkIndex: r.index, Dst: dst, Scope: netlink.SCOPE_LINK, Table: unix.RT_TABLE_MAIN})
 		if err != nil {
@@ -89,6 +93,20 @@ func (r *linuxRoutes) Apply(add, remove []string) (result routeResult, err error
 			return
 		}
 		result.Added = append(result.Added, value)
+		op.Step("verify_installed_route")
+		existing, err = netlink.RouteListFiltered(netlink.FAMILY_V4, &netlink.Route{Dst: dst, Table: unix.RT_TABLE_MAIN}, netlink.RT_FILTER_DST|netlink.RT_FILTER_TABLE)
+		if err != nil || len(existing) != 1 || existing[0].LinkIndex != r.index {
+			if err == nil {
+				err = fmt.Errorf("TUN route changed during installation: %s", value)
+			}
+			op.Step("close_conflicted_interface")
+			if closeErr := r.device.Close(); closeErr != nil {
+				err = fmt.Errorf("%w; close TUN: %v", err, closeErr)
+			}
+			result.Added = nil
+			outcome = "failed"
+			return
+		}
 	}
 	outcome = "completed"
 	return
