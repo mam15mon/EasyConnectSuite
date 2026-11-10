@@ -115,10 +115,37 @@ func TestLinuxGUIBackendMockGateway(t *testing.T) {
 			t.Fatalf("%s traffic did not pass through the mock VPN", proxy)
 		}
 	}
+	second, err := reloaded.SaveProfile(Profile{ID: "mock-gui-second", Name: "mock second", Protocol: "easyconnect", Server: "127.0.0.1", Port: 18445, Username: "mock-user", Password: "gui-private-canary", SocksPort: 19182, HTTPPort: 19183, DisableZjuConfig: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result = reloaded.startConnectionID(second.ID, func(opts engine.Options) (vpnEngine, error) { return engine.Start(opts) })
+	if result != "OK" {
+		t.Fatalf("second GUI connection: %s", result)
+	}
+	t.Cleanup(func() { reloaded.stopConnection(second.ID) })
 	if result = reloaded.stopConnection(profile.ID); result != "OK" {
 		t.Fatalf("GUI stop: %s", result)
 	}
-	for _, port := range []string{"127.0.0.1:19180", "127.0.0.1:19181"} {
+	secondConn, err := net.DialTimeout("tcp", "127.0.0.1:19182", 3*time.Second)
+	if err != nil {
+		t.Fatalf("second proxy stopped with first connection: %v", err)
+	}
+	if err = secondConn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = secondConn.Write([]byte{5, 1, 0}); err != nil {
+		t.Fatal(err)
+	}
+	secondReply := make([]byte, 2)
+	if _, err = io.ReadFull(secondConn, secondReply); err != nil || !bytes.Equal(secondReply, []byte{5, 0}) {
+		t.Fatalf("second proxy handshake: %v %v", secondReply, err)
+	}
+	secondConn.Close()
+	if result = reloaded.stopConnection(second.ID); result != "OK" {
+		t.Fatalf("second GUI stop: %s", result)
+	}
+	for _, port := range []string{"127.0.0.1:19180", "127.0.0.1:19181", "127.0.0.1:19182", "127.0.0.1:19183"} {
 		conn, err := net.DialTimeout("tcp", port, time.Second)
 		if err == nil {
 			conn.Close()
