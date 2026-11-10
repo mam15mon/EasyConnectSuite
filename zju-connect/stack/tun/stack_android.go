@@ -86,8 +86,8 @@ func forwardPackets(l3, device io.ReadWriteCloser) error {
 			result = err
 			break
 		}
-		header, err := ipv4.ParseHeader(buf[:n])
-		if err != nil || (header.Protocol != syscall.IPPROTO_TCP && header.Protocol != syscall.IPPROTO_UDP) {
+		_, err = ipv4.ParseHeader(buf[:n])
+		if err != nil {
 			continue
 		}
 		if _, err = l3.Write(buf[:n]); err != nil {
