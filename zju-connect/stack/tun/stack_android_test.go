@@ -257,3 +257,28 @@ func TestStreamPacketFramesIPv6AndIPv4(t *testing.T) {
 		pending, id, have = rest, nextID, nextHave
 	}
 }
+
+func TestForwardPacketsSendsICMPIPv4(t *testing.T) {
+	local, remote := net.Pipe()
+	device, app := net.Pipe()
+	defer remote.Close()
+	defer app.Close()
+	done := make(chan error, 1)
+	go func() { done <- forwardPackets(local, device) }()
+	packet := []byte{0x45, 0, 0, 28, 0, 0, 0, 0, 64, 1, 0, 0, 10, 0, 0, 1, 10, 0, 0, 2, 8, 0, 0, 0, 0, 1, 0, 1}
+	go func() { _, _ = app.Write(packet) }()
+	_ = remote.SetReadDeadline(time.Now().Add(3 * time.Second))
+	got := make([]byte, len(packet))
+	if _, err := io.ReadFull(remote, got); err != nil {
+		t.Fatalf("ICMP packet was not forwarded: %v", err)
+	}
+	if !bytes.Equal(got, packet) {
+		t.Fatalf("packet changed: %x", got)
+	}
+	_ = app.Close()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("forwarding did not stop")
+	}
+}
