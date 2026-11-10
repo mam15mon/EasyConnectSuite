@@ -82,6 +82,9 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 	if !w.authenticated {
 		return tunipc.Message{}, errors.New("TUN Worker handshake required")
 	}
+	if w.cleanupErr != nil && (m.Op == "prepare" || m.Op == "attach") {
+		return tunipc.Message{}, errors.Join(errors.New("TUN Worker 清理未确认，禁止新附加"), w.cleanupErr)
+	}
 	switch m.Op {
 	case "prepare":
 		if m.Ref.Profile == "" {
