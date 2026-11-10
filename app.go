@@ -169,7 +169,7 @@ func (a *App) saveConfigFile() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(a.configPath, data, 0644)
+	return writeProfileConfig(a.configPath, data)
 }
 
 // startup is called when the app starts
