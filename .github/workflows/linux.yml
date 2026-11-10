@@ -39,6 +39,10 @@ jobs:
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
           wails build -tags webkit2_41 -skipbindings -nosyncgomod -trimpath
+      - name: Build and smoke-test Suite headless command
+        run: |
+          go build -o "$RUNNER_TEMP/vpn-headless-linux-amd64" ./cmd/vpn-headless
+          "$RUNNER_TEMP/vpn-headless-linux-amd64" -h
       - name: Build existing upstream command line
         working-directory: zju-connect
         run: go build -o "$RUNNER_TEMP/zju-connect-linux-amd64" .
