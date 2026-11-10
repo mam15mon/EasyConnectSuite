@@ -25,12 +25,13 @@ class TunnelServiceHandoffTest {
         }
     }
 
-    @Test fun cancelledOldLoginCannotStartSuccessorBeforeClientCleanup() {
+    @Test fun cancelledMiddleRequestCannotBypassOldClientCleanup() {
         val firstLogin = CountDownLatch(1)
         val releaseFirst = CountDownLatch(1)
         val cleanupStarted = CountDownLatch(1)
         val releaseCleanup = CountDownLatch(1)
         val secondLogin = CountDownLatch(1)
+        val unexpectedMiddleLogin = CountDownLatch(1)
         val releaseSecond = CountDownLatch(1)
         val calls = AtomicInteger()
         val cleanups = AtomicInteger()
@@ -41,7 +42,8 @@ class TunnelServiceHandoffTest {
                     firstLogin.countDown()
                     awaitWithoutInterruption(releaseFirst)
                 } else {
-                    secondLogin.countDown()
+                    if (user == "middle") unexpectedMiddleLogin.countDown()
+                    if (user == "new") secondLogin.countDown()
                     awaitWithoutInterruption(releaseSecond)
                 }
                 return ""
@@ -70,15 +72,22 @@ class TunnelServiceHandoffTest {
             assertTrue(firstLogin.await(2, TimeUnit.SECONDS))
             service.onStartCommand(null, 0, 2)
             assertTrue(cleanupStarted.await(2, TimeUnit.SECONDS))
-            service.onStartCommand(intent, 0, 3)
+            val middle = Intent(intent).putExtra("username", "middle")
+            val newest = Intent(intent).putExtra("username", "new")
+            service.onStartCommand(middle, 0, 3)
+            service.onStartCommand(null, 0, 4)
+            service.onStartCommand(newest, 0, 5)
             releaseFirst.countDown()
             assertFalse(secondLogin.await(150, TimeUnit.MILLISECONDS))
+            assertEquals(1, cleanups.get())
             assertTrue(TunnelService.currentState() is TunnelService.State.Connecting)
             releaseCleanup.countDown()
             assertTrue(secondLogin.await(2, TimeUnit.SECONDS))
+            assertEquals(1, unexpectedMiddleLogin.count)
+            assertEquals(2, calls.get())
             assertTrue(TunnelService.currentState() is TunnelService.State.Connecting)
         } finally {
-            service.onStartCommand(null, 0, 4)
+            service.onStartCommand(null, 0, 6)
             releaseFirst.countDown()
             releaseCleanup.countDown()
             releaseSecond.countDown()
