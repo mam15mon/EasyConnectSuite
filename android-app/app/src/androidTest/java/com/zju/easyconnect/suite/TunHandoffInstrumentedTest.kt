@@ -3,6 +3,8 @@ package com.zju.easyconnect.suite
 import android.content.Context
 import android.content.Intent
 import android.os.ParcelFileDescriptor
+import android.os.Handler
+import android.os.Looper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.CountDownLatch
@@ -33,6 +35,8 @@ class TunHandoffInstrumentedTest {
         val cleanupDone = CountDownLatch(1)
         val releaseOld = CountDownLatch(1)
         val releaseNew = CountDownLatch(1)
+        val mainBlocked = CountDownLatch(1)
+        val releaseMain = CountDownLatch(1)
         val calls = AtomicInteger()
         val oldFd = AtomicLong(-1)
         val firstPipe = ParcelFileDescriptor.createPipe()
@@ -68,15 +72,22 @@ class TunHandoffInstrumentedTest {
         try {
             context.startForegroundService(start)
             assertTrue("old forwarder did not start", oldForwarder.await(10, TimeUnit.SECONDS))
+            Handler(Looper.getMainLooper()).post {
+                mainBlocked.countDown()
+                awaitRelease(releaseMain)
+            }
+            assertTrue("main thread did not block", mainBlocked.await(10, TimeUnit.SECONDS))
             context.startService(stop)
+            context.startForegroundService(start)
+            releaseMain.countDown()
             assertTrue("old cleanup did not complete", cleanupDone.await(10, TimeUnit.SECONDS))
             ParcelFileDescriptor.fromFd(oldFd.get().toInt()).use { assertTrue(it.fd >= 0) }
-            context.startForegroundService(start)
             assertFalse("new forwarder bypassed old cleanup", newForwarder.await(300, TimeUnit.MILLISECONDS))
             releaseOld.countDown()
             assertTrue("new forwarder did not start", newForwarder.await(10, TimeUnit.SECONDS))
             assertEquals(2, calls.get())
         } finally {
+            releaseMain.countDown()
             context.startService(stop)
             releaseOld.countDown()
             releaseNew.countDown()
