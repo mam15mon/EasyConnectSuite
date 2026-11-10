@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"golang.org/x/sys/unix"
@@ -188,5 +189,87 @@ func TestResolvedPrivateBus(t *testing.T) {
 	service.mu.Unlock()
 	if !reflect.DeepEqual(methods, []string{"SetLinkDNS", "SetLinkDomains", "RevertLink"}) || remaining != 0 || owner.touched {
 		t.Fatalf("rollback: %v remaining=%d", methods, remaining)
+	}
+}
+
+// delayedResolvedService models a service that completes a timed-out request
+// after the caller has already received a successful RevertLink reply.
+type delayedResolvedService struct {
+	entered    chan struct{}
+	release    chan struct{}
+	finished   chan struct{}
+	mu         sync.Mutex
+	configured bool
+}
+
+func (s *delayedResolvedService) SetLinkDNS(_ int32, _ []resolvedAddress) *dbus.Error {
+	close(s.entered)
+	<-s.release
+	s.mu.Lock()
+	s.configured = true
+	s.mu.Unlock()
+	close(s.finished)
+	return nil
+}
+func (s *delayedResolvedService) RevertLink(_ int32) *dbus.Error {
+	s.mu.Lock()
+	s.configured = false
+	s.mu.Unlock()
+	return nil
+}
+
+func TestResolvedPrivateBusLateRequestAfterRollback(t *testing.T) {
+	if os.Getenv("ECS_RESOLVED_BUS_TEST") != "1" {
+		t.Skip("requires a private D-Bus session")
+	}
+	if os.Getenv("DBUS_SYSTEM_BUS_ADDRESS") != os.Getenv("DBUS_SESSION_BUS_ADDRESS") || os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
+		t.Fatal("system bus is not isolated")
+	}
+	conn, err := dbus.ConnectSessionBus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	service := &delayedResolvedService{entered: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{})}
+	if err = conn.Export(service, dbus.ObjectPath("/org/freedesktop/resolve1"), "org.freedesktop.resolve1.Manager"); err != nil {
+		t.Fatal(err)
+	}
+	reply, err := conn.RequestName("org.freedesktop.resolve1", dbus.NameFlagDoNotQueue)
+	if err != nil || reply != dbus.RequestNameReplyPrimaryOwner {
+		t.Fatalf("request name: %v %v", reply, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		result <- resolvedSystemCall(ctx, "SetLinkDNS", int32(7), []resolvedAddress{{Family: unix.AF_INET, Address: []byte{198, 19, 128, 2}}})
+	}()
+	select {
+	case <-service.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("service did not receive request")
+	}
+	cancel()
+	select {
+	case err = <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("request cancellation: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("request did not return after cancellation")
+	}
+	if err = resolvedSystemCall(context.Background(), "RevertLink", int32(7)); err != nil {
+		t.Fatal(err)
+	}
+	close(service.release)
+	select {
+	case <-service.finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("delayed request did not finish")
+	}
+	service.mu.Lock()
+	configured := service.configured
+	service.mu.Unlock()
+	if !configured {
+		t.Fatal("expected late request to change state after rollback")
 	}
 }
