@@ -64,6 +64,21 @@ func TestLinuxRoutesOwnership(t *testing.T) {
 	if result, err := a.Apply([]string{"192.0.2.0/24"}, nil); err != nil || len(result.Added) != 1 {
 		t.Fatalf("add: %+v %v", result, err)
 	}
+	raw, err := first.SyscallConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var flags int
+	var flagErr error
+	if err := raw.Control(func(fd uintptr) { flags, flagErr = unix.FcntlInt(fd, unix.F_GETFL, 0) }); err != nil {
+		t.Fatal(err)
+	}
+	if flagErr != nil {
+		t.Fatal(flagErr)
+	}
+	if flags&unix.O_NONBLOCK == 0 {
+		t.Fatal("route verification disabled non-blocking TUN I/O")
+	}
 	if _, err := b.Apply([]string{"192.0.2.0/24"}, nil); err == nil {
 		t.Fatal("conflicting route accepted")
 	}
