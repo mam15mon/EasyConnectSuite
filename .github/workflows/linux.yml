@@ -59,13 +59,14 @@ jobs:
         run: |
           export XDG_CONFIG_HOME="$RUNNER_TEMP/gui-config"
           export WEBKIT_DISABLE_COMPOSITING_MODE=1
-          xvfb-run -a bash -c '
+          timeout -k 5s 60s xvfb-run -a bash -c '
             build/bin/VPN &
             app_pid=$!
             trap "kill $app_pid 2>/dev/null || true; wait $app_pid 2>/dev/null || true" EXIT
             for i in $(seq 1 100); do
               if xdotool search --name "^VPN$" >/dev/null 2>&1; then
                 echo "GUI window appeared"
+                sleep 2
                 exit 0
               fi
               if ! kill -0 "$app_pid" 2>/dev/null; then
