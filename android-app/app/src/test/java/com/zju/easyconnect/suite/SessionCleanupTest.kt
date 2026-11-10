@@ -38,6 +38,34 @@ class SessionCleanupTest {
         assertEquals(0, calls.get())
     }
 
+    @Test fun successorWaitsUntilCancelledOwnerCleanupReturns() {
+        val handoff = SessionHandoff()
+        val old = handoff.next()
+        val next = handoff.next()
+        val cleanupEntered = CountDownLatch(1)
+        val releaseCleanup = CountDownLatch(1)
+        val successorEntered = CountDownLatch(1)
+        val cleanup = SessionCleanup {
+            cleanupEntered.countDown()
+            releaseCleanup.await()
+        }
+        assertTrue(old.awaitPredecessor())
+        assertTrue(cleanup.acquire())
+        cleanup.cancel()
+        assertTrue(cleanupEntered.await(1, TimeUnit.SECONDS))
+        val oldWorker = Thread { cleanup.finish(); old.finish() }
+        val newWorker = Thread { if (next.awaitPredecessor()) successorEntered.countDown() }
+        oldWorker.start()
+        newWorker.start()
+        assertFalse(successorEntered.await(100, TimeUnit.MILLISECONDS))
+        releaseCleanup.countDown()
+        assertTrue(successorEntered.await(1, TimeUnit.SECONDS))
+        oldWorker.join(1000)
+        newWorker.join(1000)
+        assertFalse(oldWorker.isAlive)
+        assertFalse(newWorker.isAlive)
+    }
+
     @Test fun naturalFinishCleansExactlyOnce() {
         val calls = AtomicInteger()
         val session = SessionCleanup { calls.incrementAndGet() }
