@@ -37,6 +37,10 @@ jobs:
         run: |
           go test -c -o "$RUNNER_TEMP/linux-engine-test" ./engine
           sudo env ECS_LINUX_TUN_SYSTEM_TEST=1 unshare --net "$RUNNER_TEMP/linux-engine-test" -test.run '^TestLinux(TUNDeviceOwnership|RoutesOwnership|RoutesConcurrentConflict|RoutesPartialFailureClosesOwner|TUNCrashCleanup|TUNConfiguredPacket|TUNConfigureFailureCleansDevice|TUNBlockedReadCloses|TUNIngressTCPUDP)$' -test.v
+      - name: Test Linux TUN worker in isolated network namespace
+        run: |
+          go test -tags webkit2_41 -c -o "$RUNNER_TEMP/linux-worker-test" .
+          sudo env ECS_LINUX_TUN_SYSTEM_TEST=1 unshare --net "$RUNNER_TEMP/linux-worker-test" -test.run '^TestLinuxWorkerProcessLifecycle$' -test.v
       - name: Vet Linux packages
         run: go vet -tags webkit2_41 ./...
       - name: Test underlay networking
