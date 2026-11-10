@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 22
       - name: Install Linux GUI dependencies
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config xvfb xauth xdotool
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
@@ -42,6 +42,28 @@ jobs:
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
           wails build -tags webkit2_41 -skipbindings -nosyncgomod -trimpath
+      - name: Smoke-test Linux GUI startup
+        run: |
+          export XDG_CONFIG_HOME="$RUNNER_TEMP/gui-config"
+          export WEBKIT_DISABLE_COMPOSITING_MODE=1
+          xvfb-run -a bash -c '
+            build/bin/VPN &
+            app_pid=$!
+            trap "kill $app_pid 2>/dev/null || true; wait $app_pid 2>/dev/null || true" EXIT
+            for i in $(seq 1 100); do
+              if xdotool search --name "^VPN$" >/dev/null 2>&1; then
+                echo "GUI window appeared"
+                exit 0
+              fi
+              if ! kill -0 "$app_pid" 2>/dev/null; then
+                echo "GUI exited before opening a window" >&2
+                exit 1
+              fi
+              sleep .2
+            done
+            echo "GUI window did not appear" >&2
+            exit 1
+          '
       - name: Build and smoke-test Suite headless command
         run: |
           go build -o "$RUNNER_TEMP/vpn-headless-linux-amd64" ./cmd/vpn-headless
@@ -51,3 +73,15 @@ jobs:
       - name: Build existing upstream command line
         working-directory: zju-connect
         run: go build -o "$RUNNER_TEMP/zju-connect-linux-amd64" .
+      - name: Upload Linux GUI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VPN-linux-amd64
+          path: build/bin/VPN
+          if-no-files-found: error
+      - name: Upload Linux headless artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vpn-headless-linux-amd64
+          path: ${{ runner.temp }}/vpn-headless-linux-amd64
+          if-no-files-found: error
