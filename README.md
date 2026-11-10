@@ -80,6 +80,20 @@ upx -t build/bin/VPN.exe
 
 窗口 X 只隐藏窗口并保留托盘和连接；托盘“退出程序（断开全部）”交给 Wails 发起真正退出。退出清理只执行一次，完成所有连接和 Worker 的清理后再移除托盘；退出期间禁止新连接和重新唤醒窗口。
 
+## Linux 开发版
+
+Linux x86-64 的图形版和无图形版正在适配，首发目标是 Ubuntu/Debian。图形版使用 Wails、GTK 3 和 WebKitGTK 4.1，配置位于 `${XDG_CONFIG_HOME:-$HOME/.config}/VPN`；Linux 默认使用本地代理。保存配置时会将配置文件权限限制为 `0600`。Linux 系统 TUN、路由与 DNS 接管尚未实现，不能使用桌面端 TUN 功能。
+
+无图形版 `vpn-headless` 在前台运行单个连接，默认仅在 `127.0.0.1` 开放 SOCKS5 `1080` 和 HTTP `1081`；应用需要显式使用这些代理。可通过 `-socks-port`、`-http-port` 调整端口，`-proxy-all` 将代理请求送往 VPN，同时保留服务器资源访问限制。密码从标准输入读取，不接受作为命令行参数；输入第二行 TOTP 密钥时使用 `-totp-stdin`。例如在交互式 Bash 中：
+
+```bash
+read -rs -p '密码: ' vpn_password; echo
+printf '%s\n' "$vpn_password" | ./vpn-headless -server vpn.example.com -username user -proxy-all
+unset vpn_password
+```
+
+通过 Ctrl+C 或 SIGTERM 停止。支持的协议选项为 `easyconnect`、`univpn` 和 `topsec`，但 Linux TopSAP 设备身份尚未实现；Linux 真实网关兼容性尚未验证。当前模拟测试已覆盖 EasyConnect 登录、SOCKS5 TCP 数据往返和信号退出，不代表真实网关、完整桌面功能或长期稳定性已验证。正式安装包和各平台发布产物仍在准备中。
+
 ## 同时连接多个 VPN
 
 1. 从托盘退出旧客户端，运行新版 EXE。单实例机制会阻止第二个窗口代替正在运行的旧实例。
