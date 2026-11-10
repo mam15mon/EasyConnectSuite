@@ -112,6 +112,11 @@ class TunnelService : VpnService() {
             } catch (_: InterruptedException) {
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=await_predecessor outcome=interrupted cancelled=${request.cancelled.get()}")
             } finally {
+                if (!request.cancelled.getAndSet(true)) {
+                    request.handoff.cancel()
+                    Mobile.logout()
+                    Mobile.stopStack()
+                }
                 request.handoff.finish()
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=handoff_finished elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=${request.cancelled.get()}")
             }
