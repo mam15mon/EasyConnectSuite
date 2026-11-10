@@ -77,3 +77,26 @@ func TestRunReturnsStartupError(t *testing.T) {
 		t.Fatalf("startup error lost: %v", err)
 	}
 }
+
+func TestHelpDoesNotReadSecretsOrStartEngine(t *testing.T) {
+	var help bytes.Buffer
+	err := run(context.Background(), []string{"-h"}, strings.NewReader(""), &bytes.Buffer{}, &help, func(engine.Options) (runningEngine, error) {
+		t.Fatal("help started engine")
+		return nil, nil
+	})
+	if err != nil || !strings.Contains(help.String(), "-server") {
+		t.Fatalf("help result: %v, %q", err, help.String())
+	}
+}
+
+func TestEmptyAndOversizedSecretsAreRejected(t *testing.T) {
+	for _, secret := range []string{"\n", strings.Repeat("x", 4097) + "\n"} {
+		err := run(context.Background(), []string{"-server", "x", "-username", "u"}, strings.NewReader(secret), &bytes.Buffer{}, &bytes.Buffer{}, func(engine.Options) (runningEngine, error) {
+			t.Fatal("invalid secret started engine")
+			return nil, nil
+		})
+		if err == nil {
+			t.Fatal("invalid secret accepted")
+		}
+	}
+}
