@@ -247,9 +247,9 @@ class TunnelService : VpnService() {
     }
 
     private fun <T> observeWait(request: ConnectionRequest, stage: String, block: () -> T): T {
-        val evidence = WaitEvidence.begin(System.identityHashCode(request), stage, { request.cancelled.get() }) {
+        val evidence = WaitEvidence.begin(System.identityHashCode(request), stage, { request.cancelled.get() }, {
             Log.i("VPN", "pid=${android.os.Process.myPid()} $it")
-        }
+        })
         try {
             return block()
         } catch (error: Throwable) {
