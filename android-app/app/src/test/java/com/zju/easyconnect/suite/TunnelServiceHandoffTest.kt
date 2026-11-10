@@ -83,7 +83,7 @@ class TunnelServiceHandoffTest {
             assertTrue(TunnelService.currentState() is TunnelService.State.Connecting)
             releaseCleanup.countDown()
             assertTrue(secondLogin.await(2, TimeUnit.SECONDS))
-            assertEquals(1, unexpectedMiddleLogin.count)
+            assertEquals(1L, unexpectedMiddleLogin.count)
             assertEquals(2, calls.get())
             assertTrue(TunnelService.currentState() is TunnelService.State.Connecting)
         } finally {
