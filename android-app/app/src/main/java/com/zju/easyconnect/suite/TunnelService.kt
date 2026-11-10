@@ -154,7 +154,7 @@ class TunnelService : VpnService() {
                 attempt = nextRetryAttempt(attempt, connectedMs)
                 val delay = retryDelay(attempt)
                 Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=retry_wait attempt=$attempt delay_s=$delay connected_ms=${connectedMs ?: -1} cancelled=${!wantConnected}")
-                updateNotification("连接中断或失败，${delay}秒后重试")
+                updateNotification(request, "连接中断或失败，${delay}秒后重试")
                 publish(request, State.Error("连接中断或失败,${delay}秒后重试"))
                 try {
                     Thread.sleep(delay * 1000L)
@@ -218,7 +218,7 @@ class TunnelService : VpnService() {
             pfd.close()
             return null
         }
-        updateNotification("IPv4 流量经 VPN")
+        updateNotification(request, "IPv4 流量经 VPN")
         publish(request, State.Connected)
 
         // startStack 阻塞直到隧道断开。不 detach:pfd 保持在 Java 侧,
@@ -281,9 +281,16 @@ class TunnelService : VpnService() {
         Log.i("VPN", "android_session pid=${android.os.Process.myPid()} stage=foreground_start outcome=success elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=${!wantConnected}")
     }
 
-    private fun updateNotification(message: String) {
-        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(1, notification(message))
+    private fun updateNotification(request: ConnectionRequest, message: String) {
+        mainHandler.post {
+            val current = synchronized(stateLock) {
+                stateOwner === request && currentRequest === request && !request.cancelled.get() && !request.terminal.get()
+            }
+            if (current) {
+                val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+                nm.notify(1, notification(message))
+            }
+        }
     }
 
     private fun notification(message: String): android.app.Notification {
