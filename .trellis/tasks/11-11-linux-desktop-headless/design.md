@@ -39,3 +39,7 @@ Linux TUN 数据栈已在隔离命名空间的测试入口复用现有系统栈�
 Linux Worker 已实现并在隔离网络命名空间中以独立 root 进程验证父进程身份、IPC 握手、TUN 创建，以及控制连接断开后的进程退出和网卡清理；root 诊断日志使用受限目录和文件。隔离测试还验证了 TCP、UDP 经 Worker 和 IPC 到模拟父进程的双向数据；尚未接入 GUI 授权与客户端生命周期，也没有验证真实 polkit 交互或 Worker 到真实 VPN 引擎的完整数据流。Linux DNS 与路由更新仍未完成。
 
 Linux 管理器已有内部测试入口，隔离环境中使用真实管理器、Worker 和模拟后端完成 TCP/UDP 双向流及关闭清理。该测试以注入的 root 子进程代替 pkexec，不证明真实授权流程；管理器尚未接入用户入口。
+
+### DNS 超时与迟到请求的证据
+
+隔离 D-Bus 测试 `TestResolvedPrivateBusLateRequestAfterRollback` 让模拟服务延迟处理 `SetLinkDNS`，在客户端取消返回后完成 `RevertLink`，然后放行原请求。测试观察到迟到请求可再次改变模拟服务状态。这个交错说明客户端取消与回滚成功不能证明服务端不会继续执行旧请求；尚未验证真实 systemd-resolved 的具体调度。真实系统 DNS 接入前必须设计并验证请求完成、超时和清理的所有权协议，不能依靠一次回滚推断状态已稳定。
