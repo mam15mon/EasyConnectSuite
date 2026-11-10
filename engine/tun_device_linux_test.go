@@ -222,3 +222,20 @@ func TestLinuxTUNBlockedReadCloses(t *testing.T) {
 		t.Fatal("TUN read remained blocked after close")
 	}
 }
+
+func TestLinuxConfigurePreservesDeviceCloseFailure(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "closed-tun-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = configureLinuxTUN(ctx, file, "test", linuxTestSpec())
+	var cleanup *TUNCleanupError
+	if !errors.Is(err, context.Canceled) || !errors.Is(err, os.ErrClosed) || !errors.As(err, &cleanup) {
+		t.Fatalf("missing cancellation or cleanup failure: %v", err)
+	}
+}

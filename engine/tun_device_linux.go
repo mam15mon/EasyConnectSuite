@@ -42,7 +42,7 @@ func createLinuxTUN(ctx context.Context, spec TUNSpec) (file *os.File, name stri
 				closeErr = unix.Close(fd)
 			}
 			if closeErr != nil {
-				err = fmt.Errorf("%w; close TUN: %v", err, closeErr)
+				err = joinTUNCleanupError(err, fmt.Errorf("close TUN: %w", closeErr))
 			}
 			file = nil
 		}
@@ -84,7 +84,7 @@ func configureLinuxTUN(ctx context.Context, file *os.File, name string, spec TUN
 		if err != nil {
 			op.Step("close_failed_interface")
 			if closeErr := file.Close(); closeErr != nil {
-				err = fmt.Errorf("%w; close TUN: %v", err, closeErr)
+				err = joinTUNCleanupError(err, fmt.Errorf("close TUN: %w", closeErr))
 			}
 			index = 0
 		}
