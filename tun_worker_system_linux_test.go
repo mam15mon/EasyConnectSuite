@@ -378,3 +378,71 @@ func TestLinuxManagerPolicyReplacement(t *testing.T) {
 	}
 	_ = attachment.Close(ctx)
 }
+
+func TestLinuxManagerMultipleAttachments(t *testing.T) {
+	if os.Getenv("ECS_LINUX_TUN_SYSTEM_TEST") != "1" {
+		t.Skip("requires isolated Linux network namespace and TUN privileges")
+	}
+	manager := newLinuxTUNManager()
+	manager.launch = func(name string) (*exec.Cmd, error) {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestLinuxWorkerHelper$")
+		cmd.Env = append(os.Environ(), "ECS_LINUX_WORKER_HELPER=1", "ECS_LINUX_WORKER_SOCKET="+name, "ECS_LINUX_PARENT_PID="+strconv.Itoa(os.Getpid()))
+		cmd.Stderr = os.Stderr
+		if err := cmd.Start(); err != nil {
+			return nil, err
+		}
+		return cmd, nil
+	}
+	defer manager.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	aSpec := engine.TUNSpec{Ref: tunipc.Ref{Profile: "first", Session: "s1", Attachment: "a1", Policy: 1}, Slot: 10, Prefixes: []string{"198.18.84.0/24"}}
+	bSpec := engine.TUNSpec{Ref: tunipc.Ref{Profile: "second", Session: "s2", Attachment: "a2", Policy: 1}, Slot: 11, Prefixes: []string{"198.18.85.0/24"}}
+	a, err := manager.Attach(ctx, aSpec, linuxManagerEcho{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close(ctx)
+	b, err := manager.Attach(ctx, bSpec, linuxManagerEcho{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close(ctx)
+	flow := func(address string) net.Conn {
+		t.Helper()
+		conn, err := net.DialTimeout("tcp4", address, 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+		return conn
+	}
+	first := flow("198.18.84.2:23456")
+	defer first.Close()
+	second := flow("198.18.85.2:23456")
+	defer second.Close()
+	echo := func(c net.Conn, message string) {
+		t.Helper()
+		if _, err := c.Write([]byte(message)); err != nil {
+			t.Fatal(err)
+		}
+		reply := make([]byte, len(message))
+		if _, err := io.ReadFull(c, reply); err != nil || string(reply) != message {
+			t.Fatalf("echo %q: %v", reply, err)
+		}
+	}
+	echo(first, "first")
+	echo(second, "second")
+	if err := a.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	echo(second, "still-connected")
+	_, oldPrefix, _ := net.ParseCIDR("198.18.84.0/24")
+	routes, err := netlink.RouteListFiltered(netlink.FAMILY_V4, &netlink.Route{Dst: oldPrefix, Table: unix.RT_TABLE_MAIN}, netlink.RT_FILTER_DST|netlink.RT_FILTER_TABLE)
+	if err != nil || len(routes) != 0 {
+		t.Fatalf("first route remains: %+v %v", routes, err)
+	}
+	if err := b.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
