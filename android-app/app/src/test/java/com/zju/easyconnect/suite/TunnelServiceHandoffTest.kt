@@ -238,7 +238,10 @@ class TunnelServiceHandoffTest {
         }
         try {
             service.onStartCommand(intent, 0, 1)
-            assertTrue(oldForwarder.await(2, TimeUnit.SECONDS))
+            assertTrue(
+                "state=${TunnelService.currentState()} logs=${org.robolectric.shadows.ShadowLog.getLogsForTag("VPN").takeLast(12).map { it.msg }}",
+                oldForwarder.await(2, TimeUnit.SECONDS)
+            )
             service.onStartCommand(null, 0, 2)
             assertTrue(cleanupDone.await(2, TimeUnit.SECONDS))
             android.os.ParcelFileDescriptor.fromFd(oldFd.get().toInt()).use { assertTrue(it.fd >= 0) }
