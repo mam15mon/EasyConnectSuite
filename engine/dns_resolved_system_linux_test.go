@@ -185,4 +185,17 @@ func TestResolvedRealIsolatedLinkLifecycle(t *testing.T) {
 		t.Fatalf("replacement inherited old link DNS: %v %v", addresses, domains)
 	}
 	t.Log("resolved replacement link with reused index had no old DNS settings")
+
+	// A request holding only the old index cannot distinguish the replacement.
+	// This deliberately sends after reuse; it does not model an in-flight polkit
+	// request or prove that resolved schedules one late in a real deployment.
+	stale := []resolvedDomain{{Name: "stale.invalid", RouteOnly: true}}
+	if err = manager.Call("org.freedesktop.resolve1.Manager.SetLinkDomains", 0, int32(iface.Index), stale).Err; err != nil {
+		t.Fatal(err)
+	}
+	_, domains = read()
+	if !reflect.DeepEqual(domains, stale) {
+		t.Fatalf("request to reused index did not modify replacement: %v", domains)
+	}
+	t.Log("request using the former index modified the replacement interface")
 }
