@@ -133,6 +133,11 @@ class TunnelServiceHandoffTest {
             assertFalse(state.retrying)
             assertEquals("连接失败", state.message)
             assertEquals(1, calls.get())
+            val failureLog = org.robolectric.shadows.ShadowLog.getLogsForTag("VPN")
+                .last { it.msg.contains("stage=worker outcome=failed") }.msg
+            assertTrue(failureLog.contains("error_type=IllegalStateException"))
+            assertTrue(failureLog.contains("origin="))
+            assertFalse(failureLog.contains("private-canary"))
         } finally {
             controller.destroy()
             TunnelService.mobileBridge = GoMobileBridge
