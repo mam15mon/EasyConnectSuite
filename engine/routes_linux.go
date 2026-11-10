@@ -17,6 +17,7 @@ import (
 type linuxRoutes struct {
 	device *os.File
 	name   string
+	index  int
 	ref    TUNSpec
 }
 
@@ -64,6 +65,10 @@ func (r *linuxRoutes) Apply(add, remove []string) (result routeResult, err error
 		outcome = "failed"
 		return
 	}
+	if r.index <= 0 || link.Attrs().Index != r.index {
+		outcome = "failed"
+		return result, fmt.Errorf("TUN interface index changed")
+	}
 	for _, value := range add {
 		_, dst, _ := net.ParseCIDR(value)
 		op.Step("check_route_conflict")
@@ -78,7 +83,7 @@ func (r *linuxRoutes) Apply(add, remove []string) (result routeResult, err error
 			return result, fmt.Errorf("TUN route conflict: %s", value)
 		}
 		op.Step("add_route")
-		err = netlink.RouteAdd(&netlink.Route{LinkIndex: link.Attrs().Index, Dst: dst, Scope: netlink.SCOPE_LINK, Table: unix.RT_TABLE_MAIN})
+		err = netlink.RouteAdd(&netlink.Route{LinkIndex: r.index, Dst: dst, Scope: netlink.SCOPE_LINK, Table: unix.RT_TABLE_MAIN})
 		if err != nil {
 			outcome = "failed"
 			return

@@ -42,8 +42,20 @@ func TestLinuxRoutesOwnership(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	a := &linuxRoutes{device: first, name: name, ref: linuxTestSpec()}
-	b := &linuxRoutes{device: second, name: secondName, ref: linuxTestSpec()}
+	firstLink, err := netlink.LinkByName(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondLink, err := netlink.LinkByName(secondName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &linuxRoutes{device: first, name: name, index: firstLink.Attrs().Index, ref: linuxTestSpec()}
+	b := &linuxRoutes{device: second, name: secondName, index: secondLink.Attrs().Index, ref: linuxTestSpec()}
+	wrong := &linuxRoutes{device: first, name: name, index: secondLink.Attrs().Index, ref: linuxTestSpec()}
+	if _, err := wrong.Apply([]string{"203.0.113.0/24"}, nil); err == nil {
+		t.Fatal("wrong interface index accepted")
+	}
 	if result, err := a.Apply([]string{"192.0.2.0/24"}, nil); err != nil || len(result.Added) != 1 {
 		t.Fatalf("add: %+v %v", result, err)
 	}
