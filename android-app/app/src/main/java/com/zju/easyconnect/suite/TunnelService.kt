@@ -244,11 +244,10 @@ class TunnelService : VpnService() {
             publishLocked(State.Error(message, retrying = false))
         }
         mainHandler.post {
-            synchronized(stateLock) {
-                if (stateOwner === request && currentRequest === request && request.terminal.get()) {
-                    stopSelf()
-                }
+            val shouldStop = synchronized(stateLock) {
+                stateOwner === request && currentRequest === request && request.terminal.get()
             }
+            if (shouldStop) stopSelf()
         }
     }
 
