@@ -39,3 +39,23 @@ func TestL3PartialWriteReturnsErrorWithoutReplay(t *testing.T) {
 		t.Fatalf("write = %d, %v", n, err)
 	}
 }
+
+func TestReadStreamIdentifiesReplacementAfterPartialRead(t *testing.T) {
+	c := &L3Conn{recvConn: partialReader{}}
+	defer c.Close()
+	buf := make([]byte, 2)
+	n, first, err := c.ReadStream(buf)
+	if n != 1 || err != nil {
+		t.Fatalf("first read: %d, %v", n, err)
+	}
+	if !c.setConnection(false, partialReader{}) {
+		t.Fatal("replacement rejected")
+	}
+	n, second, err := c.ReadStream(buf)
+	if n != 1 || err != nil {
+		t.Fatalf("second read: %d, %v", n, err)
+	}
+	if second == first {
+		t.Fatal("replacement stream kept previous identity")
+	}
+}
