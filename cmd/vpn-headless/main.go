@@ -75,7 +75,7 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 			return errors.New("请通过管道或受限权限的文件提供密码，避免终端回显")
 		}
 	}
-	reader := bufio.NewReader(io.LimitReader(input, 8193))
+	reader := bufio.NewReader(io.LimitReader(input, 8196))
 	password, err := readSecret(reader)
 	if err != nil {
 		return fmt.Errorf("读取密码失败: %w", err)

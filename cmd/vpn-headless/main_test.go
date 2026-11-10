@@ -103,3 +103,33 @@ func TestEmptyAndOversizedSecretsAreRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestRunPreservesMaximumLengthSecrets(t *testing.T) {
+	password := strings.Repeat("p", 4096)
+	secret := strings.Repeat("s", 4096)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	session := &fakeEngine{}
+	err := run(ctx, []string{"-server", "x", "-username", "u", "-totp-stdin"}, strings.NewReader(password+"\r\n"+secret+"\r\n"), &bytes.Buffer{}, &bytes.Buffer{}, func(o engine.Options) (runningEngine, error) {
+		if o.Config.Password != password || o.Config.TOTPSecret != secret {
+			t.Fatal("maximum-length credentials were truncated")
+		}
+		cancel()
+		return session, nil
+	})
+	if err != nil || !session.stopped.Load() {
+		t.Fatalf("run: %v", err)
+	}
+}
+
+func TestRunRejectsOversizedSecondSecret(t *testing.T) {
+	password := strings.Repeat("p", 4096)
+	secret := strings.Repeat("s", 4097)
+	err := run(context.Background(), []string{"-server", "x", "-username", "u", "-totp-stdin"}, strings.NewReader(password+"\r\n"+secret+"\n"), &bytes.Buffer{}, &bytes.Buffer{}, func(engine.Options) (runningEngine, error) {
+		t.Fatal("oversized TOTP secret started engine")
+		return nil, nil
+	})
+	if err == nil {
+		t.Fatal("oversized TOTP secret accepted")
+	}
+}
