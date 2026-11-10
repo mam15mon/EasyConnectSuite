@@ -3,7 +3,9 @@ package engine
 import (
 	"context"
 	"errors"
+	"os"
 	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/godbus/dbus/v5"
@@ -98,5 +100,93 @@ func TestResolvedDNSOwnerRetainsFailedCleanup(t *testing.T) {
 	owner.call = func(context.Context, string, ...any) error { return nil }
 	if err := owner.Close(context.Background()); err != nil || owner.touched {
 		t.Fatalf("retry: %v", err)
+	}
+}
+
+type resolvedTestService struct {
+	mu          sync.Mutex
+	methods     []string
+	addresses   []resolvedAddress
+	domains     []resolvedDomain
+	failDomains bool
+}
+
+func (s *resolvedTestService) SetLinkDNS(index int32, values []resolvedAddress) *dbus.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.methods = append(s.methods, "SetLinkDNS")
+	if index != 7 {
+		return dbus.NewError("org.test.Invalid", nil)
+	}
+	s.addresses = values
+	return nil
+}
+func (s *resolvedTestService) SetLinkDomains(index int32, values []resolvedDomain) *dbus.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.methods = append(s.methods, "SetLinkDomains")
+	if index != 7 || s.failDomains {
+		return dbus.NewError("org.test.Rejected", nil)
+	}
+	s.domains = values
+	return nil
+}
+func (s *resolvedTestService) RevertLink(index int32) *dbus.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.methods = append(s.methods, "RevertLink")
+	if index != 7 {
+		return dbus.NewError("org.test.Invalid", nil)
+	}
+	s.addresses = nil
+	s.domains = nil
+	return nil
+}
+func TestResolvedPrivateBus(t *testing.T) {
+	if os.Getenv("ECS_RESOLVED_BUS_TEST") != "1" {
+		t.Skip("requires a private D-Bus session")
+	}
+	if os.Getenv("DBUS_SYSTEM_BUS_ADDRESS") != os.Getenv("DBUS_SESSION_BUS_ADDRESS") || os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
+		t.Fatal("system bus is not isolated")
+	}
+	conn, err := dbus.ConnectSessionBus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	service := &resolvedTestService{}
+	if err = conn.Export(service, dbus.ObjectPath("/org/freedesktop/resolve1"), "org.freedesktop.resolve1.Manager"); err != nil {
+		t.Fatal(err)
+	}
+	reply, err := conn.RequestName("org.freedesktop.resolve1", dbus.NameFlagDoNotQueue)
+	if err != nil || reply != dbus.RequestNameReplyPrimaryOwner {
+		t.Fatalf("request name: %v %v", reply, err)
+	}
+	owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", ref: linuxTestSpec(), call: resolvedSystemCall, verify: func() error { return nil }}
+	if err = owner.Apply(context.Background(), []string{"example.invalid"}); err != nil {
+		t.Fatal(err)
+	}
+	service.mu.Lock()
+	valid := len(service.addresses) == 1 && reflect.DeepEqual(service.addresses[0].Address, []byte{198, 19, 128, 2}) && len(service.domains) == 1 && service.domains[0].Name == "example.invalid" && service.domains[0].RouteOnly
+	service.mu.Unlock()
+	if !valid {
+		t.Fatal("unexpected D-Bus payload")
+	}
+	if err = owner.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	service.mu.Lock()
+	service.failDomains = true
+	service.methods = nil
+	service.mu.Unlock()
+	if err = owner.Apply(context.Background(), []string{"example.invalid"}); err == nil {
+		t.Fatal("rejected domain update accepted")
+	}
+	service.mu.Lock()
+	methods := append([]string(nil), service.methods...)
+	remaining := len(service.addresses)
+	service.mu.Unlock()
+	if !reflect.DeepEqual(methods, []string{"SetLinkDNS", "SetLinkDomains", "RevertLink"}) || remaining != 0 || owner.touched {
+		t.Fatalf("rollback: %v remaining=%d", methods, remaining)
 	}
 }
