@@ -2,12 +2,15 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
+	"EasyConnectSuite/vpncore/log"
 	"github.com/godbus/dbus/v5"
 	"golang.org/x/sys/unix"
 )
@@ -74,4 +77,82 @@ func resolvedSystemCall(ctx context.Context, method string, args ...any) error {
 	defer conn.Close()
 	obj := conn.Object("org.freedesktop.resolve1", dbus.ObjectPath("/org/freedesktop/resolve1"))
 	return obj.CallWithContext(ctx, "org.freedesktop.resolve1.Manager."+method, dbus.FlagNoAutoStart, args...).Err
+}
+
+// resolvedDNSOwner tracks attempted changes until RevertLink succeeds. The
+// caller must retain the TUN device and provide an identity check each time.
+type resolvedDNSOwner struct {
+	index   int
+	server  string
+	ref     TUNSpec
+	call    resolvedCall
+	verify  func() error
+	touched bool
+}
+
+func (d *resolvedDNSOwner) Apply(ctx context.Context, names []string) (err error) {
+	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), d.ref.Profile, d.ref.Session, d.ref.Attachment), "linux_dns_apply", ctx.Done())
+	outcome := "interrupted"
+	defer func() {
+		if err != nil {
+			outcome = "failed"
+		}
+		op.Finish(outcome, err)
+	}()
+	if d.index <= 0 || d.call == nil || d.verify == nil {
+		return fmt.Errorf("invalid DNS owner")
+	}
+	if _, _, err = resolvedDNSArguments(d.server, names); err != nil {
+		return err
+	}
+	if err = ctx.Err(); err != nil {
+		return err
+	}
+	op.Step("verify_interface")
+	if err = d.verify(); err != nil {
+		return err
+	}
+	op.Step("configure_link_dns")
+	// A timed-out D-Bus call may still have changed the service's state.
+	d.touched = true
+	if err = resolvedLinkDNS(ctx, d.call, d.index, d.server, names); err != nil {
+		op.Step("rollback_link_dns")
+		rollbackCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err = errors.Join(err, d.revert(rollbackCtx))
+		return err
+	}
+	outcome = "configured"
+	return nil
+}
+
+func (d *resolvedDNSOwner) revert(ctx context.Context) error {
+	if !d.touched {
+		return nil
+	}
+	if err := d.verify(); err != nil {
+		return fmt.Errorf("verify DNS interface: %w", err)
+	}
+	if err := d.call(ctx, "RevertLink", int32(d.index)); err != nil {
+		return fmt.Errorf("revert link DNS: %w", err)
+	}
+	d.touched = false
+	return nil
+}
+
+func (d *resolvedDNSOwner) Close(ctx context.Context) (err error) {
+	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), d.ref.Profile, d.ref.Session, d.ref.Attachment), "linux_dns_release", ctx.Done())
+	outcome := "interrupted"
+	defer func() {
+		if err != nil {
+			outcome = "failed"
+		}
+		op.Finish(outcome, err)
+	}()
+	op.Step("revert_link_dns")
+	if err = d.revert(ctx); err != nil {
+		return err
+	}
+	outcome = "released"
+	return nil
 }

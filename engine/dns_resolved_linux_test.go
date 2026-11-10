@@ -57,3 +57,46 @@ func TestResolvedLinkDNSOrderAndFailure(t *testing.T) {
 		t.Fatal("invalid index reached D-Bus")
 	}
 }
+
+func TestResolvedDNSOwnerRollbackAndIdentity(t *testing.T) {
+	fail := errors.New("domain update failed")
+	var methods []string
+	verify := func() error { return nil }
+	owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", verify: func() error { return verify() }, call: func(_ context.Context, method string, _ ...any) error {
+		methods = append(methods, method)
+		if method == "SetLinkDomains" {
+			return fail
+		}
+		return nil
+	}}
+	if err := owner.Apply(context.Background(), []string{"example.invalid"}); !errors.Is(err, fail) {
+		t.Fatalf("apply error: %v", err)
+	}
+	if !reflect.DeepEqual(methods, []string{"SetLinkDNS", "SetLinkDomains", "RevertLink"}) || owner.touched {
+		t.Fatalf("rollback: %v touched=%v", methods, owner.touched)
+	}
+	methods = nil
+	verify = func() error { return errors.New("interface changed") }
+	if err := owner.Apply(context.Background(), []string{"example.invalid"}); err == nil || len(methods) != 0 {
+		t.Fatal("changed interface reached D-Bus")
+	}
+}
+func TestResolvedDNSOwnerRetainsFailedCleanup(t *testing.T) {
+	fail := errors.New("revert failed")
+	owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", verify: func() error { return nil }, call: func(_ context.Context, method string, _ ...any) error {
+		if method == "RevertLink" {
+			return fail
+		}
+		return nil
+	}}
+	if err := owner.Apply(context.Background(), []string{"example.invalid"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Close(context.Background()); !errors.Is(err, fail) || !owner.touched {
+		t.Fatalf("cleanup state: %v %v", err, owner.touched)
+	}
+	owner.call = func(context.Context, string, ...any) error { return nil }
+	if err := owner.Close(context.Background()); err != nil || owner.touched {
+		t.Fatalf("retry: %v", err)
+	}
+}
