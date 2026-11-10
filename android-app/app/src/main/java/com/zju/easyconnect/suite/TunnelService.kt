@@ -99,6 +99,7 @@ class TunnelService : VpnService() {
     @Volatile private var wantConnected = false
     @Volatile private var worker: Thread? = null
     @Volatile private var terminalError = false
+    private val evidenceLog by lazy { BoundedEvidenceLog(filesDir) }
 
     override fun onCreate() {
         super.onCreate()
@@ -251,8 +252,18 @@ class TunnelService : VpnService() {
     }
 
     private fun <T> observeWait(request: ConnectionRequest, stage: String, block: () -> T): T {
-        val evidence = WaitEvidence.begin(System.identityHashCode(request), stage, { request.cancelled.get() }, {
-            Log.i("VPN", "pid=${android.os.Process.myPid()} $it")
+        var persist = false
+        val evidence = WaitEvidence.begin(System.identityHashCode(request), stage, { request.cancelled.get() }, { line ->
+            val record = "pid=${android.os.Process.myPid()} $line"
+            Log.i("VPN", record)
+            if (line.contains("phase=pending")) persist = true
+            if (persist) {
+                try {
+                    evidenceLog.append(record)
+                } catch (error: java.io.IOException) {
+                    Log.e("VPN", "android_wait request=${System.identityHashCode(request)} stage=$stage evidence_store=failed error_type=${error.javaClass.simpleName}")
+                }
+            }
         })
         try {
             return block()
