@@ -35,6 +35,9 @@ jobs:
         run: go test -tags webkit2_41 ./...
       - name: Vet Linux packages
         run: go vet -tags webkit2_41 ./...
+      - name: Test underlay networking
+        working-directory: zju-connect
+        run: go test ./underlay
       - name: Build Linux GUI
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
