@@ -222,16 +222,11 @@ func StartStack(fd int) {
 	}
 	tunnelMu.Lock()
 	activeTunnel = vpnTUNStack
+	tunnelRunning.Store(true)
 	tunnelMu.Unlock()
 	vpnClientMu.Unlock()
-	tunnelRunning.Store(true)
 	defer func() {
-		tunnelMu.Lock()
-		if activeTunnel == vpnTUNStack {
-			activeTunnel = nil
-		}
-		tunnelMu.Unlock()
-		tunnelRunning.Store(false)
+		finishTunnel(vpnTUNStack)
 	}()
 	defer func() {
 		// The read loops return on tunnel death; a residual panic must
@@ -241,4 +236,14 @@ func StartStack(fd int) {
 		}
 	}()
 	vpnTUNStack.Run()
+}
+
+// Only the active tunnel may clear the shared running state.
+func finishTunnel(stack *tun.Stack) {
+	tunnelMu.Lock()
+	defer tunnelMu.Unlock()
+	if activeTunnel == stack {
+		activeTunnel = nil
+		tunnelRunning.Store(false)
+	}
 }
