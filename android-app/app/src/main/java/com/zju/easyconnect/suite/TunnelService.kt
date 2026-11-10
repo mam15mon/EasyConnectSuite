@@ -142,7 +142,7 @@ class TunnelService : VpnService() {
             return null
         }
 
-        updateNotification("全部流量经 VPN")
+        updateNotification("IPv4 流量经 VPN")
         tunnelFd = pfd
         publish(State.Connected)
 

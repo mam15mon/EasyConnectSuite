@@ -344,7 +344,7 @@ import sys
 import xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
 status = next(node for node in root.iter("node") if node.get("resource-id") == "com.zju.easyconnect.suite:id/tvStatus")
-if status.get("text") != "已连接 · 全部流量经 VPN":
+if status.get("text") != "已连接 · IPv4 流量经 VPN":
     raise SystemExit(f"Unexpected connected status: {status.get('text')!r}")
 print("Mock gateway authenticated and established Android VPN")
 PY

@@ -121,7 +121,7 @@ class MainActivity : Activity() {
                 toggleButton.isEnabled = true
             }
             TunnelService.State.Connected -> {
-                statusText.text = "已连接 · 全部流量经 VPN"
+                statusText.text = "已连接 · IPv4 流量经 VPN"
                 toggleButton.text = "断开"
                 toggleButton.isEnabled = true
             }
