@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/godbus/dbus/v5"
+	"github.com/sagernet/netlink"
 	"golang.org/x/sys/unix"
 )
 
@@ -155,5 +156,33 @@ func TestResolvedRealIsolatedLinkLifecycle(t *testing.T) {
 	// Prevent the deferred owner cleanup from issuing a request for the removed
 	// index; this test deliberately observes link removal without RevertLink.
 	owner.touched = false
-	t.Log("resolved removed the link after its TUN descriptor closed; index reuse was not tested")
+	t.Log("resolved removed the link after its TUN descriptor closed")
+
+	// Explicitly request the old kernel ifindex for an unrelated interface.
+	replacement := &netlink.Dummy{LinkAttrs: netlink.LinkAttrs{Name: "ecs-reuse", Index: iface.Index}}
+	if err = netlink.LinkAdd(replacement); err != nil {
+		t.Fatalf("create replacement interface at old index: %v", err)
+	}
+	defer netlink.LinkDel(replacement)
+	newIface, err := net.InterfaceByName("ecs-reuse")
+	if err != nil || newIface.Index != iface.Index {
+		t.Fatalf("old index was not reused: %+v %v", newIface, err)
+	}
+	deadline = time.Now().Add(10 * time.Second)
+	for {
+		err = manager.Call("org.freedesktop.resolve1.Manager.GetLink", 0, int32(iface.Index)).Store(&path)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("resolved did not discover replacement interface: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	link = conn.Object("org.freedesktop.resolve1", path)
+	addresses, domains = read()
+	if len(addresses) != 0 || len(domains) != 0 {
+		t.Fatalf("replacement inherited old link DNS: %v %v", addresses, domains)
+	}
+	t.Log("resolved replacement link with reused index had no old DNS settings")
 }
