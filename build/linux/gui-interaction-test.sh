@@ -43,6 +43,7 @@ xdotool type --clearmodifiers '19181'
 for _ in $(seq 1 6); do xdotool key Tab; done
 xdotool key Return
 config="$XDG_CONFIG_HOME/VPN/vpn_profiles.json"
+saved=0
 for attempt in $(seq 1 100); do
   if [ -f "$config" ] && python3 - "$config" <<'PY'
 import json, sys
@@ -61,9 +62,74 @@ sys.exit(0 if ok else 1)
 PY
   then
     echo 'GUI profile was saved through the window and Wails binding'
-    exit 0
+    saved=1
+    break
   fi
   sleep .1
 done
-echo 'GUI profile was not saved with the expected values' >&2
-exit 1
+if [ "$saved" -ne 1 ]; then
+  echo 'GUI profile was not saved with the expected values' >&2
+  exit 1
+fi
+: "${ECS_MOCK_GATEWAY_LOG:?}"
+# SaveProfile makes this profile active; allow the frontend to refresh before clicking Connect.
+sleep 1
+before=$(grep -c 'tcp_packet_forwarded' "$ECS_MOCK_GATEWAY_LOG" || true)
+xdotool mousemove --window "$window" 1010 87 click 1
+python3 - <<'PY'
+import socket, struct, time
+
+def read_exact(sock, count):
+    data = b''
+    while len(data) < count:
+        part = sock.recv(count - len(data))
+        if not part:
+            raise RuntimeError('proxy closed early')
+        data += part
+    return data
+
+for _ in range(300):
+    try:
+        sock = socket.create_connection(('127.0.0.1', 19180), timeout=.2)
+        break
+    except OSError:
+        time.sleep(.1)
+else:
+    raise SystemExit('GUI connect did not start the SOCKS proxy')
+with sock:
+    sock.settimeout(15)
+    sock.sendall(b'\x05\x01\x00')
+    if read_exact(sock, 2) != b'\x05\x00':
+        raise SystemExit('GUI SOCKS negotiation failed')
+    sock.sendall(b'\x05\x01\x00\x01' + socket.inet_aton('10.90.0.3') + struct.pack('!H', 12345))
+    reply = read_exact(sock, 4)
+    if reply[:2] != b'\x05\x00' or reply[3] != 1:
+        raise SystemExit('GUI SOCKS connect failed')
+    read_exact(sock, 6)
+    payload = b'window-gui-vpn-round-trip'
+    sock.sendall(payload)
+    if read_exact(sock, len(payload)) != payload:
+        raise SystemExit('GUI VPN payload mismatch')
+PY
+after=$(grep -c 'tcp_packet_forwarded' "$ECS_MOCK_GATEWAY_LOG" || true)
+if [ "$after" -le "$before" ]; then
+  echo 'GUI traffic did not pass through the mock tunnel' >&2
+  exit 1
+fi
+xdotool mousemove --window "$window" 1010 87 click 1
+python3 - <<'PY'
+import socket, time
+for _ in range(100):
+    with socket.socket() as sock:
+        sock.settimeout(.2)
+        if sock.connect_ex(('127.0.0.1', 19180)) != 0:
+            break
+    time.sleep(.1)
+else:
+    raise SystemExit('GUI disconnect did not close the SOCKS proxy')
+PY
+if grep -rq 'synthetic-password' "$XDG_CONFIG_HOME/VPN/logs" "$ECS_MOCK_GATEWAY_LOG"; then
+  echo 'GUI credential leaked to test logs' >&2
+  exit 1
+fi
+echo 'GUI connected, forwarded a TCP payload through the mock VPN, and disconnected'
