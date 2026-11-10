@@ -23,7 +23,7 @@ class WaitEvidenceTest {
         assertTrue(entered.await(1, TimeUnit.SECONDS))
         cancelled.set(true)
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
-        while (System.nanoTime() < deadline && lines.none { it.contains("phase=snapshot_end") }) Thread.sleep(10)
+        while (System.nanoTime() < deadline && synchronized(lines) { lines.none { it.contains("phase=snapshot_end") } }) Thread.sleep(10)
         release.countDown()
         worker.join(1000)
         assertFalse(worker.isAlive)
