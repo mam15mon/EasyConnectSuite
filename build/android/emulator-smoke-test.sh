@@ -8,6 +8,13 @@ adb push "$RUNNER_TEMP/android-mobile-test" /data/local/tmp/android-mobile-test
 adb shell chmod 755 /data/local/tmp/android-mobile-test
 adb shell /data/local/tmp/android-mobile-test -test.v -test.timeout=30s
 adb install -r android-app/app/build/outputs/apk/debug/app-debug.apk
+adb install -r android-app/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb shell am instrument -w com.zju.easyconnect.suite.test/androidx.test.runner.AndroidJUnitRunner | tr -d '\r' | tee "$RUNNER_TEMP/android-instrumentation.log"
+if ! grep -Eq '^OK \([1-9][0-9]* tests?\)' "$RUNNER_TEMP/android-instrumentation.log"; then
+  echo 'Android instrumented service tests did not pass' >&2
+  exit 1
+fi
+adb shell am force-stop com.zju.easyconnect.suite
 adb shell am start -W -n com.zju.easyconnect.suite/.MainActivity
 adb shell uiautomator dump /sdcard/window.xml >/dev/null
 adb exec-out cat /sdcard/window.xml > "$RUNNER_TEMP/android-window.xml"
