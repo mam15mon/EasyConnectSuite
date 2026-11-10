@@ -56,7 +56,9 @@ func forwardPackets(l3, device io.ReadWriteCloser) error {
 				} else if _, err = io.ReadFull(l3, buf[20:packetLen]); err == nil {
 					var n int
 					n, err = device.Write(buf[:packetLen])
-					if err == nil && n != packetLen { err = io.ErrShortWrite }
+					if err == nil && n != packetLen {
+						err = io.ErrShortWrite
+					}
 				}
 			}
 			if err != nil {

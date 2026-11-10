@@ -12,7 +12,7 @@ import (
 
 type packetDevice struct {
 	packets chan []byte
-	closed chan struct{}
+	closed  chan struct{}
 }
 
 func (d *packetDevice) Read([]byte) (int, error) { <-d.closed; return 0, io.EOF }
@@ -35,13 +35,19 @@ func TestForwardPacketsFramesFragmentedAndCoalescedIPv4(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		select {
 		case got := <-device.packets:
-			if !bytes.Equal(got, packet) { t.Fatalf("packet %d: %x", i, got) }
+			if !bytes.Equal(got, packet) {
+				t.Fatalf("packet %d: %x", i, got)
+			}
 		case <-time.After(3 * time.Second):
 			t.Fatal("timed out waiting for complete packet")
 		}
 	}
 	_ = remote.Close()
-	select { case <-done: case <-time.After(3 * time.Second): t.Fatal("forwarding did not stop") }
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("forwarding did not stop")
+	}
 }
 
 func TestForwardPacketsStopsWhenServerDisconnects(t *testing.T) {
