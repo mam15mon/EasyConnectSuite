@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -57,7 +59,38 @@ func TestLinuxWorkerProcessLifecycle(t *testing.T) {
 		conn.Close()
 		t.Fatalf("unexpected worker PID %d", pid)
 	}
-	peer := tunipc.NewPeer(conn, nil, nil)
+	peer := tunipc.NewPeer(conn, func(ctx context.Context, msg tunipc.Message) (tunipc.Message, error) {
+		if msg.Op != "dial" || (msg.Network != "tcp" && msg.Network != "udp") || msg.Ref.Attachment != "test" {
+			return tunipc.Message{}, fmt.Errorf("unexpected worker request")
+		}
+		dataName := tunipc.NewName()
+		dataListener, err := tunipc.Listen(dataName)
+		if err != nil {
+			return tunipc.Message{}, err
+		}
+		go func() {
+			defer dataListener.Close()
+			acceptCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			dataConn, err := dataListener.Accept(acceptCtx, pid)
+			if err != nil {
+				return
+			}
+			defer dataConn.Close()
+			stream := tunipc.NewDataConn(dataConn, msg.Network == "udp")
+			buf := make([]byte, 2048)
+			for {
+				n, err := stream.Read(buf)
+				if err != nil {
+					return
+				}
+				if _, err = stream.Write(buf[:n]); err != nil {
+					return
+				}
+			}
+		}()
+		return tunipc.Message{Pipe: dataName}, nil
+	}, nil)
 	defer peer.Close()
 	if _, err = peer.Call(ctx, tunipc.Message{Op: "hello"}); err != nil {
 		t.Fatal(err)
@@ -82,6 +115,27 @@ func TestLinuxWorkerProcessLifecycle(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("worker did not create an interface")
+	}
+	for _, network := range []string{"tcp4", "udp4"} {
+		flow, err := net.DialTimeout(network, "198.18.71.2:12345", 5*time.Second)
+		if err != nil {
+			t.Fatalf("%s dial: %v", network, err)
+		}
+		_ = flow.SetDeadline(time.Now().Add(5 * time.Second))
+		payload := []byte("worker-" + network)
+		if _, err = flow.Write(payload); err != nil {
+			flow.Close()
+			t.Fatal(err)
+		}
+		reply := make([]byte, len(payload))
+		if _, err = io.ReadFull(flow, reply); err != nil {
+			flow.Close()
+			t.Fatalf("%s read: %v", network, err)
+		}
+		flow.Close()
+		if string(reply) != string(payload) {
+			t.Fatalf("%s payload mismatch", network)
+		}
 	}
 	// Simulate the parent disappearing while the attachment is active.
 	peer.Close()
