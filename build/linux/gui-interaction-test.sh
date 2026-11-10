@@ -3,13 +3,23 @@ set -euo pipefail
 
 work_dir=$(mktemp -d "${RUNNER_TEMP:?}/gui-interaction.XXXXXXXX")
 app_pid=
+wm_pid=
 cleanup() {
   if [ -n "$app_pid" ]; then kill "$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true; fi
+  if [ -n "$wm_pid" ]; then kill "$wm_pid" 2>/dev/null || true; wait "$wm_pid" 2>/dev/null || true; fi
   rm -rf "$work_dir"
 }
 trap cleanup EXIT
 export XDG_CONFIG_HOME="$work_dir/config"
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
+openbox >"$work_dir/window-manager.log" 2>&1 &
+wm_pid=$!
+for attempt in $(seq 1 100); do
+  if xprop -root _NET_SUPPORTING_WM_CHECK | grep -q 'window id #'; then break; fi
+  if ! kill -0 "$wm_pid" 2>/dev/null; then echo 'window manager exited' >&2; exit 1; fi
+  sleep .1
+done
+xprop -root _NET_SUPPORTING_WM_CHECK | grep -q 'window id #' || { echo 'window manager did not start' >&2; exit 1; }
 build/bin/VPN >"$work_dir/app.log" 2>&1 &
 app_pid=$!
 window=
@@ -145,7 +155,8 @@ else:
     raise SystemExit('GUI did not reconnect before window close')
 PY
 echo 'Sending window close to connected GUI'
-xdotool windowclose "$window"
+xdotool windowactivate --sync "$window"
+xdotool key alt+F4
 for attempt in $(seq 1 200); do
   if ! kill -0 "$app_pid" 2>/dev/null; then break; fi
   sleep .1
