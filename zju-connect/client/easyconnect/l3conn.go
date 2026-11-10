@@ -22,6 +22,7 @@ type L3Conn struct {
 	recvConn     io.ReadCloser
 	recvLock     sync.Mutex
 	recvErrCount int
+	recvStreamID uint64
 }
 
 func (c *L3Conn) connection(send bool) (io.Closer, bool) {
@@ -53,6 +54,7 @@ func (c *L3Conn) setConnection(send bool, conn io.Closer) bool {
 			c.recvConn = nil
 		} else {
 			c.recvConn = conn.(io.ReadCloser)
+			c.recvStreamID++
 		}
 	}
 	return true
@@ -76,10 +78,20 @@ func safeClose(c io.Closer) {
 // Read tries to keep the recv stream alive: on error it re-handshakes the
 // recv connection with the current token. A non-nil return means the
 // token/session itself is dead — the caller should run a full re-login.
-func (c *L3Conn) Read(p []byte) (n int, err error) {
+func (c *L3Conn) Read(p []byte) (int, error) {
+	n, _, err := c.ReadStream(p)
+	return n, err
+}
+
+// ReadStream identifies the underlying receive stream for each returned chunk.
+func (c *L3Conn) ReadStream(p []byte) (int, uint64, error) {
 	c.recvLock.Lock()
 	defer c.recvLock.Unlock()
+	n, err := c.readLocked(p)
+	return n, c.recvStreamID, err
+}
 
+func (c *L3Conn) readLocked(p []byte) (n int, err error) {
 	for {
 		current, open := c.connection(false)
 		if !open {
