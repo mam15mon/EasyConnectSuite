@@ -139,4 +139,61 @@ class TunnelServiceHandoffTest {
         }
     }
 
+    @Test fun blockedCleanupPersistsRedactedEvidence() {
+        val loginStarted = CountDownLatch(1)
+        val releaseLogin = CountDownLatch(1)
+        val cleanupStarted = CountDownLatch(1)
+        val releaseCleanup = CountDownLatch(1)
+        TunnelService.mobileBridge = object : MobileBridge {
+            override fun loginEpoch() = 0L
+            override fun loginForEpoch(server: String, user: String, password: String, totp: String, epoch: Long): String {
+                loginStarted.countDown()
+                awaitWithoutInterruption(releaseLogin)
+                return ""
+            }
+            override fun loginRejected() = false
+            override fun dnsServer() = ""
+            override fun startStack(fd: Long) = Unit
+            override fun logout() {
+                cleanupStarted.countDown()
+                awaitWithoutInterruption(releaseCleanup)
+            }
+            override fun stopStack() = Unit
+        }
+        val controller = Robolectric.buildService(TunnelService::class.java).create()
+        val service = controller.get()
+        val file = java.io.File(service.filesDir, "vpn-wait-evidence.log")
+        file.delete()
+        val intent = Intent(service, TunnelService::class.java).apply {
+            putExtra("server", "test")
+            putExtra("username", "test")
+            putExtra("password", "PRIVATE_CANARY_FOR_TEST")
+        }
+        try {
+            service.onStartCommand(intent, 0, 1)
+            assertTrue(loginStarted.await(2, TimeUnit.SECONDS))
+            service.onStartCommand(null, 0, 2)
+            assertTrue(cleanupStarted.await(2, TimeUnit.SECONDS))
+            releaseLogin.countDown()
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(40)
+            var evidence = ""
+            while (System.nanoTime() < deadline) {
+                if (file.exists()) evidence = file.readText()
+                if (evidence.contains("stage=await_cleanup") && evidence.contains("phase=pending")) break
+                Thread.sleep(100)
+            }
+            assertTrue(evidence.contains("stage=await_cleanup"))
+            assertTrue(evidence.contains("phase=pending"))
+            assertTrue(evidence.contains("cancelled=true"))
+            assertTrue(evidence.contains("root_cause=undetermined"))
+            assertFalse(evidence.contains("PRIVATE_CANARY_FOR_TEST"))
+            assertTrue(file.length() <= 256 * 1024L)
+        } finally {
+            releaseLogin.countDown()
+            releaseCleanup.countDown()
+            controller.destroy()
+            TunnelService.mobileBridge = GoMobileBridge
+        }
+    }
+
 }
