@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 )
@@ -215,5 +216,58 @@ func TestLinuxWorkerVerifiesParentSocketAndExecutable(t *testing.T) {
 	}
 	if err := VerifyParent(conn, name, uint32(os.Getpid()), os.DevNull); err == nil {
 		t.Fatal("wrong parent executable accepted")
+	}
+}
+
+// The child is a separate process, so PID checks cannot pass just because
+// both ends of the socket are in the test process.
+func TestLinuxSocketChildProcess(t *testing.T) {
+	if os.Getenv("ECS_TUNIPC_CHILD") == "1" {
+		name := os.Getenv("ECS_TUNIPC_SOCKET")
+		conn, err := net.Dial("unix", name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		buf := make([]byte, 1)
+		if _, err := conn.Read(buf); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	name := NewName()
+	l, err := Listen(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := l.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestLinuxSocketChildProcess$")
+	cmd.Env = append(os.Environ(), "ECS_TUNIPC_CHILD=1", "ECS_TUNIPC_SOCKET="+name)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := l.Accept(ctx, uint32(cmd.Process.Pid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = conn.Write([]byte{1}); err != nil {
+		conn.Close()
+		t.Fatal(err)
+	}
+	conn.Close()
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("child: %v", err)
 	}
 }
