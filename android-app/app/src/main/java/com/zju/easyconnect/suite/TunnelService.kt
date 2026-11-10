@@ -80,7 +80,9 @@ class TunnelService : VpnService() {
             var attempt = 0
             val started = SystemClock.elapsedRealtime()
             while (!request.cancelled.get()) {
-                val connectedMs = connectOnce(server, username, password, totp, attempt > 0, request)
+                val loginEpoch = Mobile.loginEpoch()
+                if (request.cancelled.get()) break
+                val connectedMs = connectOnce(server, username, password, totp, attempt > 0, request, loginEpoch)
                 if (request.cancelled.get()) break
                 if (connectedMs == null && Mobile.loginRejected()) {
                     wantConnected = false
@@ -109,12 +111,8 @@ class TunnelService : VpnService() {
     }
 
     /** 单次:登录 → 建立 VPN 接口 → 转发(阻塞到隧道断开)。返回转发时长，未进入转发时返回 null。 */
-    private fun connectOnce(server: String, user: String, pass: String, totp: String, isRetry: Boolean, request: ConnectionRequest): Long? {
-        val ip = if (totp.isEmpty()) {
-            Mobile.login(server, user, pass)
-        } else {
-            Mobile.loginWithTOTP(server, user, pass, totp)
-        }
+    private fun connectOnce(server: String, user: String, pass: String, totp: String, isRetry: Boolean, request: ConnectionRequest, loginEpoch: Long): Long? {
+        val ip = Mobile.loginForEpoch(server, user, pass, totp, loginEpoch)
         if (request.cancelled.get()) {
             return null
         }
