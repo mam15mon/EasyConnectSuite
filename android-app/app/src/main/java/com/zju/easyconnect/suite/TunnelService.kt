@@ -85,10 +85,13 @@ class TunnelService : VpnService() {
             }
         }
 
-        fun cancel() {
-            synchronized(stateLock) { cancelled.set(true) }
+        fun cancel(): Boolean {
+            synchronized(stateLock) {
+                if (cancelled.getAndSet(true)) return false
+            }
             handoff.cancel()
             cleanup.cancel()
+            return true
         }
     }
     @Volatile private var currentRequest: ConnectionRequest? = null
@@ -250,8 +253,7 @@ class TunnelService : VpnService() {
 
     override fun onDestroy() {
         val request = currentRequest
-        if (request != null && !request.cancelled.get()) {
-            request.cancel()
+        if (request != null && request.cancel()) {
             wantConnected = false
             worker?.interrupt()
             stopForeground(STOP_FOREGROUND_REMOVE)
