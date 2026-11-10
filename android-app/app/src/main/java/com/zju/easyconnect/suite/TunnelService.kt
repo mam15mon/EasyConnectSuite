@@ -31,6 +31,7 @@ class TunnelService : VpnService() {
 
         fun currentState(): State = state
 
+        private val handoff = SessionHandoff()
         private val mainHandler = Handler(Looper.getMainLooper())
         private fun publish(state: State) {
             this.state = state
@@ -39,7 +40,7 @@ class TunnelService : VpnService() {
         }
     }
 
-    private class ConnectionRequest { val cancelled = AtomicBoolean(false) }
+    private class ConnectionRequest(val handoff: SessionHandoff.Session) { val cancelled = AtomicBoolean(false) }
     @Volatile private var currentRequest: ConnectionRequest? = null
     @Volatile private var wantConnected = false
     private var tunnelFd: ParcelFileDescriptor? = null
@@ -65,7 +66,7 @@ class TunnelService : VpnService() {
 
         if (wantConnected) return START_NOT_STICKY
         wantConnected = true
-        val request = ConnectionRequest()
+        val request = ConnectionRequest(handoff.next())
         currentRequest = request
         terminalError = false
         startInForeground("正在登录并建立隧道")
@@ -77,9 +78,14 @@ class TunnelService : VpnService() {
         val totp = intent.getStringExtra("totp") ?: ""
 
         val thread = Thread {
-            var attempt = 0
             val started = SystemClock.elapsedRealtime()
-            while (!request.cancelled.get()) {
+            val requestId = System.identityHashCode(request)
+            try {
+                Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=await_predecessor")
+                if (!request.handoff.awaitPredecessor() || request.cancelled.get()) return@Thread
+                Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=handoff_ready elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=false")
+                var attempt = 0
+                while (!request.cancelled.get()) {
                 val loginEpoch = Mobile.loginEpoch()
                 if (request.cancelled.get()) break
                 val connectedMs = connectOnce(server, username, password, totp, attempt > 0, request, loginEpoch)
@@ -102,6 +108,12 @@ class TunnelService : VpnService() {
                 } catch (_: InterruptedException) {
                     break
                 }
+                }
+            } catch (_: InterruptedException) {
+                Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=await_predecessor outcome=interrupted cancelled=${request.cancelled.get()}")
+            } finally {
+                request.handoff.finish()
+                Log.i("VPN", "android_session pid=${android.os.Process.myPid()} request=$requestId stage=handoff_finished elapsed_ms=${SystemClock.elapsedRealtime() - started} cancelled=${request.cancelled.get()}")
             }
         }
         worker = thread
@@ -171,7 +183,7 @@ class TunnelService : VpnService() {
     }
 
     private fun stopTunnel() {
-        currentRequest?.cancelled?.set(true)
+        currentRequest?.let { it.cancelled.set(true); it.handoff.cancel() }
         wantConnected = false
         worker?.interrupt()
         Mobile.logout()
@@ -185,15 +197,18 @@ class TunnelService : VpnService() {
     }
 
     override fun onDestroy() {
-        currentRequest?.cancelled?.set(true)
-        wantConnected = false
-        worker?.interrupt()
-        Mobile.logout()
-        Mobile.stopStack()
-        runCatching { tunnelFd?.close() }
-        tunnelFd = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        if (!terminalError) publish(State.Disconnected)
+        val request = currentRequest
+        if (request != null && !request.cancelled.getAndSet(true)) {
+            request.handoff.cancel()
+            wantConnected = false
+            worker?.interrupt()
+            Mobile.logout()
+            Mobile.stopStack()
+            runCatching { tunnelFd?.close() }
+            tunnelFd = null
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            if (!terminalError) publish(State.Disconnected)
+        }
         super.onDestroy()
     }
 
