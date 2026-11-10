@@ -62,6 +62,9 @@ class TunnelServiceHandoffTest {
         TunnelService.mobileBridge = fake
         val controller = Robolectric.buildService(TunnelService::class.java).create()
         val service = controller.get()
+        val newerController = Robolectric.buildService(TunnelService::class.java).create()
+        val newerService = newerController.get()
+        var oldDestroyed = false
         val intent = Intent(service, TunnelService::class.java).apply {
             putExtra("server", "test")
             putExtra("username", "test")
@@ -76,7 +79,7 @@ class TunnelServiceHandoffTest {
             val newest = Intent(intent).putExtra("username", "new")
             service.onStartCommand(middle, 0, 3)
             service.onStartCommand(null, 0, 4)
-            service.onStartCommand(newest, 0, 5)
+            newerService.onStartCommand(newest, 0, 5)
             releaseFirst.countDown()
             assertFalse(secondLogin.await(150, TimeUnit.MILLISECONDS))
             assertEquals(1, cleanups.get())
@@ -85,13 +88,17 @@ class TunnelServiceHandoffTest {
             assertTrue(secondLogin.await(2, TimeUnit.SECONDS))
             assertEquals(1L, unexpectedMiddleLogin.count)
             assertEquals(2, calls.get())
+            controller.destroy()
+            oldDestroyed = true
+            assertEquals(1, cleanups.get())
             assertTrue(TunnelService.currentState() is TunnelService.State.Connecting)
         } finally {
-            service.onStartCommand(null, 0, 6)
+            newerService.onStartCommand(null, 0, 6)
             releaseFirst.countDown()
             releaseCleanup.countDown()
             releaseSecond.countDown()
-            controller.destroy()
+            if (!oldDestroyed) controller.destroy()
+            newerController.destroy()
             TunnelService.mobileBridge = GoMobileBridge
         }
     }
