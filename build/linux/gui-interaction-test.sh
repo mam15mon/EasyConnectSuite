@@ -128,6 +128,46 @@ for _ in range(100):
 else:
     raise SystemExit('GUI disconnect did not close the SOCKS proxy')
 PY
+# Reconnect and close the actual window while the VPN is active.
+sleep 1
+xdotool mousemove --window "$window" 1010 87 click 1
+python3 - <<'PY'
+import socket, time
+for _ in range(300):
+    try:
+        with socket.create_connection(('127.0.0.1', 19180), timeout=.2) as sock:
+            sock.sendall(b'\x05\x01\x00')
+            if sock.recv(2) == b'\x05\x00':
+                break
+    except OSError:
+        time.sleep(.1)
+else:
+    raise SystemExit('GUI did not reconnect before window close')
+PY
+xdotool windowclose "$window"
+for attempt in $(seq 1 200); do
+  if ! kill -0 "$app_pid" 2>/dev/null; then break; fi
+  sleep .1
+done
+if kill -0 "$app_pid" 2>/dev/null; then
+  echo 'GUI did not exit after closing its connected window' >&2
+  exit 1
+fi
+wait "$app_pid"
+app_pid=
+python3 - <<'PY'
+import socket
+for port in (19180, 19181):
+    with socket.socket() as sock:
+        sock.settimeout(.2)
+        if sock.connect_ex(('127.0.0.1', port)) == 0:
+            raise SystemExit(f'proxy port {port} remained open after GUI window close')
+PY
+if ! grep -rq 'operation=app_shutdown' "$XDG_CONFIG_HOME/VPN/logs"; then
+  echo 'GUI shutdown operation was not recorded' >&2
+  exit 1
+fi
+echo 'Connected GUI window closed, completed shutdown, and released proxy ports'
 if grep -rq 'synthetic-password' "$XDG_CONFIG_HOME/VPN/logs" "$ECS_MOCK_GATEWAY_LOG"; then
   echo 'GUI credential leaked to test logs' >&2
   exit 1
