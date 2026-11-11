@@ -57,6 +57,24 @@ test('TUN mode request keeps captured profile and releases busy state after reje
   assert.equal(state.currentStatus.profileId,'b');
 });
 
+test('proxy mode uses captured profile while backend selection differs', async () => {
+  const entered=deferred(), result=deferred();
+  const saved=[];
+  const state=workspace({SetProfileProxyEnabled:async(id,enabled)=>{saved.push([id,enabled]);entered.resolve();await result.promise;}});
+  state.refreshProfiles=async()=>{};
+  vm.runInContext(productionFunction('saveProxyMode'),state);
+  const operation=state.saveProxyMode(true);
+  await entered.promise;
+  assert.equal(state.modeSaving,true);
+  state.activeProfile={id:'b'};
+  state.currentStatus={profileId:'b',running:false,state:'disconnected'};
+  result.resolve();
+  await operation;
+  assert.deepEqual(saved,[['a',true]]);
+  assert.equal(state.modeSaving,false);
+  assert.equal(state.currentStatus.profileId,'b');
+});
+
 test('resource refresh targets B while backend selection is still A', async () => {
   const held = deferred(), entered = deferred();
   let backend = 'a';

@@ -562,8 +562,7 @@ tunModeToggle.addEventListener('change', async () => {
   }
 });
 
-proxyModeToggle.addEventListener('change', async () => {
-  const enabled = proxyModeToggle.checked;
+async function saveProxyMode(enabled) {
   const id = activeProfile.id;
   modeSaving = true;
   updateStatusUI(currentStatus);
@@ -576,7 +575,8 @@ proxyModeToggle.addEventListener('change', async () => {
     modeSaving = false;
     updateStatusUI(currentStatus);
   }
-});
+}
+proxyModeToggle.addEventListener('change', () => saveProxyMode(proxyModeToggle.checked));
 
 function canStartConnection(id) {
   return !pendingActions.has(id) && !connectionStatuses.some(s => s.profileId === id && s.running);
