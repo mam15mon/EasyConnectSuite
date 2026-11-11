@@ -242,6 +242,7 @@ const formDisableKeepAlive = document.getElementById('form-disable-keepalive');
 let cachedProfiles = [];
 let platformInfo = {tunSupported: true, logDir: '%APPDATA%\\VPN\\logs'};
 let connectionStatuses = [];
+let connectionRevision = 0;
 let activeProfile = null;
 let modeSaving = false;
 let currentStatus = { running: false, state: 'disconnected' };
@@ -262,6 +263,7 @@ let modalReturnFocus = null;
 const protocolNames = { easyconnect: 'EasyConnect', univpn: 'UniVPN', topsec: 'TopSAP' };
 
 function receiveStatus(status) {
+  connectionRevision++;
   const index = connectionStatuses.findIndex(s => s.profileId === status.profileId);
   const previous = connectionStatuses[index];
   const changed = !previous || previous.state !== status.state || previous.stage !== status.stage || previous.stageDetail !== status.stageDetail || previous.message !== status.message;
@@ -808,7 +810,11 @@ function updateProtocolFields() {
 }
 formProtocol.addEventListener('change', updateProtocolFields);
 async function refreshConnections() {
-  connectionStatuses = await window.go.main.App.GetConnections();
+  const revision = connectionRevision;
+  const statuses = await window.go.main.App.GetConnections();
+  if (revision !== connectionRevision) return;
+  connectionStatuses = statuses;
+  connectionRevision++;
   renderConnections();
 }
 function renderConnections() {
