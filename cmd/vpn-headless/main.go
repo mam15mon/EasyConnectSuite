@@ -23,6 +23,10 @@ import (
 
 type runningEngine interface{ Stop() }
 type starter func(engine.Options) (runningEngine, error)
+type headlessTUN interface {
+	engine.TUNController
+	Close() error
+}
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -36,6 +40,10 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, input io.Reader, output, diagnostic io.Writer, start starter) error {
+	return runWithTUN(ctx, args, input, output, diagnostic, start, newHeadlessTUN)
+}
+
+func runWithTUN(ctx context.Context, args []string, input io.Reader, output, diagnostic io.Writer, start starter, createTUN func() (headlessTUN, error)) (result error) {
 	flags := flag.NewFlagSet("vpn-headless", flag.ContinueOnError)
 	flags.SetOutput(diagnostic)
 	protocol := flags.String("protocol", "easyconnect", "协议：easyconnect、univpn 或 topsec")
@@ -46,6 +54,8 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 	socks := flags.Int("socks-port", 1080, "本地 SOCKS5 端口")
 	httpPort := flags.Int("http-port", 1081, "本地 HTTP 代理端口")
 	proxyAll := flags.Bool("proxy-all", false, "将代理请求路由至 VPN（仍遵守网关资源限制）")
+	tunEnabled := flags.Bool("tun", false, "开启系统资源分流 TUN（Linux，需要 root）")
+	noProxy := flags.Bool("no-proxy", false, "关闭 SOCKS5/HTTP 代理，须同时开启 -tun")
 	totp := flags.Bool("totp-stdin", false, "从标准输入的第二行读取 TOTP 密钥")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -62,11 +72,26 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 	if *server == "" || *username == "" || *port < 1 || *port > 65535 {
 		return errors.New("服务器、账号或端口无效")
 	}
-	if *socks < 1 || *socks > 65535 || *httpPort < 1 || *httpPort > 65535 || *socks == *httpPort {
+	if !*noProxy && (*socks < 1 || *socks > 65535 || *httpPort < 1 || *httpPort > 65535 || *socks == *httpPort) {
 		return errors.New("代理端口无效或重复")
+	}
+	if *noProxy && !*tunEnabled {
+		return errors.New("不能同时关闭 TUN 和代理")
 	}
 	if *totp && *protocol != "easyconnect" {
 		return errors.New("此协议暂不支持 TOTP")
+	}
+	if err := checkHeadlessProtocol(*protocol); err != nil {
+		return err
+	}
+	var controller headlessTUN
+	if *tunEnabled {
+		var err error
+		controller, err = createTUN()
+		if err != nil {
+			return err
+		}
+		defer func() { result = errors.Join(result, controller.Close()) }()
 	}
 	if file, ok := input.(*os.File); ok {
 		info, err := file.Stat()
@@ -116,6 +141,9 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 	conf.Username, conf.Password, conf.TOTPSecret = *username, values.password, values.secret
 	conf.SocksBind = net.JoinHostPort("127.0.0.1", strconv.Itoa(*socks))
 	conf.HTTPBind = net.JoinHostPort("127.0.0.1", strconv.Itoa(*httpPort))
+	if *noProxy {
+		conf.SocksBind, conf.HTTPBind = "", ""
+	}
 	conf.AutoDetectInterface, conf.DisableZJUConfig = true, true
 	conf.ProxyAll = *proxyAll
 	if *protocol == "univpn" {
@@ -125,24 +153,44 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 		conf.DisableKeepAlive = true
 	}
 	failed := make(chan struct{}, 1)
+	tunFailed := make(chan error, 1)
 	var outputMu sync.Mutex
+	writeStatus := func(format string, values ...any) {
+		op := log.BeginOperation(fmt.Sprintf("[VPN pid=%d profile=%q] ", os.Getpid(), "headless"), "headless_status_output", ctx.Done())
+		outcome := "interrupted"
+		var writeErr error
+		defer func() { op.Finish(outcome, writeErr) }()
+		op.Step("wait_output_lock")
+		outputMu.Lock()
+		func() {
+			defer outputMu.Unlock()
+			op.Step("write_output")
+			_, writeErr = fmt.Fprintf(output, format, values...)
+		}()
+		outcome = "written"
+		if writeErr != nil {
+			outcome = "failed"
+		}
+	}
 	opts := engine.Options{ConnectionID: "headless", Config: conf, Context: ctx, Domain: *domain,
-		OnStatus: func(status engine.Status) {
-			op := log.BeginOperation(fmt.Sprintf("[VPN pid=%d profile=%q] ", os.Getpid(), "headless"), "headless_status_output", ctx.Done())
-			outcome := "interrupted"
-			var writeErr error
-			defer func() { op.Finish(outcome, writeErr) }()
-			op.Step("wait_output_lock")
-			outputMu.Lock()
-			func() {
-				defer outputMu.Unlock()
-				op.Step("write_output")
-				_, writeErr = fmt.Fprintf(output, "状态: %s\n", status.Phase)
-			}()
-			outcome = "written"
-			if writeErr != nil {
-				outcome = "failed"
+		TUNEnabled: *tunEnabled, TUNController: controller,
+		OnTUNStatus: func(status engine.TUNStatus) {
+			if status.Error == "" {
+				writeStatus("TUN: %s\n", status.State)
+				return
 			}
+			writeStatus("TUN: %s，原因: %s\n", status.State, status.Error)
+			if *noProxy && status.State == "error" {
+				select {
+				case tunFailed <- errors.New("TUN 模式失败: " + status.Error):
+				default:
+				}
+			} else if status.State == "error" {
+				writeStatus("VPN 与本地代理继续运行；系统 TUN 未启用。\n")
+			}
+		},
+		OnStatus: func(status engine.Status) {
+			writeStatus("状态: %s\n", status.Phase)
 			if status.Phase == engine.PhaseError {
 				select {
 				case failed <- struct{}{}:
@@ -161,6 +209,8 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 		return nil
 	case <-failed:
 		return errors.New("VPN 连接终止，详见诊断日志")
+	case err := <-tunFailed:
+		return err
 	}
 }
 
