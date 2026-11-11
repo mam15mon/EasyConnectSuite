@@ -125,7 +125,7 @@ func assertResolvedLink(t *testing.T, conn *dbus.Conn, ingress *tunIngress, name
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(addresses) != 1 || addresses[0].Family != unix.AF_INET || !reflect.DeepEqual(addresses[0].Address, net.ParseIP(ingress.dns).To4()) || !reflect.DeepEqual(domains, []resolvedDomain{{Name: name, RouteOnly: true}}) || defaultRoute.Value() != false {
+	if len(addresses) != 1 || addresses[0].Family != unix.AF_INET || !reflect.DeepEqual(addresses[0].Address, []byte(net.ParseIP(ingress.dns).To4())) || !reflect.DeepEqual(domains, []resolvedDomain{{Name: name, RouteOnly: true}}) || defaultRoute.Value() != false {
 		t.Fatalf("unexpected resolved link configuration: DNS=%v domains=%v default=%v", addresses, domains, defaultRoute)
 	}
 }
@@ -208,6 +208,13 @@ func TestResolvedRealIsolatedLinkLifecycle(t *testing.T) {
 	assertResolvedLink(t, conn, replacement, "updated.invalid")
 	resolveThroughService(t, conn, "host.updated.invalid", "198.18.63.2")
 	assertResolvedLink(t, conn, second, "other.invalid")
+	for _, ingress := range []*tunIngress{replacement, second} {
+		index := ingress.backend.(*linuxRoutes).index
+		if err = ingress.Close(); err != nil {
+			t.Fatal(err)
+		}
+		assertResolvedLinkGone(t, conn, index)
+	}
 }
 
 func TestResolvedRealIsolatedCanceledRequestKeepsInterface(t *testing.T) {
@@ -221,6 +228,16 @@ func TestResolvedRealIsolatedCanceledRequestKeepsInterface(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
+	otherSpec := linuxTestSpec()
+	otherSpec.Slot = 3
+	otherSpec.Ref.Profile = "unaffected"
+	otherSpec.Ref.Attachment = "unaffected"
+	otherSpec.Names = []string{"unaffected.invalid"}
+	other, err := StartLinuxTUNIngress(context.Background(), otherSpec, resolvedAnswerBackend{answer: "198.18.62.2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
 	if err = unix.Kill(pid, unix.SIGSTOP); err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +269,7 @@ func TestResolvedRealIsolatedCanceledRequestKeepsInterface(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, iface := range ifaces {
-		if strings.HasPrefix(iface.Name, "ecs") {
+		if strings.HasPrefix(iface.Name, "ecs") && iface.Index != other.backend.(*linuxRoutes).index {
 			if index != 0 {
 				t.Fatal("unexpected second test TUN")
 			}
@@ -283,6 +300,8 @@ func TestResolvedRealIsolatedCanceledRequestKeepsInterface(t *testing.T) {
 		t.Fatal("request did not complete after resumed service")
 	}
 	assertResolvedLinkGone(t, conn, index)
+	assertResolvedLink(t, conn, other, "unaffected.invalid")
+	resolveThroughService(t, conn, "after-cancel.unaffected.invalid", "198.18.62.2")
 }
 
 func TestResolvedRealIsolatedCrashHelper(t *testing.T) {

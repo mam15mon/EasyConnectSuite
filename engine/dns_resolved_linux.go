@@ -26,6 +26,9 @@ type resolvedDomain struct {
 	Name      string
 	RouteOnly bool
 }
+
+// resolvedCall returns only after a service reply, unless it returns a tagged
+// not-sent or outcome-unknown error. Plain errors represent confirmed rejection.
 type resolvedCall func(context.Context, string, ...any) error
 
 var errResolvedOutcomeUnknown = errors.New("Linux DNS 请求结果未确认，禁止自动重新配置或声称清理完成")
@@ -188,7 +191,12 @@ func (c *resolvedClient) incoming(msg *dbus.Message) {
 func (c *resolvedClient) Call(ctx context.Context, method string, args ...any) (err error) {
 	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), c.ref.Profile, c.ref.Session, c.ref.Attachment), "linux_dns_request", ctx.Done())
 	outcome := "failed"
-	defer func() { op.Finish(outcome, err) }()
+	defer func() {
+		if err == nil {
+			outcome = "confirmed"
+		}
+		op.Finish(outcome, err)
+	}()
 	op.Step("wait_request_lock")
 	c.mu.Lock()
 	defer c.mu.Unlock()
