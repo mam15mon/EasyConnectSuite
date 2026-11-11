@@ -56,3 +56,7 @@ for _ in $(seq 1 100); do
 done
 if [ "$ready" -ne 1 ]; then busctl --address="$DBUS_SESSION_BUS_ADDRESS" --no-legend list >&2 || true; cat /tmp/resolved-test.log >&2; echo 'isolated resolved did not start' >&2; exit 1; fi
 "$ECS_TEST_BIN" -test.run '^TestResolvedRealIsolated' -test.timeout=90s -test.v
+
+if [ -n "${ECS_WORKER_TEST_BIN:-}" ]; then
+  "$ECS_WORKER_TEST_BIN" -test.run '^TestLinuxWorker(ResolvedCancellation|RequestLifetime)$' -test.v -test.timeout=60s
+fi

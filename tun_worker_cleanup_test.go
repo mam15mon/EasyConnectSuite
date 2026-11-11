@@ -122,3 +122,41 @@ func TestWorkerCanceledUpdateRetiresOldAttachment(t *testing.T) {
 		t.Fatalf("canceled update: err=%v updated=%t closed=%t entries=%d", err, ingress.updated, ingress.closed, len(w.entries))
 	}
 }
+
+type cancelDuringWorkerUpdate struct {
+	cleanupGuardIngress
+	cancel context.CancelFunc
+	seen   context.Context
+}
+
+func (i *cancelDuringWorkerUpdate) UpdateSpec(ctx context.Context, _ engine.TUNSpec) error {
+	i.seen = ctx
+	i.cancel()
+	return nil
+}
+
+func TestWorkerCanceledAfterUpdateDoesNotPublishPolicy(t *testing.T) {
+	ref := tunipc.Ref{Profile: "p", Session: "s", Attachment: "a", Policy: 1}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ingress := &cancelDuringWorkerUpdate{cancel: cancel}
+	backend := &workerBackend{ref: ref}
+	w := &workerServer{authenticated: true, entries: map[string]*workerEntry{"a": {spec: engine.TUNSpec{Ref: ref}, ingress: ingress, backend: backend}}}
+	next := engine.TUNSpec{Ref: ref}
+	next.Policy++
+	_, err := w.handle(ctx, tunipc.Message{Op: "update", Ref: next.Ref, Spec: &next})
+	if !errors.Is(err, context.Canceled) || ingress.seen != ctx || !ingress.closed || len(w.entries) != 0 || backend.ref != ref {
+		t.Fatalf("canceled update committed: err=%v closed=%t entries=%d backend=%v", err, ingress.closed, len(w.entries), backend.ref)
+	}
+}
+
+func TestWorkerCanceledAttachDoesNotCreateIngress(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	spec := engine.TUNSpec{Ref: tunipc.Ref{Profile: "p", Session: "s", Attachment: "a", Policy: 1}}
+	w := &workerServer{authenticated: true, entries: map[string]*workerEntry{}}
+	_, err := w.handle(ctx, tunipc.Message{Op: "attach", Ref: spec.Ref, Spec: &spec})
+	if !errors.Is(err, context.Canceled) || len(w.entries) != 0 {
+		t.Fatalf("canceled attach reached platform creation: %v", err)
+	}
+}
