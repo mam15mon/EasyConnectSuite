@@ -78,6 +78,9 @@ func resolvedLinkDNS(ctx context.Context, call resolvedCall, index int, server s
 func resolvedSystemCall(ctx context.Context, method string, args ...any) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return errors.Join(err, errResolvedNotSent)
+	}
 	conn, err := dbus.ConnectSystemBus()
 	if err != nil {
 		return errors.Join(err, errResolvedNotSent)

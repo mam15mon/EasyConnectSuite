@@ -361,3 +361,14 @@ func TestResolvedSystemCallConnectFailureIsUnsent(t *testing.T) {
 		t.Fatalf("connect failure classification: %v", err)
 	}
 }
+
+func TestResolvedSystemCallCanceledBeforeConnect(t *testing.T) {
+	// A missing socket distinguishes the context check from a dial failure.
+	t.Setenv("DBUS_SYSTEM_BUS_ADDRESS", "unix:path="+t.TempDir()+"/missing")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := resolvedSystemCall(ctx, "SetLinkDNS", int32(7), []resolvedAddress{})
+	if !errors.Is(err, context.Canceled) || !errors.Is(err, errResolvedNotSent) || errors.Is(err, errResolvedOutcomeUnknown) {
+		t.Fatalf("canceled request classification: %v", err)
+	}
+}
