@@ -75,6 +75,28 @@ test('proxy mode uses captured profile while backend selection differs', async (
   assert.equal(state.currentStatus.profileId,'b');
 });
 
+test('proxy save targets UI selection while earlier backend selection is pending', async () => {
+  const hold=deferred(), entered=deferred();
+  let backend='a';
+  const saved=[];
+  const state=workspace({
+    SetActiveProfile:async id=>{ if(id==='a'){entered.resolve(); await hold.promise;} backend=id; return true; },
+    SetProfileProxyEnabled:async(id,enabled)=>{saved.push({id,enabled,backend});},
+    GetStatus:async()=>({profileId:backend}), GetConnections:async()=>[], GetProfileVPNResources:async()=>[],
+  });
+  state.refreshProfiles=async()=>{};
+  vm.runInContext(productionFunction('saveProxyMode'),state);
+  const first=state.selectProfile('a');
+  await entered.promise;
+  const second=state.selectProfile('b');
+  try {
+    assert.equal(state.activeProfile.id,'b');
+    assert.equal(backend,'a');
+    await state.saveProxyMode(true);
+    assert.deepEqual(saved,[{id:'b',enabled:true,backend:'a'}]);
+  } finally { hold.resolve(); await Promise.all([first,second]); }
+});
+
 test('resource refresh targets B while backend selection is still A', async () => {
   const held = deferred(), entered = deferred();
   let backend = 'a';
