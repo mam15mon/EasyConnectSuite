@@ -55,7 +55,8 @@ func (c *LinuxTUNController) Attach(ctx context.Context, spec TUNSpec, backend T
 	if err = ctx.Err(); err != nil {
 		return nil, err
 	}
-	a := &linuxTUNAttachment{controller: c, ctx: ctx, spec: spec, backend: backend, done: make(chan struct{})}
+	a := &linuxTUNAttachment{controller: c, ctx: ctx, spec: spec, backend: backend, done: make(chan struct{}),
+		prefix: fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), spec.Profile, spec.Session, spec.Attachment)}
 	a.generation = newLinuxTUNGeneration(ctx, spec, backend)
 	op.Step("create_ingress")
 	a.ingress, err = c.start(a.generation.ctx, spec, a.generation)
@@ -97,6 +98,7 @@ func (c *LinuxTUNController) Close() (err error) {
 type linuxTUNAttachment struct {
 	controller *LinuxTUNController
 	ctx        context.Context
+	prefix     string
 	spec       TUNSpec
 	backend    TUNBackend
 	generation *linuxTUNGeneration
@@ -151,7 +153,7 @@ func (a *linuxTUNAttachment) Update(ctx context.Context, spec TUNSpec) (err erro
 		c.recordCleanupFailure(err)
 		return err
 	}
-	if err = a.generation.ctx.Err(); err != nil {
+	if err = errors.Join(ctx.Err(), a.generation.ctx.Err()); err != nil {
 		op.Step("cleanup_cancelled_update")
 		return errors.Join(err, a.closeLocked())
 	}
@@ -160,7 +162,7 @@ func (a *linuxTUNAttachment) Update(ctx context.Context, spec TUNSpec) (err erro
 }
 
 func (a *linuxTUNAttachment) Close(ctx context.Context) (err error) {
-	op := log.BeginOperation(linuxControllerPrefix(a.spec), "headless_tun_detach", ctx.Done())
+	op := log.BeginOperation(a.prefix, "headless_tun_detach", ctx.Done())
 	defer func() { op.Finish("returned", err) }()
 	op.Step("wait_controller_lock")
 	a.controller.op.Lock()
@@ -174,6 +176,7 @@ func (a *linuxTUNAttachment) closeLocked() error {
 		return a.closeErr
 	}
 	a.closed = true
+	log.Printf("%sclosing policy=%d", a.prefix, a.spec.Policy)
 	a.generation.cancel()
 	if a.ingress != nil {
 		err := a.ingress.Close()
