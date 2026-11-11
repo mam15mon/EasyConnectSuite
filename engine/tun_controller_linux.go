@@ -156,6 +156,11 @@ func (a *linuxTUNAttachment) Update(ctx context.Context, spec TUNSpec) (err erro
 		c.recordCleanupFailure(err)
 		return err
 	}
+	// Transfer the new ingress out of the update context before publishing it.
+	// A cancellation callback that already started must finish as cancellation.
+	if !stop() {
+		a.generation.cancel()
+	}
 	if err = errors.Join(ctx.Err(), a.generation.ctx.Err()); err != nil {
 		op.Step("cleanup_cancelled_update")
 		return errors.Join(err, a.closeLocked())
