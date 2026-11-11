@@ -167,16 +167,17 @@ func TestLinuxTUNIngressPartialRouteFailure(t *testing.T) {
 	}
 }
 
-func TestLinuxTUNIngressRejectsUnsupportedDNSBeforeCreatingInterface(t *testing.T) {
+func TestLinuxTUNIngressRequiresDNSServiceBeforeCreatingInterface(t *testing.T) {
 	spec := linuxTestSpec()
 	spec.Names = []string{"example.invalid"}
-	// This runs without TUN privileges: DNS rejection must precede device creation.
+	// This must reject unavailable resolved before attempting device creation.
+	t.Setenv("DBUS_SYSTEM_BUS_ADDRESS", "unix:path="+t.TempDir()+"/missing")
 	ingress, err := StartLinuxTUNIngress(context.Background(), spec, linuxEchoBackend{})
 	if ingress != nil {
 		ingress.Close()
 		t.Fatal("unsupported DNS attachment created")
 	}
-	if err == nil || !strings.Contains(err.Error(), "DNS 分流尚未实现") {
+	if err == nil || !strings.Contains(err.Error(), "root Worker") && !errors.Is(err, errResolvedNotSent) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -203,7 +204,7 @@ func TestLinuxTUNIngressDNSLifecycle(t *testing.T) {
 	if err = ingress.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(calls, []string{"SetLinkDNS", "SetLinkDomains", "RevertLink"}) {
+	if !reflect.DeepEqual(calls, []string{"SetLinkDefaultRoute", "SetLinkDNS", "SetLinkDomains"}) {
 		t.Fatalf("DNS calls: %v", calls)
 	}
 	if _, err = net.InterfaceByName(name); err == nil {
@@ -215,8 +216,8 @@ func TestLinuxTUNIngressDNSFailureCleanup(t *testing.T) {
 	if os.Getenv("ECS_LINUX_TUN_SYSTEM_TEST") != "1" {
 		t.Skip("requires isolated Linux network namespace and TUN privileges")
 	}
-	for _, rollbackFails := range []bool{false, true} {
-		t.Run(fmt.Sprintf("rollbackFails=%t", rollbackFails), func(t *testing.T) {
+	for _, unknownOutcome := range []bool{false, true} {
+		t.Run(fmt.Sprintf("unknownOutcome=%t", unknownOutcome), func(t *testing.T) {
 			tunPolicies.Lock()
 			previous := make(map[*tunIngress]bool, len(tunPolicies.claims))
 			for ingress := range tunPolicies.claims {
@@ -241,15 +242,15 @@ func TestLinuxTUNIngressDNSFailureCleanup(t *testing.T) {
 			spec.Slot = 12
 			spec.Names = []string{"example.invalid"}
 			domainErr := errors.New("synthetic domain error")
-			rollbackErr := errors.New("synthetic rollback error")
+
 			var calls []string
 			call := func(_ context.Context, method string, _ ...any) error {
 				calls = append(calls, method)
 				if method == "SetLinkDomains" {
+					if unknownOutcome {
+						return errors.Join(domainErr, errResolvedOutcomeUnknown)
+					}
 					return domainErr
-				}
-				if method == "RevertLink" && rollbackFails {
-					return rollbackErr
 				}
 				return nil
 			}
@@ -261,10 +262,11 @@ func TestLinuxTUNIngressDNSFailureCleanup(t *testing.T) {
 			if !errors.Is(err, domainErr) {
 				t.Fatalf("missing configuration error: %v", err)
 			}
-			if !errors.Is(err, errResolvedOutcomeUnknown) {
-				t.Fatalf("missing unconfirmed cleanup state: %v", err)
+			var cleanup *TUNCleanupError
+			if errors.Is(err, errResolvedOutcomeUnknown) != unknownOutcome || errors.As(err, &cleanup) != unknownOutcome {
+				t.Fatalf("incorrect cleanup state: %v", err)
 			}
-			want := []string{"SetLinkDNS", "SetLinkDomains"}
+			want := []string{"SetLinkDefaultRoute", "SetLinkDNS", "SetLinkDomains"}
 			if !reflect.DeepEqual(calls, want) {
 				t.Fatalf("calls: %v", calls)
 			}

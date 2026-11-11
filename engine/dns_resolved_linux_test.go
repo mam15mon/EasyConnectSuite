@@ -48,6 +48,9 @@ func TestResolvedLinkDNSOrderAndFailure(t *testing.T) {
 		if len(args) != 2 || args[0] != int32(7) {
 			t.Fatalf("bad arguments: %v", args)
 		}
+		if method == "SetLinkDefaultRoute" && args[1] != false {
+			t.Fatal("default DNS route enabled")
+		}
 		if method == "SetLinkDomains" {
 			return stop
 		}
@@ -56,7 +59,7 @@ func TestResolvedLinkDNSOrderAndFailure(t *testing.T) {
 	if err := resolvedLinkDNS(context.Background(), call, 7, "198.19.128.2", []string{"example.invalid"}); !errors.Is(err, stop) {
 		t.Fatalf("lost error: %v", err)
 	}
-	if !reflect.DeepEqual(calls, []string{"SetLinkDNS", "SetLinkDomains"}) {
+	if !reflect.DeepEqual(calls, []string{"SetLinkDefaultRoute", "SetLinkDNS", "SetLinkDomains"}) {
 		t.Fatalf("calls: %v", calls)
 	}
 	calls = nil
@@ -65,8 +68,8 @@ func TestResolvedLinkDNSOrderAndFailure(t *testing.T) {
 	}
 }
 
-func TestResolvedDNSOwnerFailureAndIdentity(t *testing.T) {
-	fail := errors.New("domain update failed")
+func TestResolvedDNSOwnerConfirmedFailureAndIdentity(t *testing.T) {
+	fail := errors.New("confirmed domain rejection")
 	var methods []string
 	verify := func() error { return nil }
 	owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", verify: func() error { return verify() }, call: func(_ context.Context, method string, _ ...any) error {
@@ -76,57 +79,98 @@ func TestResolvedDNSOwnerFailureAndIdentity(t *testing.T) {
 		}
 		return nil
 	}}
-	if err := owner.Apply(context.Background(), []string{"example.invalid"}); !errors.Is(err, fail) {
+	if err := owner.Apply(context.Background(), []string{"example.invalid"}); !errors.Is(err, fail) || errors.Is(err, errResolvedOutcomeUnknown) {
 		t.Fatalf("apply error: %v", err)
 	}
-	if !reflect.DeepEqual(methods, []string{"SetLinkDNS", "SetLinkDomains"}) || !owner.touched || !owner.unknown {
-		t.Fatalf("failure state: %v touched=%v unknown=%v", methods, owner.touched, owner.unknown)
+	if owner.unknown {
+		t.Fatal("a service rejection is a confirmed outcome")
 	}
-	if err := owner.Close(context.Background()); !errors.Is(err, errResolvedOutcomeUnknown) {
-		t.Fatalf("cleanup must preserve uncertainty: %v", err)
+	count := len(methods)
+	if err := owner.Close(context.Background()); err != nil || len(methods) != count {
+		t.Fatalf("cleanup must not send RevertLink: %v %v", err, methods)
 	}
-	methods = nil
-	owner.unknown = false
 	verify = func() error { return errors.New("interface changed") }
-	if err := owner.Apply(context.Background(), []string{"example.invalid"}); err == nil || len(methods) != 0 {
+	if err := owner.Apply(context.Background(), []string{"example.invalid"}); err == nil || len(methods) != count {
 		t.Fatal("changed interface reached D-Bus")
 	}
 }
-func TestResolvedDNSOwnerRetainsFailedCleanup(t *testing.T) {
-	fail := errors.New("revert failed")
-	owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", verify: func() error { return nil }, call: func(_ context.Context, method string, _ ...any) error {
-		if method == "RevertLink" {
-			return fail
-		}
-		return nil
-	}}
-	if err := owner.Apply(context.Background(), []string{"example.invalid"}); err != nil {
-		t.Fatal(err)
+
+func TestResolvedDNSOwnerRetainsUnknownOutcome(t *testing.T) {
+	for _, method := range []string{"SetLinkDefaultRoute", "SetLinkDNS", "SetLinkDomains"} {
+		t.Run(method, func(t *testing.T) {
+			var calls []string
+			owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", verify: func() error { return nil }, call: func(_ context.Context, name string, _ ...any) error {
+				calls = append(calls, name)
+				if name == method {
+					return errors.Join(dbus.ErrClosed, errResolvedOutcomeUnknown)
+				}
+				return nil
+			}}
+			if err := owner.Apply(context.Background(), []string{"example.invalid"}); !errors.Is(err, errResolvedOutcomeUnknown) || !owner.unknown {
+				t.Fatalf("lost uncertainty: %v", err)
+			}
+			count := len(calls)
+			if err := owner.Close(context.Background()); !errors.Is(err, errResolvedOutcomeUnknown) {
+				t.Fatalf("cleanup reported success: %v", err)
+			}
+			if err := owner.Apply(context.Background(), []string{"example.invalid"}); !errors.Is(err, errResolvedOutcomeUnknown) {
+				t.Fatalf("reapply accepted: %v", err)
+			}
+			if len(calls) != count {
+				t.Fatalf("unknown outcome followed by mutation: %v", calls)
+			}
+		})
 	}
-	if err := owner.Close(context.Background()); !errors.Is(err, fail) || !owner.touched {
-		t.Fatalf("cleanup state: %v %v", err, owner.touched)
-	}
-	owner.call = func(context.Context, string, ...any) error { return nil }
-	if err := owner.Close(context.Background()); err != nil || owner.touched {
-		t.Fatalf("retry: %v", err)
+}
+
+func TestResolvedDNSOwnerUnsentRequestDoesNotRequireRollback(t *testing.T) {
+	for _, method := range []string{"SetLinkDefaultRoute", "SetLinkDNS", "SetLinkDomains"} {
+		t.Run(method, func(t *testing.T) {
+			var calls []string
+			owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", verify: func() error { return nil }, call: func(_ context.Context, name string, _ ...any) error {
+				calls = append(calls, name)
+				if name == method {
+					return errors.Join(context.Canceled, errResolvedNotSent)
+				}
+				return nil
+			}}
+			if err := owner.Apply(context.Background(), []string{"example.invalid"}); !errors.Is(err, errResolvedNotSent) || owner.unknown {
+				t.Fatalf("unsent classification: %v", err)
+			}
+			count := len(calls)
+			if err := owner.Close(context.Background()); err != nil || len(calls) != count {
+				t.Fatalf("cleanup must only delete owned link: %v %v", err, calls)
+			}
+		})
 	}
 }
 
 type resolvedTestService struct {
-	mu          sync.Mutex
-	methods     []string
-	addresses   []resolvedAddress
-	domains     []resolvedDomain
-	failDomains bool
+	mu           sync.Mutex
+	methods      []string
+	addresses    []resolvedAddress
+	domains      []resolvedDomain
+	defaultRoute bool
+	failDomains  bool
+	entered      chan struct{}
+	release      chan struct{}
 }
 
+func (s *resolvedTestService) SetLinkDefaultRoute(index int32, value bool) *dbus.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.methods = append(s.methods, "SetLinkDefaultRoute")
+	s.defaultRoute = value
+	return nil
+}
 func (s *resolvedTestService) SetLinkDNS(index int32, values []resolvedAddress) *dbus.Error {
+	if s.entered != nil {
+		close(s.entered)
+		<-s.release
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.methods = append(s.methods, "SetLinkDNS")
-	if index != 7 {
-		return dbus.NewError("org.test.Invalid", nil)
-	}
 	s.addresses = values
 	return nil
 }
@@ -134,24 +178,15 @@ func (s *resolvedTestService) SetLinkDomains(index int32, values []resolvedDomai
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.methods = append(s.methods, "SetLinkDomains")
-	if index != 7 || s.failDomains {
-		return dbus.NewError("org.test.Rejected", nil)
+	if s.failDomains {
+		return dbus.NewError("org.test.Rejected", []any{"PRIVATE_DNS_REPLY_CANARY"})
 	}
 	s.domains = values
 	return nil
 }
-func (s *resolvedTestService) RevertLink(index int32) *dbus.Error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.methods = append(s.methods, "RevertLink")
-	if index != 7 {
-		return dbus.NewError("org.test.Invalid", nil)
-	}
-	s.addresses = nil
-	s.domains = nil
-	return nil
-}
-func TestResolvedPrivateBus(t *testing.T) {
+
+func privateResolvedService(t *testing.T, service *resolvedTestService) *dbus.Conn {
+	t.Helper()
 	if os.Getenv("ECS_RESOLVED_BUS_TEST") != "1" {
 		t.Skip("requires a private D-Bus session")
 	}
@@ -162,8 +197,7 @@ func TestResolvedPrivateBus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
-	service := &resolvedTestService{}
+	t.Cleanup(func() { _ = conn.Close() })
 	if err = conn.Export(service, dbus.ObjectPath("/org/freedesktop/resolve1"), "org.freedesktop.resolve1.Manager"); err != nil {
 		t.Fatal(err)
 	}
@@ -171,190 +205,158 @@ func TestResolvedPrivateBus(t *testing.T) {
 	if err != nil || reply != dbus.RequestNameReplyPrimaryOwner {
 		t.Fatalf("request name: %v %v", reply, err)
 	}
-	owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", ref: linuxTestSpec(), call: resolvedSystemCall, verify: func() error { return nil }}
+	return conn
+}
+
+func TestResolvedPrivateBus(t *testing.T) {
+	service := &resolvedTestService{defaultRoute: true}
+	privateResolvedService(t, service)
+	client, err := newResolvedClient(context.Background(), linuxTestSpec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", call: client.Call, verify: func() error { return nil }}
 	if err = owner.Apply(context.Background(), []string{"example.invalid"}); err != nil {
 		t.Fatal(err)
 	}
 	service.mu.Lock()
-	valid := len(service.addresses) == 1 && reflect.DeepEqual(service.addresses[0].Address, []byte{198, 19, 128, 2}) && len(service.domains) == 1 && service.domains[0].Name == "example.invalid" && service.domains[0].RouteOnly
+	valid := !service.defaultRoute && len(service.addresses) == 1 && reflect.DeepEqual(service.addresses[0].Address, []byte{198, 19, 128, 2}) && len(service.domains) == 1 && service.domains[0].RouteOnly
+	service.failDomains = true
 	service.mu.Unlock()
 	if !valid {
 		t.Fatal("unexpected D-Bus payload")
+	}
+	if err = owner.Apply(context.Background(), []string{"example.invalid"}); err == nil || errors.Is(err, errResolvedOutcomeUnknown) || strings.Contains(err.Error(), "PRIVATE_DNS_REPLY_CANARY") {
+		t.Fatalf("service error classification/redaction: %v", err)
 	}
 	if err = owner.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	service.mu.Lock()
-	service.failDomains = true
-	service.methods = nil
-	service.mu.Unlock()
-	if err = owner.Apply(context.Background(), []string{"example.invalid"}); !errors.Is(err, errResolvedOutcomeUnknown) {
-		t.Fatalf("D-Bus error did not retain uncertainty: %v", err)
-	}
-	service.mu.Lock()
-	methods := append([]string(nil), service.methods...)
-	remaining := len(service.addresses)
-	service.mu.Unlock()
-	if !reflect.DeepEqual(methods, []string{"SetLinkDNS", "SetLinkDomains"}) || remaining != 1 || !owner.touched || !owner.unknown {
-		t.Fatalf("unconfirmed outcome: %v remaining=%d", methods, remaining)
+	defer service.mu.Unlock()
+	if len(service.addresses) != 1 || len(service.methods) != 6 {
+		t.Fatal("owner release changed DNS before link removal")
 	}
 }
 
-// delayedResolvedService models a service that completes a timed-out request
-// after the caller has already received a successful RevertLink reply.
-type delayedResolvedService struct {
-	entered    chan struct{}
-	release    chan struct{}
-	finished   chan struct{}
-	mu         sync.Mutex
-	configured bool
-}
-
-func (s *delayedResolvedService) SetLinkDNS(_ int32, _ []resolvedAddress) *dbus.Error {
-	close(s.entered)
-	<-s.release
-	s.mu.Lock()
-	s.configured = true
-	s.mu.Unlock()
-	close(s.finished)
-	return nil
-}
-func (s *delayedResolvedService) RevertLink(_ int32) *dbus.Error {
-	s.mu.Lock()
-	s.configured = false
-	s.mu.Unlock()
-	return nil
-}
-
-func TestResolvedPrivateBusLateRequestAfterRollback(t *testing.T) {
-	if os.Getenv("ECS_RESOLVED_BUS_TEST") != "1" {
-		t.Skip("requires a private D-Bus session")
-	}
-	if os.Getenv("DBUS_SYSTEM_BUS_ADDRESS") != os.Getenv("DBUS_SESSION_BUS_ADDRESS") || os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
-		t.Fatal("system bus is not isolated")
-	}
-	conn, err := dbus.ConnectSessionBus()
+func TestResolvedPrivateBusCancellationWaitsForServiceReply(t *testing.T) {
+	service := &resolvedTestService{entered: make(chan struct{}), release: make(chan struct{})}
+	privateResolvedService(t, service)
+	client, err := newResolvedClient(context.Background(), linuxTestSpec())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
-	service := &delayedResolvedService{entered: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{})}
-	if err = conn.Export(service, dbus.ObjectPath("/org/freedesktop/resolve1"), "org.freedesktop.resolve1.Manager"); err != nil {
-		t.Fatal(err)
-	}
-	reply, err := conn.RequestName("org.freedesktop.resolve1", dbus.NameFlagDoNotQueue)
-	if err != nil || reply != dbus.RequestNameReplyPrimaryOwner {
-		t.Fatalf("request name: %v %v", reply, err)
-	}
+	defer client.Close()
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	result := make(chan error, 1)
 	go func() {
-		result <- resolvedSystemCall(ctx, "SetLinkDNS", int32(7), []resolvedAddress{{Family: unix.AF_INET, Address: []byte{198, 19, 128, 2}}})
+		result <- client.Call(ctx, "SetLinkDNS", int32(7), []resolvedAddress{{Family: unix.AF_INET, Address: []byte{198, 19, 128, 2}}})
 	}()
 	select {
 	case <-service.entered:
 	case <-time.After(5 * time.Second):
-		t.Fatal("service did not receive request")
+		t.Fatal("request not received")
 	}
 	cancel()
 	select {
 	case err = <-result:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("request cancellation: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("request did not return after cancellation")
-	}
-	if err = resolvedSystemCall(context.Background(), "RevertLink", int32(7)); err != nil {
-		t.Fatal(err)
+		close(service.release)
+		t.Fatalf("cancellation returned before service reply: %v", err)
+	case <-time.After(100 * time.Millisecond):
 	}
 	close(service.release)
 	select {
-	case <-service.finished:
-	case <-time.After(5 * time.Second):
-		t.Fatal("delayed request did not finish")
-	}
-	service.mu.Lock()
-	configured := service.configured
-	service.mu.Unlock()
-	if !configured {
-		t.Fatal("expected late request to change state after rollback")
-	}
-}
-
-func TestResolvedDNSOwnerDoesNotClaimCanceledRequestClean(t *testing.T) {
-	for _, method := range []string{"SetLinkDNS", "SetLinkDomains", "RevertLink"} {
-		for _, failure := range []error{context.Canceled, context.DeadlineExceeded} {
-			t.Run(method+"/"+failure.Error(), func(t *testing.T) {
-				var calls []string
-				owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", verify: func() error { return nil }, call: func(_ context.Context, name string, _ ...any) error {
-					calls = append(calls, name)
-					if name == method {
-						return failure
-					}
-					return nil
-				}}
-				err := owner.Apply(context.Background(), []string{"example.invalid"})
-				if method == "RevertLink" {
-					if err != nil {
-						t.Fatal(err)
-					}
-					err = owner.Close(context.Background())
-				}
-				if !errors.Is(err, failure) || !errors.Is(err, errResolvedOutcomeUnknown) || !owner.unknown || !owner.touched {
-					t.Fatalf("lost unconfirmed outcome: %v", err)
-				}
-				count := len(calls)
-				if err = owner.Close(context.Background()); !errors.Is(err, errResolvedOutcomeUnknown) {
-					t.Fatalf("close reported clean: %v", err)
-				}
-				if err = owner.Apply(context.Background(), []string{"example.invalid"}); !errors.Is(err, errResolvedOutcomeUnknown) {
-					t.Fatalf("reapply accepted: %v", err)
-				}
-				if len(calls) != count {
-					t.Fatalf("unconfirmed request followed by another call: %v", calls)
-				}
-			})
+	case err = <-result:
+		if err != nil {
+			t.Fatalf("completed request: %v", err)
 		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("service completion not observed")
+	}
+	if err = client.Call(ctx, "SetLinkDomains", int32(7), []resolvedDomain{}); !errors.Is(err, errResolvedNotSent) {
+		t.Fatalf("next request was not canceled: %v", err)
 	}
 }
 
-func TestResolvedDNSOwnerDoesNotRollbackUnsentRequest(t *testing.T) {
-	for _, failingMethod := range []string{"SetLinkDNS", "SetLinkDomains"} {
-		t.Run(failingMethod, func(t *testing.T) {
-			var methods []string
-			owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", verify: func() error { return nil }, call: func(_ context.Context, method string, _ ...any) error {
-				methods = append(methods, method)
-				if method == failingMethod {
-					return errResolvedNotSent
-				}
-				return nil
-			}}
-			err := owner.Apply(context.Background(), []string{"example.invalid"})
-			if !errors.Is(err, errResolvedNotSent) {
-				t.Fatalf("missing unsent error: %v", err)
-			}
-			if failingMethod == "SetLinkDNS" {
-				if owner.touched || owner.unknown || !reflect.DeepEqual(methods, []string{"SetLinkDNS"}) {
-					t.Fatalf("first call changed state: %v %+v", methods, owner)
-				}
-				if err = owner.Close(context.Background()); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				if !owner.touched || !owner.unknown || !errors.Is(err, errResolvedOutcomeUnknown) {
-					t.Fatalf("partial update not retained: %v %+v", err, owner)
-				}
-				if err = owner.Close(context.Background()); !errors.Is(err, errResolvedOutcomeUnknown) {
-					t.Fatalf("cleanup: %v", err)
-				}
-			}
-			for _, method := range methods {
-				if method == "RevertLink" {
-					t.Fatal("unsent request triggered whole-link rollback")
-				}
-			}
-		})
+func TestResolvedPrivateBusPinsUniqueOwner(t *testing.T) {
+	first := &resolvedTestService{}
+	conn := privateResolvedService(t, first)
+	client, err := newResolvedClient(context.Background(), linuxTestSpec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if _, err = conn.ReleaseName("org.freedesktop.resolve1"); err != nil {
+		t.Fatal(err)
+	}
+	second := &resolvedTestService{}
+	privateResolvedService(t, second)
+	if err = client.Call(context.Background(), "SetLinkDefaultRoute", int32(7), false); err != nil {
+		t.Fatal(err)
+	}
+	first.mu.Lock()
+	count := len(first.methods)
+	first.mu.Unlock()
+	second.mu.Lock()
+	replacementCount := len(second.methods)
+	second.mu.Unlock()
+	if count != 1 || replacementCount != 0 {
+		t.Fatalf("request retargeted to new owner: first=%d second=%d", count, replacementCount)
+	}
+}
+
+func TestResolvedPrivateBusDisconnectIsUnknown(t *testing.T) {
+	service := &resolvedTestService{entered: make(chan struct{}), release: make(chan struct{})}
+	conn := privateResolvedService(t, service)
+	client, err := newResolvedClient(context.Background(), linuxTestSpec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	result := make(chan error, 1)
+	go func() { result <- client.Call(context.Background(), "SetLinkDNS", int32(7), []resolvedAddress{}) }()
+	select {
+	case <-service.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("request not received")
+	}
+	if err = conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	defer close(service.release)
+	select {
+	case err = <-result:
+		if !errors.Is(err, errResolvedOutcomeUnknown) {
+			t.Fatalf("unconfirmed request reported completed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("service disconnect not observed")
+	}
+}
+
+func TestResolvedReplyMustMatchSenderAndSerial(t *testing.T) {
+	p := &resolvedPending{serial: 12, reply: make(chan error, 1)}
+	client := &resolvedClient{owner: ":1.7", pending: p}
+	message := func(sender string, serial uint32) *dbus.Message {
+		return &dbus.Message{Type: dbus.TypeMethodReply, Headers: map[dbus.HeaderField]dbus.Variant{dbus.FieldSender: dbus.MakeVariant(sender), dbus.FieldReplySerial: dbus.MakeVariant(serial)}}
+	}
+	client.incoming(message(":1.8", 12))
+	client.incoming(message(":1.7", 13))
+	select {
+	case <-p.reply:
+		t.Fatal("unrelated reply completed request")
+	default:
+	}
+	client.incoming(message(":1.7", 12))
+	select {
+	case err := <-p.reply:
+		if err != nil {
+			t.Fatal(err)
+		}
+	default:
+		t.Fatal("matching service reply ignored")
 	}
 }
 
