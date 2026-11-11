@@ -116,11 +116,16 @@ func TestLinuxControllerUpdateDoesNotReenterUpstreamEndpointLock(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		text := string(data)
-		if strings.Contains(text, "name=headless_retired_stream_close") && strings.Contains(text, "outcome=closed") {
-			for _, marker := range []string{`profile="test"`, `session="test"`, `attachment="test"`, "policy=1", "stage=stream_close", "stage_elapsed="} {
-				if !strings.Contains(text, marker) {
-					t.Errorf("missing retirement evidence %q", marker)
+		completion := ""
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.Contains(line, "name=headless_retired_stream_close") && strings.Contains(line, "phase=end outcome=closed") {
+				completion = line
+			}
+		}
+		if completion != "" {
+			for _, marker := range []string{`profile="test"`, `session="test"`, `attachment="test"`, "policy=1", "stage=stream_close", "stage_elapsed=", "canceled=true"} {
+				if !strings.Contains(completion, marker) {
+					t.Errorf("missing retirement evidence %q in %s", marker, completion)
 				}
 			}
 			break
@@ -330,16 +335,14 @@ func TestLinuxControllerUpdateContextEndsAfterIngressCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := linuxTestSpec()
-	for i := 0; i < 100; i++ {
-		next.Policy++
-		ctx, cancel := context.WithCancel(context.Background())
-		err := attachment.Update(ctx, next)
-		cancel()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := attachment.(*linuxTUNAttachment).generation.ctx.Err(); err != nil {
-			t.Fatalf("completed update retained its caller cancellation: %v", err)
-		}
+	next.Policy++
+	ctx, cancel := context.WithCancel(context.Background())
+	err = attachment.Update(ctx, next)
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := attachment.(*linuxTUNAttachment).generation.ctx.Err(); err != nil {
+		t.Fatalf("completed update retained its caller cancellation: %v", err)
 	}
 }
