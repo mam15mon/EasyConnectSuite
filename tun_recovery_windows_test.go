@@ -108,7 +108,7 @@ func TestWorkerLossPreservesCleanupErrorAndBlocksRelaunch(t *testing.T) {
 type failedCleanupIngress struct{ failure error }
 
 func (i *failedCleanupIngress) Close() error { return i.failure }
-func (i *failedCleanupIngress) UpdateSpec(engine.TUNSpec) error {
+func (i *failedCleanupIngress) UpdateSpec(context.Context, engine.TUNSpec) error {
 	return errors.New("policy update failed")
 }
 func TestWorkerRetainsCleanupFailureUntilExit(t *testing.T) {

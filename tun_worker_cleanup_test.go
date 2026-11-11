@@ -17,8 +17,11 @@ type cleanupGuardIngress struct {
 	updated bool
 }
 
-func (i *cleanupGuardIngress) Close() error                    { i.closed = true; return i.err }
-func (i *cleanupGuardIngress) UpdateSpec(engine.TUNSpec) error { i.updated = true; return nil }
+func (i *cleanupGuardIngress) Close() error { i.closed = true; return i.err }
+func (i *cleanupGuardIngress) UpdateSpec(context.Context, engine.TUNSpec) error {
+	i.updated = true
+	return nil
+}
 
 func TestWorkerRejectsNewAttachmentsAfterCleanupFailure(t *testing.T) {
 	failure := errors.New("synthetic cleanup failure")
@@ -68,7 +71,7 @@ func TestWorkerRejectsNewAttachmentsAfterCleanupFailure(t *testing.T) {
 type failedReplacementIngress struct{ failure error }
 
 func (i *failedReplacementIngress) Close() error { return nil }
-func (i *failedReplacementIngress) UpdateSpec(engine.TUNSpec) error {
+func (i *failedReplacementIngress) UpdateSpec(context.Context, engine.TUNSpec) error {
 	return errors.Join(errors.New("replacement failed"), &engine.TUNCleanupError{Err: i.failure})
 }
 

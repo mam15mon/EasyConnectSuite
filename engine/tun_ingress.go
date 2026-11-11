@@ -61,7 +61,12 @@ type tunIngress struct {
 	connections       sync.Map
 }
 
-func (t *tunIngress) UpdateSpec(spec TUNSpec) error { return t.update(spec, nil) }
+func (t *tunIngress) UpdateSpec(ctx context.Context, spec TUNSpec) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return t.update(spec, nil)
+}
 func (t *tunIngress) update(spec TUNSpec, progress func(string, string)) error {
 	if err := spec.Validate(); err != nil {
 		return err

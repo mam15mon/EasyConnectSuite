@@ -104,7 +104,7 @@ func TestTUNFailedPolicyUpdateRetainsOldAndNewClaims(t *testing.T) {
 	ingress := &tunIngress{ctx: ctx, cancel: cancel, backend: backend, routes: newRouteManager(backend)}
 	defer func() { tunPolicies.Lock(); delete(tunPolicies.claims, ingress); tunPolicies.Unlock() }()
 	old := TUNSpec{Ref: tunipc.Ref{Profile: "p", Session: "s", Attachment: "a", Policy: 1}, Prefixes: []string{"192.0.2.0/24"}, Names: []string{"old.invalid"}}
-	if err := ingress.UpdateSpec(old); err != nil {
+	if err := ingress.UpdateSpec(context.Background(), old); err != nil {
 		t.Fatal(err)
 	}
 	failure := errors.New("synthetic DNS failure")
@@ -113,7 +113,7 @@ func TestTUNFailedPolicyUpdateRetainsOldAndNewClaims(t *testing.T) {
 	next.Policy++
 	next.Prefixes = []string{"198.51.100.0/24"}
 	next.Names = []string{"new.invalid"}
-	if err := ingress.UpdateSpec(next); !errors.Is(err, failure) {
+	if err := ingress.UpdateSpec(context.Background(), next); !errors.Is(err, failure) {
 		t.Fatalf("update: %v", err)
 	}
 	if err := ingress.Close(); !errors.Is(err, failure) {

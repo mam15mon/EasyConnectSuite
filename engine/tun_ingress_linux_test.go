@@ -302,7 +302,7 @@ func TestLinuxFailedAttachRetainsClaimsWhenCleanupFails(t *testing.T) {
 	spec := linuxTestSpec()
 	spec.Prefixes = []string{"192.0.2.0/24"}
 	spec.Names = []string{"example.invalid"}
-	if err := ingress.UpdateSpec(spec); !errors.Is(err, failure) {
+	if err := ingress.UpdateSpec(context.Background(), spec); !errors.Is(err, failure) {
 		t.Fatalf("update: %v", err)
 	}
 	if err := ingress.Close(); !errors.Is(err, failure) {
@@ -324,7 +324,7 @@ func TestLinuxFailedAttachReleasesClaimsAfterSuccessfulCleanup(t *testing.T) {
 	ingress := &tunIngress{ctx: ctx, cancel: cancel, dns: "198.19.128.2", backend: backend, routes: newRouteManager(backend)}
 	spec := linuxTestSpec()
 	spec.Prefixes = []string{"192.0.2.0/24"}
-	if err := ingress.UpdateSpec(spec); !errors.Is(err, failure) {
+	if err := ingress.UpdateSpec(context.Background(), spec); !errors.Is(err, failure) {
 		t.Fatalf("update: %v", err)
 	}
 	backend.failure = nil

@@ -21,7 +21,7 @@ type pipeTestBackend struct {
 type rejectedUpdateIngress struct{ closed bool }
 
 func (i *rejectedUpdateIngress) Close() error { i.closed = true; return nil }
-func (i *rejectedUpdateIngress) UpdateSpec(engine.TUNSpec) error {
+func (i *rejectedUpdateIngress) UpdateSpec(context.Context, engine.TUNSpec) error {
 	return errors.New("conflicting DNS namespace")
 }
 func TestWorkerRejectsDirectionAndClosesFailedPolicyUpdate(t *testing.T) {

@@ -17,7 +17,7 @@ import (
 
 type workerIngress interface {
 	Close() error
-	UpdateSpec(engine.TUNSpec) error
+	UpdateSpec(context.Context, engine.TUNSpec) error
 }
 type workerEntry struct {
 	spec    engine.TUNSpec
@@ -118,8 +118,11 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 				return tunipc.Message{}, errors.New("TUN profile or slot already attached")
 			}
 		}
+		if err := ctx.Err(); err != nil {
+			return tunipc.Message{}, err
+		}
 		backend := &workerBackend{ref: m.Ref, server: w}
-		ingress, err := startWorkerIngress(*m.Spec, backend, func(stage, text string) {
+		ingress, err := startWorkerIngress(ctx, *m.Spec, backend, func(stage, text string) {
 			_ = w.peer.Emit(tunipc.Message{Op: "progress", Ref: m.Ref, Text: stage + ": " + text})
 		})
 		if err != nil {
@@ -144,7 +147,11 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 			delete(w.entries, m.Ref.Attachment)
 			return tunipc.Message{}, errors.Join(err, cleanupErr)
 		}
-		if err := entry.ingress.UpdateSpec(*m.Spec); err != nil {
+		err := entry.ingress.UpdateSpec(ctx, *m.Spec)
+		if err == nil {
+			err = ctx.Err()
+		}
+		if err != nil {
 			w.recordIngressCleanupFailure(err)
 			cleanupErr := entry.ingress.Close()
 			w.cleanupErr = errors.Join(w.cleanupErr, cleanupErr)
