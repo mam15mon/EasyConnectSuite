@@ -22,18 +22,18 @@ func (t *linuxTunFile) CreateVectorisedWriter() N.VectorisedWriter {
 }
 func (t *tunIngress) dnsAddress() string { return t.dns }
 
-// Linux DNS ownership is not implemented; do not modify system DNS.
+// DNS settings belong to this exclusive link and disappear with its deletion.
 func (r *linuxRoutes) setDNS(names []string) error {
 	if r.dnsOwner == nil {
 		if len(names) != 0 {
-			return errors.New("Linux TUN DNS 分流尚未实现")
+			return errors.New("Linux TUN DNS 服务未配置")
 		}
 		return nil
 	}
 	if len(names) == 0 {
 		return r.dnsOwner.Close(context.Background())
 	}
-	return r.dnsOwner.Apply(context.Background(), names)
+	return r.dnsOwner.Apply(r.dnsOwner.ctx, names)
 }
 func validateIngressUpdate(t *tunIngress, spec TUNSpec) error {
 	if t.spec.Ref.Attachment != "" {
@@ -50,25 +50,59 @@ func releaseIngressRoutes(t *tunIngress) error {
 	if t.device == nil {
 		return nil
 	}
-	if backend, ok := t.backend.(*linuxRoutes); ok && backend.closedOnFailure {
-		return nil
-	}
-	op := log.BeginOperation(fmt.Sprintf("[TUN interface=%q] ", t.name), "linux_tun_release", nil)
+	backend, _ := t.backend.(*linuxRoutes)
+	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q interface=%q] ", os.Getpid(), t.claimRef.Profile, t.claimRef.Session, t.claimRef.Attachment, t.name), "linux_tun_release", nil)
 	outcome := "interrupted"
 	var err error
 	defer func() { op.Finish(outcome, err) }()
-	op.Step("close_interface")
-	if err = t.device.Close(); err != nil {
-		outcome = "failed"
-		return err
+	if backend == nil || !backend.closedOnFailure {
+		op.Step("close_interface")
+		if err = t.device.Close(); err != nil {
+			outcome = "failed"
+			return err
+		}
+	}
+	if backend != nil {
+		op.Step("verify_interface_removed")
+		_, lookupErr := netlink.LinkByIndex(backend.index)
+		var missing netlink.LinkNotFoundError
+		if lookupErr == nil {
+			err = errors.New("owned TUN interface remains after close")
+		} else if !errors.As(lookupErr, &missing) {
+			err = fmt.Errorf("verify TUN removal: %w", lookupErr)
+		}
+		if err != nil {
+			outcome = "failed"
+			return err
+		}
 	}
 	outcome = "completed"
 	return nil
 }
 
-// StartLinuxTUNIngress is currently exercised in an isolated namespace only.
+// StartLinuxTUNIngress owns a non-persistent TUN and, for resource namespaces,
+// a private connection to the running systemd-resolved service.
 func StartLinuxTUNIngress(ctx context.Context, spec TUNSpec, service TUNBackend) (*tunIngress, error) {
-	return startLinuxTUNIngressWithDNS(ctx, spec, service, nil)
+	if err := spec.Validate(); err != nil {
+		return nil, err
+	}
+	if len(spec.Names) == 0 {
+		return startLinuxTUNIngressWithDNS(ctx, spec, service, nil)
+	}
+	if os.Geteuid() != 0 {
+		return nil, errors.New("Linux TUN DNS 配置需要 root Worker")
+	}
+	client, err := newResolvedClient(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	ingress, err := startLinuxTUNIngressWithDNS(ctx, spec, service, client.Call)
+	if err != nil {
+		_ = client.Close()
+		return nil, err
+	}
+	ingress.backend.(*linuxRoutes).dnsOwner.close = client.Close
+	return ingress, nil
 }
 
 func startLinuxTUNIngressWithDNS(ctx context.Context, spec TUNSpec, service TUNBackend, call resolvedCall) (ingress *tunIngress, err error) {
@@ -81,7 +115,7 @@ func startLinuxTUNIngressWithDNS(ctx context.Context, spec TUNSpec, service TUNB
 	}
 	if len(spec.Names) != 0 && call == nil {
 		outcome = "dns_unsupported"
-		return nil, errors.New("Linux TUN DNS 分流尚未实现")
+		return nil, errors.New("Linux TUN DNS 服务未配置")
 	}
 	if err = ctx.Err(); err != nil {
 		outcome = "cancelled"
@@ -115,7 +149,7 @@ func startLinuxTUNIngressWithDNS(ctx context.Context, spec TUNSpec, service TUNB
 	obj.dns = fmt.Sprintf("198.19.128.%d", spec.Slot*4+2)
 	backend := &linuxRoutes{device: file, name: obj.name, index: index, ref: spec}
 	if call != nil {
-		backend.dnsOwner = &resolvedDNSOwner{index: index, server: obj.dns, ref: spec, call: call, verify: func() error {
+		backend.dnsOwner = &resolvedDNSOwner{index: index, server: obj.dns, ref: spec, call: call, ctx: attachCtx, verify: func() error {
 			ifr, err := unix.NewIfreq("")
 			if err != nil {
 				return err
