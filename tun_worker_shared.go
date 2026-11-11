@@ -83,7 +83,17 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 		return tunipc.Message{}, errors.New("TUN Worker handshake required")
 	}
 	if w.cleanupErr != nil && (m.Op == "prepare" || m.Op == "attach" || m.Op == "update") {
-		return tunipc.Message{}, errors.Join(errors.New("TUN Worker 清理未确认，禁止新附加或策略更新"), w.cleanupErr)
+		err := errors.Join(errors.New("TUN Worker 清理未确认，禁止新附加或策略更新"), w.cleanupErr)
+		if m.Op == "update" {
+			entry := w.entries[m.Ref.Attachment]
+			if entry != nil && m.Spec != nil && m.Spec.Ref == m.Ref && entry.spec.Profile == m.Ref.Profile && entry.spec.Session == m.Ref.Session && m.Ref.Policy > entry.spec.Policy && entry.spec.Slot == m.Spec.Slot {
+				cleanupErr := entry.ingress.Close()
+				w.cleanupErr = errors.Join(w.cleanupErr, cleanupErr)
+				err = errors.Join(err, cleanupErr)
+				delete(w.entries, m.Ref.Attachment)
+			}
+		}
+		return tunipc.Message{}, err
 	}
 	switch m.Op {
 	case "prepare":

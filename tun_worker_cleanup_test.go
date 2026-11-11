@@ -25,9 +25,12 @@ func TestWorkerRejectsNewAttachmentsAfterCleanupFailure(t *testing.T) {
 	first := tunipc.Ref{Profile: "first", Session: "s1", Attachment: "a1", Policy: 1}
 	second := tunipc.Ref{Profile: "second", Session: "s2", Attachment: "a2", Policy: 1}
 	other := &cleanupGuardIngress{}
+	third := tunipc.Ref{Profile: "third", Session: "s3", Attachment: "a3", Policy: 1}
+	untouched := &cleanupGuardIngress{}
 	w := &workerServer{authenticated: true, closing: make(chan struct{}), reservations: map[string]bool{}, entries: map[string]*workerEntry{
 		"a1": {spec: engine.TUNSpec{Ref: first}, ingress: &cleanupGuardIngress{err: failure}},
 		"a2": {spec: engine.TUNSpec{Ref: second}, ingress: other},
+		"a3": {spec: engine.TUNSpec{Ref: third}, ingress: untouched},
 	}}
 	if _, err := w.handle(context.Background(), tunipc.Message{Op: "detach", Ref: first}); !errors.Is(err, failure) {
 		t.Fatalf("detach: %v", err)
@@ -45,13 +48,16 @@ func TestWorkerRejectsNewAttachmentsAfterCleanupFailure(t *testing.T) {
 	if other.updated {
 		t.Fatal("existing attachment updated after unconfirmed cleanup")
 	}
-	if other.closed {
-		t.Fatal("other attachment was closed")
+	if !other.closed || w.entries[second.Attachment] != nil {
+		t.Fatal("rejected update did not retire its old attachment")
 	}
-	if _, err := w.handle(context.Background(), tunipc.Message{Op: "detach", Ref: second}); err != nil {
+	if untouched.closed {
+		t.Fatal("unrelated attachment was closed")
+	}
+	if _, err := w.handle(context.Background(), tunipc.Message{Op: "detach", Ref: third}); err != nil {
 		t.Fatalf("other detach: %v", err)
 	}
-	if !other.closed {
+	if !untouched.closed {
 		t.Fatal("other attachment was not cleaned up")
 	}
 	if _, err := w.handle(context.Background(), tunipc.Message{Op: "shutdown"}); !errors.Is(err, failure) {
