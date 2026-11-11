@@ -11,6 +11,8 @@ func NewLinuxTUNController() *LinuxTUNController
 func (c *LinuxTUNController) Attach(context.Context, TUNSpec, TUNBackend) (TUNAttachment, error)
 func (c *LinuxTUNController) Close() error
 func StartLinuxTUNIngress(context.Context, TUNSpec, TUNBackend) (*tunIngress, error)
+func startWorkerIngress(context.Context, engine.TUNSpec, engine.TUNBackend, func(string, string)) (workerIngress, error)
+// workerIngress also exposes UpdateSpec(context.Context, engine.TUNSpec) error.
 ```
 
 GUI uses `SetProfileTUNMode` and the shared `tunControl`/Worker contracts in [tun-worker.md](tun-worker.md). Headless accepts `-tun` and `-no-proxy`; `-no-proxy` requires `-tun`. Existing defaults stay loopback SOCKS5/HTTP only. Validate root privileges before reading credentials when `-tun` is set. Root is supplied by the caller; the headless TUN controller does not launch an authorization dialog.
@@ -49,7 +51,7 @@ Good: one open SOCKS stream survives TUN on/off/on with no extra authentication.
 - `engine/tun_controller_linux_test.go`: actual synchronous Dial-to-Update reentry, blocked upstream Close, late DNS/Dial, canceled late creation, preserved already-canceled state and cleanup failure gate. Run with `-race`.
 - `cmd/vpn-headless/main_tun_test.go`: permission/flag checks before input, independent TUN status, retained proxy sessions, no-proxy failure and engine/controller cleanup order.
 - Private-bus tests in `engine/dns_resolved_linux_test.go`: sender/serial identity, unique-owner pinning, cancel-and-wait, explicit rejection and outcome-unknown disconnection.
-- `build/linux/resolved-isolated-test.sh`: separate network/mount namespaces and private system bus; actual split DNS, UDP/TCP DNS, two attachments, policy replacement, SIGSTOP/cancel/SIGCONT and crash link cleanup. These tests must not connect to the host bus or modify host DNS.
+- `build/linux/resolved-isolated-test.sh`: separate network/mount namespaces and private system bus; actual split DNS, UDP/TCP DNS, two attachments, policy replacement, SIGSTOP/cancel/SIGCONT and crash link cleanup. `ECS_WORKER_TEST_BIN` adds `TestLinuxWorkerResolvedCancellation` for attach/update and `TestLinuxWorkerRequestLifetime` for post-reply traffic. These tests must not connect to the host bus or modify host DNS. Actual resolved queries use `.test` or `.internal`; systemd v255 rejects `.invalid` before routing to DNS links, so `.invalid` is unsuitable for this positive-path fixture.
 - `build/linux/headless-smoke-test.sh --tun-isolated`: client and synthetic VPN gateway in separate network namespaces so direct kernel routes cannot bypass TUN. Check TCP/half-close, UDP, DNS, proxies, no-proxy and TERM/INT/KILL cleanup. The GUI backend test retains SOCKS/HTTP streams through real Worker TUN toggles and checks authentication count plus cache-disabled resolved queries.
 - `build/linux/gui-interaction-test.sh`: actual window saves fresh defaults, then sets proxy mode through accessibility controls, connects, disconnects and closes. Shared mode tests cover persistence failure and authorization refusal rollback. The privileged test harness is not evidence of real polkit-dialog interaction or live-gateway support.
 

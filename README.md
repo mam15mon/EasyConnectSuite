@@ -105,7 +105,7 @@ printf '%s\n' "$vpn_password" | sudo -n ./vpn-headless -server vpn.example.com -
 unset vpn_password
 ```
 
-通过 Ctrl+C 或 SIGTERM 停止并清理自有接口、路由和 DNS；系统清理失败会报告错误。`-protocol` 可选 `easyconnect`、`univpn`、`topsec`。TopSAP Linux 身份算法依据官方 Linux 客户端实现，需要读取根磁盘序列号或 DMI UUID；普通用户会请求管理员授权，root 直接读取。没有可核对硬件身份时明确失败，不使用随机注册文件或用户指定身份。身份原文和摘要均不写日志或配置。
+通过 Ctrl+C 或 SIGTERM 停止并清理自有接口、路由和 DNS；系统清理失败会报告错误。`-protocol` 可选 `easyconnect`、`univpn`、`topsec`。TopSAP Linux 身份算法依据官方 Linux 客户端实现，需要读取根磁盘序列号或 DMI UUID；GUI 普通用户会请求管理员授权，headless 的 TopSAP 模式须用 `sudo` 启动（包括仅代理模式）。没有可核对硬件身份时明确失败，不使用随机注册文件或用户指定身份。身份原文和摘要均不写日志或配置。
 
 验证分为三协议模拟网关、隔离 Linux 内核/真实 resolved/Worker 测试、真实网关三层，具体通过记录随 Release 提供。Linux 真实网关、实体桌面授权弹窗和长期稳定性尚未验收；其他 Linux 发行版和 DNS 管理器也未验证。Linux Release 提供 GUI 和 headless 的 `.tar.gz` 压缩包，尚无 deb/rpm 安装包。
 
