@@ -177,6 +177,11 @@ func (a *App) startConnectionID(id string, start func(engine.Options) (vpnEngine
 		a.mu.Unlock()
 		return "当前平台 TUN 尚未完成，请在连接设置中关闭 TUN 并启用本地代理"
 	}
+	if !a.GetPlatformInfo().TUNSupported && p.DisableProxy {
+		log.Printf("[VPN pid=%d profile=%q] stage=start_rejected reason=proxy_disabled canceled=false", os.Getpid(), p.ID)
+		a.mu.Unlock()
+		return "当前平台请先在连接设置中启用本地代理"
+	}
 	if p.Server == "" || p.Username == "" {
 		a.mu.Unlock()
 		return "配置不完整：服务器地址或用户名为空"

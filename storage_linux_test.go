@@ -75,3 +75,31 @@ func TestLinuxImportedTUNRequiresExplicitDisableBeforeConnecting(t *testing.T) {
 	}
 	a.stopConnection(id)
 }
+
+func TestLinuxImportedDisabledProxyRequiresExplicitEnable(t *testing.T) {
+	setTestStorage(t)
+	a := multiTestApp(t)
+	a.appConfig.Profiles[0].DisableProxy = true
+	id := a.appConfig.Profiles[0].ID
+	started := false
+	start := func(o engine.Options) (vpnEngine, error) {
+		started = true
+		if o.Config.SocksBind == "" || o.Config.HTTPBind == "" {
+			t.Fatal("proxy listeners disabled")
+		}
+		e := &fakeVPNEngine{opts: o}
+		o.OnStatus(engine.Status{Phase: engine.PhaseConnected})
+		return e, nil
+	}
+	result := a.startConnectionID(id, start)
+	if !strings.Contains(result, "启用本地代理") || started || !a.appConfig.Profiles[0].DisableProxy {
+		t.Fatalf("disabled proxy: result=%q started=%t disabled=%t", result, started, a.appConfig.Profiles[0].DisableProxy)
+	}
+	if err := a.SetProxyEnabled(true); err != nil {
+		t.Fatal(err)
+	}
+	if result = a.startConnectionID(id, start); result != "OK" || !started {
+		t.Fatalf("proxy connection: %q started=%t", result, started)
+	}
+	a.stopConnection(id)
+}
