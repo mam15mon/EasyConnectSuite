@@ -60,7 +60,7 @@ TopSAP 标准模式已接入 Windows、macOS 和 Linux GUI/headless。协议核�
 
 `getFeatureCodes`（`0xb0f06`）追加固定后缀 `lUoYuAncHeNtIaNkAijWn` 并计算 MD5。原生 `GetParamForAuthRequest` 在 `0xfa870` 起将 32 位十六进制摘要转换为 16 字节，再 Base64 和 URL 编码，写入 S_CODE。Go 直接对同一 16 字节摘要执行 Base64，再由表单编码处理转义。
 
-`build/linux/topsec-device-reference-test.sh` 下载并校验上述哈希，只提取该库到临时目录。独立 C++ 测试通过原生完整身份函数及原生摘要转换函数处理两种合成输入，检查磁盘优先顺序、DMI 分支和以下固定输出；拦截硬件调用，并在原生计算期间用 seccomp 禁止真实文件打开、命令执行和网络连接。随后运行 Go 同向量测试。该脚本不读取真实机器身份，也不将官方二进制放入交付产物。
+`build/linux/topsec-device-reference-test.sh` 接收已准备的官方包并校验上述哈希，只提取该库到临时目录。独立 C++ 测试通过原生完整身份函数及原生摘要转换函数处理两种合成输入，检查磁盘优先顺序、DMI 分支和以下固定输出；拦截硬件调用，并在原生计算期间用 seccomp 禁止真实文件打开、命令执行和网络连接。随后运行 Go 同向量测试。该脚本不读取真实机器身份，也不将官方二进制放入交付产物。
 
 | 合成输入 | S_CODE |
 | --- | --- |
@@ -72,3 +72,5 @@ TopSAP 标准模式已接入 Windows、macOS 和 Linux GUI/headless。协议核�
 Linux Go 回归覆盖读取顺序、字面向量、未知硬件明确失败、日志脱敏、辅助进程输出校验、授权等待取消、读取等待取消和已启动辅助入口的父进程死亡清理。跨平台适配器继续运行模拟网关 TCP/UDP 与三协议隔离检查；它们不证明 Linux/macOS 已通过真实网关认证，也不证明所有实体硬件都可读取上述身份。
 
 独立原生对照需在 Linux x86-64 准备 C++ 编译器、Go 和上文官方 Debian 包，然后运行 `bash build/linux/topsec-device-reference-test.sh /path/to/TopSAP-3.6.3.32.2.22375_amd64.deb`。脚本先验证包与库的固定哈希，再以纯合成输入执行原生函数；不安装官方客户端，也不读取真实硬件身份。GitHub 托管 Runner 连接官方下载站曾超时，因此发布 CI 保留 Go 向量与 race，原生对照在具备该包的独立 Linux 环境执行，具体结果和环境记录在发布验收中。
+
+2026-11-11 已在用户指定的 Ubuntu 26.04.1 / x86-64 ECS 上通过原生磁盘、DMI 两组对照和 Go 同向量回归（Go 1.25.7）。探针将库初始化时访问的四个日志标志文件模拟为不存在，既不读取也不创建官方配置；硬件合成输入与计算期间的 seccomp 限制保持生效。此结果验证上述库版本的算法一致性，真实 TopSAP 网关仍未验收。
