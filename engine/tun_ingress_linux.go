@@ -146,7 +146,10 @@ func startLinuxTUNIngressWithDNS(ctx context.Context, spec TUNSpec, service TUNB
 		return
 	}
 	obj.prefix = fmt.Sprintf("198.19.128.%d/30", spec.Slot*4+1)
-	obj.dns = fmt.Sprintf("198.19.128.%d", spec.Slot*4+2)
+	// The system stack maps TCP destinations inside its interface prefix to
+	// loopback. Keep the DNS endpoint outside that prefix so both transports
+	// reach the same attachment's DNS handler with their original destination.
+	obj.dns = fmt.Sprintf("198.19.129.%d", spec.Slot*4+2)
 	backend := &linuxRoutes{device: file, name: obj.name, index: index, ref: spec}
 	if call != nil {
 		backend.dnsOwner = &resolvedDNSOwner{index: index, server: obj.dns, ref: spec, call: call, ctx: attachCtx, verify: func() error {

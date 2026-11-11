@@ -111,7 +111,7 @@ PY
     ifindex=$(ip -j link show dev "$iface" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["ifindex"])')
     resolvectl domain "$iface" | grep -q '~synthetic.internal'
     dns_ip=$(resolvectl dns "$iface" | awk '{print $NF}')
-    [[ "$dns_ip" == 198.19.128.* ]]
+    [[ "$dns_ip" == 198.19.129.* ]]
     timeout 15s resolvectl query --type=A --cache=no synthetic.internal >"$tun_work/dns-$mode.log"
     grep -q '10.90.0.3' "$tun_work/dns-$mode.log"
     python3 - "$mode" "$dns_ip" <<'PY'

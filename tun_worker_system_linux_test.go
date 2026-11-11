@@ -232,7 +232,7 @@ func TestLinuxManagerWorkerLifecycle(t *testing.T) {
 	request := new(dns.Msg)
 	request.SetQuestion("synthetic.invalid.", dns.TypeA)
 	client := &dns.Client{Net: "udp", Timeout: 5 * time.Second}
-	response, _, err := client.Exchange(request, "198.19.128.30:53")
+	response, _, err := client.Exchange(request, "198.19.129.30:53")
 	if err != nil {
 		t.Fatalf("DNS over worker: %v", err)
 	}
