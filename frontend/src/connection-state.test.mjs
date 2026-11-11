@@ -420,3 +420,10 @@ test('another profile event does not discard the selected profile status', async
   await action;
   assert.equal(state.currentStatus.state, 'connected');
 });
+
+
+test('connection list event updates selected profile detail', () => {
+  const state = workspace();
+  state.receiveConnections([{profileId:'a', running:true, state:'connected'}]);
+  assert.equal(state.currentStatus.state, 'connected');
+});

@@ -269,6 +269,8 @@ function receiveConnections(statuses) {
   connectionRevision++;
   connectionListRevision++;
   connectionStatuses = statuses || [];
+  const selected = connectionStatuses.find(status => status.profileId === activeProfile?.id);
+  if (selected) updateStatusUI(selected);
   renderConnections();
 }
 
