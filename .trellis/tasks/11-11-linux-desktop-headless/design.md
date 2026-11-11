@@ -67,3 +67,7 @@ GitHub Actions 隔离网络、挂载命名空间和私有系统总线中运行�
 ### 系统总线连接队列饱和的实测
 
 GitHub Ubuntu 24.04 Linux runner 的受控 Unix 域套接字测试将监听队列设为 0 并占满，调用现有系统总线连接入口。该环境立即返回 `resource temporarily unavailable`，请求被分类为未发送；没有进入认证或发送 DNS 请求。测试记录在 `TestResolvedSystemCallSaturatedBusQueue`，工作流会输出结果。这只覆盖本地 Unix 套接字队列饱和这一场景，不证明其他 D-Bus 传输、地址或内核实现的拨号均可被上下文取消。仍需解决已发送请求的完成证明、索引复用、并发所有权和异常恢复，用户入口继续禁用。
+
+### Linux 路由删除属性的隔离验证
+
+GitHub Ubuntu 24.04 的隔离网络命名空间中，测试先添加 metric 41002、protocol 187 的路由，再按相同前缀和网卡但 metric 41001、protocol 186 请求删除；内核返回 `no such process`，原路由保留。随后以完全相同的属性删除成功。该测试只证明两个属性同时不同时的实测结果；不能区分相同属性的重新创建、不能证明其他内核版本行为，也不能证明逐项属性都会参与匹配。因此路由属性本身不足以解决 ABA 和跨进程所有权，Linux 在线路由删减仍未启用。
