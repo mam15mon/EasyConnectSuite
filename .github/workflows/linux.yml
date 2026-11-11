@@ -33,13 +33,15 @@ jobs:
         run: npm run build
       - name: Test Linux packages
         run: go test -tags webkit2_41 ./...
-      - name: Test Linux TUN device in isolated network namespace
+      - name: Build Linux system test binaries
         run: |
           go test -c -o "$RUNNER_TEMP/linux-engine-test" ./engine
+          go test -tags webkit2_41 -c -o "$RUNNER_TEMP/linux-worker-test" .
+      - name: Test Linux TUN device in isolated network namespace
+        run: |
           sudo env ECS_LINUX_TUN_SYSTEM_TEST=1 unshare --net "$RUNNER_TEMP/linux-engine-test" -test.run '^TestLinux(TUNDeviceOwnership|RoutesOwnership|RouteDeletionMatching|RoutesConcurrentConflict|RoutesPartialFailureClosesOwner|RoutesPartialFailurePreservesCloseError|TUNCrashCleanup|TUNConfiguredPacket|TUNConfigureFailureCleansDevice|TUNBlockedReadCloses|TUNIngressTCPUDP|TUNIngressPartialRouteFailure|TUNIngressDNSLifecycle|TUNIngressDNSFailureCleanup)$' -test.v
       - name: Test real resolved with isolated TUN and private D-Bus
         run: |
-          go test -tags webkit2_41 -c -o "$RUNNER_TEMP/linux-worker-test" .
           sudo env ECS_HOST_NET_NS="$(readlink /proc/self/ns/net)" ECS_HOST_MNT_NS="$(readlink /proc/self/ns/mnt)" ECS_TEST_BIN="$RUNNER_TEMP/linux-engine-test" ECS_WORKER_TEST_BIN="$RUNNER_TEMP/linux-worker-test" unshare --mount --net bash build/linux/resolved-isolated-test.sh
       - name: Test Linux TUN worker in isolated network namespace
         if: ${{ !cancelled() }}
