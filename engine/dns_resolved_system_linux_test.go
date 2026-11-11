@@ -150,22 +150,24 @@ func resolveThroughService(t *testing.T, conn *dbus.Conn, hostname, address stri
 	}
 }
 
+// systemd v255 dns_name_dont_resolve rejects .invalid before selecting a link.
+// Use .test so these assertions exercise real split-DNS transport.
 func TestResolvedRealIsolatedLinkLifecycle(t *testing.T) {
 	conn := isolatedResolved(t)
 	spec := linuxTestSpec()
 	spec.Slot = 1
 	spec.Prefixes = []string{"198.18.61.0/24"}
-	spec.Names = []string{"example.invalid"}
+	spec.Names = []string{"example.test"}
 	first, err := StartLinuxTUNIngress(context.Background(), spec, resolvedAnswerBackend{answer: "198.18.61.2"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer first.Close()
-	assertResolvedLink(t, conn, first, "example.invalid")
-	resolveThroughService(t, conn, "host.example.invalid", "198.18.61.2")
+	assertResolvedLink(t, conn, first, "example.test")
+	resolveThroughService(t, conn, "host.example.test", "198.18.61.2")
 	for _, network := range []string{"udp", "tcp"} {
 		request := new(dns.Msg)
-		request.SetQuestion("direct.example.invalid.", dns.TypeA)
+		request.SetQuestion("direct.example.test.", dns.TypeA)
 		reply, _, err := (&dns.Client{Net: network, Timeout: 5 * time.Second}).Exchange(request, net.JoinHostPort(first.dns, "53"))
 		if err != nil || reply == nil || len(reply.Answer) != 1 {
 			t.Fatalf("TUN %s DNS: %v %v", network, reply, err)
@@ -179,24 +181,24 @@ func TestResolvedRealIsolatedLinkLifecycle(t *testing.T) {
 	secondSpec.Ref.Profile = "second"
 	secondSpec.Ref.Attachment = "second"
 	secondSpec.Prefixes = []string{"198.18.62.0/24"}
-	secondSpec.Names = []string{"other.invalid"}
+	secondSpec.Names = []string{"other.test"}
 	second, err := StartLinuxTUNIngress(context.Background(), secondSpec, resolvedAnswerBackend{answer: "198.18.62.2"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer second.Close()
-	assertResolvedLink(t, conn, second, "other.invalid")
+	assertResolvedLink(t, conn, second, "other.test")
 	oldIndex := first.backend.(*linuxRoutes).index
 	if err = first.Close(); err != nil {
 		t.Fatal(err)
 	}
 	assertResolvedLinkGone(t, conn, oldIndex)
-	assertResolvedLink(t, conn, second, "other.invalid")
-	resolveThroughService(t, conn, "after-close.other.invalid", "198.18.62.2")
+	assertResolvedLink(t, conn, second, "other.test")
+	resolveThroughService(t, conn, "after-close.other.test", "198.18.62.2")
 	// Policy replacement deletes the old owned link before creating a new one.
 	spec.Policy++
 	spec.Prefixes = []string{"198.18.63.0/24"}
-	spec.Names = []string{"updated.invalid"}
+	spec.Names = []string{"updated.test"}
 	replacement, err := StartLinuxTUNIngress(context.Background(), spec, resolvedAnswerBackend{answer: "198.18.63.2"})
 	if err != nil {
 		t.Fatal(err)
@@ -205,9 +207,9 @@ func TestResolvedRealIsolatedLinkLifecycle(t *testing.T) {
 	if replacement.backend.(*linuxRoutes).index == oldIndex {
 		t.Fatal("normal interface allocation unexpectedly reused deleted index")
 	}
-	assertResolvedLink(t, conn, replacement, "updated.invalid")
-	resolveThroughService(t, conn, "host.updated.invalid", "198.18.63.2")
-	assertResolvedLink(t, conn, second, "other.invalid")
+	assertResolvedLink(t, conn, replacement, "updated.test")
+	resolveThroughService(t, conn, "host.updated.test", "198.18.63.2")
+	assertResolvedLink(t, conn, second, "other.test")
 	for _, ingress := range []*tunIngress{replacement, second} {
 		index := ingress.backend.(*linuxRoutes).index
 		if err = ingress.Close(); err != nil {
@@ -232,7 +234,7 @@ func TestResolvedRealIsolatedCanceledRequestKeepsInterface(t *testing.T) {
 	otherSpec.Slot = 3
 	otherSpec.Ref.Profile = "unaffected"
 	otherSpec.Ref.Attachment = "unaffected"
-	otherSpec.Names = []string{"unaffected.invalid"}
+	otherSpec.Names = []string{"unaffected.test"}
 	other, err := StartLinuxTUNIngress(context.Background(), otherSpec, resolvedAnswerBackend{answer: "198.18.62.2"})
 	if err != nil {
 		t.Fatal(err)
@@ -249,7 +251,7 @@ func TestResolvedRealIsolatedCanceledRequestKeepsInterface(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	spec := linuxTestSpec()
-	spec.Names = []string{"cancel.invalid"}
+	spec.Names = []string{"cancel.test"}
 	result := make(chan error, 1)
 	go func() {
 		ingress, err := startLinuxTUNIngressWithDNS(ctx, spec, resolvedAnswerBackend{answer: "198.18.61.2"}, client.Call)
@@ -300,8 +302,8 @@ func TestResolvedRealIsolatedCanceledRequestKeepsInterface(t *testing.T) {
 		t.Fatal("request did not complete after resumed service")
 	}
 	assertResolvedLinkGone(t, conn, index)
-	assertResolvedLink(t, conn, other, "unaffected.invalid")
-	resolveThroughService(t, conn, "after-cancel.unaffected.invalid", "198.18.62.2")
+	assertResolvedLink(t, conn, other, "unaffected.test")
+	resolveThroughService(t, conn, "after-cancel.unaffected.test", "198.18.62.2")
 }
 
 func TestResolvedRealIsolatedCrashHelper(t *testing.T) {
@@ -311,7 +313,7 @@ func TestResolvedRealIsolatedCrashHelper(t *testing.T) {
 	}
 	isolatedResolved(t)
 	spec := linuxTestSpec()
-	spec.Names = []string{"crash.invalid"}
+	spec.Names = []string{"crash.test"}
 	ingress, err := StartLinuxTUNIngress(context.Background(), spec, resolvedAnswerBackend{answer: "198.18.61.2"})
 	if err != nil {
 		t.Fatal(err)

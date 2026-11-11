@@ -23,6 +23,9 @@ func startWorkerIngress(ctx context.Context, spec engine.TUNSpec, backend engine
 // is independent after successful creation, but cancellation during setup must
 // stop the next DNS mutation after any already-sent request actually completes.
 func createLinuxWorkerIngress(ctx context.Context, spec engine.TUNSpec, backend engine.TUNBackend) (workerIngress, context.CancelFunc, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	lifetime, cancel := context.WithCancel(context.Background())
 	stop := context.AfterFunc(ctx, cancel)
 	current, err := engine.StartLinuxTUNIngress(lifetime, spec, backend)
