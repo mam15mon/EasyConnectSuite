@@ -110,9 +110,18 @@ func privilegedLinuxDeviceCode(ctx context.Context, op *vpnlog.Operation) (strin
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = log.Writer()
-	// After pkexec changes uid the parent may not signal it. Pipe EOF asks the
-	// helper to return even if its read-only hardware syscall has not returned.
-	cmd.Cancel = cancelPipe.Close
+	cmd.Cancel = func() error {
+		// pkexec does not read stdin while waiting for authorization, and its
+		// real uid still permits the caller to terminate it at that stage.
+		_ = cancelPipe.Close()
+		err := cmd.Process.Kill()
+		if errors.Is(err, os.ErrPermission) {
+			// Once all uids change, EOF terminates the privileged helper even
+			// when its read-only hardware syscall has not returned.
+			return nil
+		}
+		return err
+	}
 	op.Step("request_admin_authorization")
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("TopSAP Linux 管理员授权启动失败: %w", err)

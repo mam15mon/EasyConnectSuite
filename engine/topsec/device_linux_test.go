@@ -180,8 +180,17 @@ func TestLinuxPrivilegedDeviceResultValidation(t *testing.T) {
 // The helper process intentionally simulates an uninterruptible hardware read.
 // Its control listener must still return so main can terminate the process.
 func TestLinuxDeviceHelperProcess(t *testing.T) {
-	if os.Getenv("ECS_TEST_DEVICE_PROCESS") != "helper" {
+	mode := os.Getenv("ECS_TEST_DEVICE_PROCESS")
+	if mode != "helper" && mode != "authorization" {
 		return
+	}
+	if mode == "authorization" {
+		// Model pkexec's authorization wait: no reader is consuming stdin.
+		if err := os.WriteFile(os.Getenv("ECS_TEST_DEVICE_PID"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+			os.Exit(73)
+		}
+		time.Sleep(time.Hour)
+		os.Exit(76)
 	}
 	err := serveLinuxDeviceCode(os.Stdin, os.Stdout, func(context.Context) (string, error) {
 		if err := os.WriteFile(os.Getenv("ECS_TEST_DEVICE_PID"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
@@ -223,9 +232,16 @@ func waitDeviceHelperPID(t *testing.T, path string) int {
 }
 
 func TestLinuxDeviceHelperCancellation(t *testing.T) {
+	for _, mode := range []string{"helper", "authorization"} {
+		t.Run(mode, func(t *testing.T) { testLinuxDeviceHelperCancellation(t, mode) })
+	}
+}
+
+func testLinuxDeviceHelperCancellation(t *testing.T, mode string) {
+	t.Helper()
 	installDevicePKExec(t, "exec \"$1\" -test.run '^TestLinuxDeviceHelperProcess$'")
 	pidPath := filepath.Join(t.TempDir(), "pid")
-	t.Setenv("ECS_TEST_DEVICE_PROCESS", "helper")
+	t.Setenv("ECS_TEST_DEVICE_PROCESS", mode)
 	t.Setenv("ECS_TEST_DEVICE_PID", pidPath)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
