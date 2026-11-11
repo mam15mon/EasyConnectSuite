@@ -243,6 +243,7 @@ let cachedProfiles = [];
 let platformInfo = {tunSupported: true, logDir: '%APPDATA%\\VPN\\logs'};
 let connectionStatuses = [];
 let connectionRevision = 0;
+let connectionRequest = 0;
 let activeProfile = null;
 let modeSaving = false;
 let currentStatus = { running: false, state: 'disconnected' };
@@ -811,8 +812,9 @@ function updateProtocolFields() {
 formProtocol.addEventListener('change', updateProtocolFields);
 async function refreshConnections() {
   const revision = connectionRevision;
+  const request = ++connectionRequest;
   const statuses = await window.go.main.App.GetConnections();
-  if (revision !== connectionRevision) return;
+  if (revision !== connectionRevision || request !== connectionRequest) return;
   connectionStatuses = statuses;
   connectionRevision++;
   renderConnections();

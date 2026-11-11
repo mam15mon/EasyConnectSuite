@@ -22,7 +22,7 @@ function workspace(api = {}) {
     modeSaving:false, cachedProfiles:[{id:'a',name:'A'},{id:'b',name:'B'}],
     selectionVersion:0, selectionPending:false, activeProfile:{id:'a'}, workspacePage:'resources',
     profileSelect:{}, routesFilter:{}, currentStatus:{profileId:'a',running:false,state:'disconnected'},
-    connectionStatuses:[], connectionRevision:0, selectionQueue:Promise.resolve(), profileResources:new Map(), resourceRequest:0,
+    connectionStatuses:[], connectionRevision:0, connectionRequest:0, selectionQueue:Promise.resolve(), profileResources:new Map(), resourceRequest:0,
     pendingActions:new Set(), preparingConnections:new Map(), actionVersions:new Map(), rendered:[], notifications:[],
     document:{getElementById:()=>({classList:{add(){},remove(){}}})},
     window:{go:{main:{App:api}}}, renderConnections(){},
@@ -360,5 +360,18 @@ test('newer connection snapshot wins when requests complete out of order', async
   await second;
   old.resolve([{profileId:'a', running:true, state:'connected'}]);
   await first;
+  assert.equal(state.connectionStatuses[0].state, 'disconnected');
+});
+
+
+test('newer requested connection snapshot wins even if the older finishes first', async () => {
+  const old = deferred(), recent = deferred();
+  let calls = 0;
+  const state = workspace({GetConnections:()=>++calls === 1 ? old.promise : recent.promise});
+  const first = state.refreshConnections(), second = state.refreshConnections();
+  old.resolve([{profileId:'a', running:true, state:'connected'}]);
+  await first;
+  recent.resolve([{profileId:'a', running:false, state:'disconnected'}]);
+  await second;
   assert.equal(state.connectionStatuses[0].state, 'disconnected');
 });
