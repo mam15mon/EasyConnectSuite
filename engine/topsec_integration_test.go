@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,11 +30,11 @@ import (
 )
 
 // The mock uses independent headers and the existing IPv4 echo endpoint. It
-// exercises real gVisor TCP/UDP without installing a Windows TUN or routes.
+// exercises real gVisor TCP/UDP without installing a system TUN or routes.
 func setupTopSAPIntegrationClient(t *testing.T, c *topSAPClient) error {
 	t.Helper()
 	err := c.Setup()
-	if err != nil && err.Error() == "TopSAP 未找到已验证的物理 PCI 网卡标识" {
+	if runtime.GOOS == "windows" && err != nil && err.Error() == "TopSAP 未找到已验证的物理 PCI 网卡标识" {
 		t.Skip("host has no physical PCI identity; synthetic protocol and device enumeration tests run in engine/topsec")
 	}
 	return err
@@ -41,6 +42,7 @@ func setupTopSAPIntegrationClient(t *testing.T, c *topSAPClient) error {
 
 func topSAPGateway(t *testing.T, reject bool) (*topSAPClient, *atomic.Int32) {
 	t.Helper()
+	prepareTopSAPDeviceTest(t)
 	var mu sync.Mutex
 	var conns []net.Conn
 	logins := &atomic.Int32{}
@@ -233,6 +235,7 @@ func TestTopSAPAdapterRefusalIsTerminal(t *testing.T) {
 }
 
 func TestTopSAPMissingResourcesFailureIsPersisted(t *testing.T) {
+	prepareTopSAPDeviceTest(t)
 	logPath := filepath.Join(t.TempDir(), "engine.log")
 	capture := &Engine{opts: Options{LogFile: logPath}}
 	capture.startLogCapture()
