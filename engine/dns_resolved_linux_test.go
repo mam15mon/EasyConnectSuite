@@ -1,12 +1,14 @@
 package engine
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"net"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -415,5 +417,90 @@ func TestResolvedSystemCallCanceledDuringAuthentication(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("authentication did not stop after cancellation")
+	}
+}
+
+func TestResolvedSystemCallCanceledDuringHello(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bus.sock")
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	t.Setenv("DBUS_SYSTEM_BUS_ADDRESS", "unix:path="+path)
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- resolvedSystemCall(ctx, "SetLinkDNS", int32(7), []resolvedAddress{}) }()
+	var peer net.Conn
+	select {
+	case peer = <-accepted:
+		defer peer.Close()
+	case <-time.After(5 * time.Second):
+		t.Fatal("bus connection did not arrive")
+	}
+	if err = peer.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(peer)
+	line, err := reader.ReadString('\n')
+	if err != nil || !strings.Contains(line, "AUTH") {
+		t.Fatalf("initial authentication: %q %v", line, err)
+	}
+	if _, err = peer.Write([]byte("REJECTED EXTERNAL\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	line, err = reader.ReadString('\n')
+	if err != nil || !strings.HasPrefix(line, "AUTH EXTERNAL") {
+		t.Fatalf("external authentication: %q %v", line, err)
+	}
+	if _, err = peer.Write([]byte("DATA\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	line, err = reader.ReadString('\n')
+	if err != nil || !strings.HasPrefix(line, "DATA ") {
+		t.Fatalf("authentication data: %q %v", line, err)
+	}
+	if _, err = peer.Write([]byte("OK 0123456789abcdef0123456789abcdef\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	line, err = reader.ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.HasPrefix(line, "NEGOTIATE_UNIX_FD") {
+		if _, err = peer.Write([]byte("ERROR unsupported\r\n")); err != nil {
+			t.Fatal(err)
+		}
+		line, err = reader.ReadString('\n')
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if line != "BEGIN\r\n" {
+		t.Fatalf("expected BEGIN, got %q", line)
+	}
+	msg, err := dbus.DecodeMessage(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Headers[dbus.FieldMember].Value() != "Hello" {
+		t.Fatalf("expected Hello, got %v", msg.Headers[dbus.FieldMember])
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) || !errors.Is(err, errResolvedNotSent) || errors.Is(err, errResolvedOutcomeUnknown) {
+			t.Fatalf("canceled Hello: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Hello did not stop after cancellation")
 	}
 }
