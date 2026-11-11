@@ -501,3 +501,35 @@ DNS 探测移出 TUN 操作锁；初次附着静态域名后后台发现；核�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 19: 四端 GitHub Release 发布与测试验收
+<!-- trellis-session: v=2 fp=96aa2ab33cda95ca -->
+
+**Date**: 2026-11-11
+**Task**: 四端 GitHub Release 发布与测试验收
+**Branch**: `codex/linux-desktop-headless`
+
+### Summary
+
+补齐桌面三端独立核心模块测试及 vet，修正 Windows 权限断言；同提交四端 Actions 全部通过并发布六个产物与 SHA256SUMS，匿名链接均返回 200。Linux 仅代理、Android 原型、实网与实体设备边界明确记录。
+
+### Main Changes
+
+- Release: https://github.com/mam15mon/EasyConnectSuite/releases/tag/preview-2026.11.11
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `82d926d` | 补齐三桌面端核心模块测试并修正 Windows 权限断言 |
+| `240e941` | 说明四端下载入口和实际功能验证边界 |
+
+### Testing
+
+- [OK] 根模块 228 通过、4 系统夹具跳过；核心模块 473 通过；前端 33 通过；两个模块 vet 通过。
+- [OK] 提交 240e941 的 Windows、macOS Intel/ARM、Linux、Android Actions 全部成功。
+
+### Status
+
+[OK] **Completed**
