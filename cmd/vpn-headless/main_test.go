@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -156,5 +157,43 @@ func TestRunCancellationWhileReadingCredentials(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("credential read did not respond to cancellation")
+	}
+}
+
+type overlapWriter struct {
+	active     atomic.Int32
+	overlapped atomic.Bool
+	writes     atomic.Int32
+}
+
+func (w *overlapWriter) Write(p []byte) (int, error) {
+	if w.active.Add(1) != 1 {
+		w.overlapped.Store(true)
+	}
+	time.Sleep(time.Millisecond)
+	w.writes.Add(1)
+	w.active.Add(-1)
+	return len(p), nil
+}
+
+func TestRunSerializesConcurrentStatusOutput(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w := &overlapWriter{}
+	session := &fakeEngine{}
+	err := run(ctx, []string{"-server", "x", "-username", "u"}, strings.NewReader("secret\n"), w, &bytes.Buffer{}, func(o engine.Options) (runningEngine, error) {
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for i := 0; i < 32; i++ {
+			wg.Add(1)
+			go func() { defer wg.Done(); <-start; o.OnStatus(engine.Status{Phase: engine.PhaseConnecting}) }()
+		}
+		close(start)
+		wg.Wait()
+		cancel()
+		return session, nil
+	})
+	if err != nil || !session.stopped.Load() || w.overlapped.Load() || w.writes.Load() != 32 {
+		t.Fatalf("status output: err=%v stopped=%t overlap=%t writes=%d", err, session.stopped.Load(), w.overlapped.Load(), w.writes.Load())
 	}
 }

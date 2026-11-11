@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"EasyConnectSuite/engine"
@@ -123,9 +124,12 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 		conf.DisableKeepAlive = true
 	}
 	failed := make(chan struct{}, 1)
+	var outputMu sync.Mutex
 	opts := engine.Options{ConnectionID: "headless", Config: conf, Context: ctx, Domain: *domain,
 		OnStatus: func(status engine.Status) {
+			outputMu.Lock()
 			fmt.Fprintf(output, "状态: %s\n", status.Phase)
+			outputMu.Unlock()
 			if status.Phase == engine.PhaseError {
 				select {
 				case failed <- struct{}{}:
