@@ -163,3 +163,24 @@ func TestStageClockPreservesReconnectCompatibility(t *testing.T) {
 		}
 	}
 }
+
+func TestProxySwitchTargetsExplicitProfile(t *testing.T) {
+	a := multiTestApp(t)
+	a.appConfig.ActiveProfileID = "b"
+	if err := a.SetProfileProxyEnabled("a", false); err != nil {
+		t.Fatal(err)
+	}
+	if !a.appConfig.Profiles[0].DisableProxy || a.appConfig.Profiles[1].DisableProxy {
+		t.Fatal("wrong profile modified")
+	}
+	a.connections = map[string]*vpnConnection{"a": {status: VPNStatus{Running: true}}}
+	if err := a.SetProfileProxyEnabled("a", true); err == nil {
+		t.Fatal("running target accepted")
+	}
+	if !a.appConfig.Profiles[0].DisableProxy {
+		t.Fatal("running target modified")
+	}
+	if err := a.SetProfileProxyEnabled("missing", true); err == nil {
+		t.Fatal("missing target accepted")
+	}
+}

@@ -396,11 +396,23 @@ func (a *App) GetStatus() VPNStatus {
 func (a *App) SetProxyEnabled(enabled bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.starting || a.status.Running || a.modeOps[a.appConfig.ActiveProfileID] {
+	return a.setProfileProxyEnabledLocked(a.appConfig.ActiveProfileID, enabled)
+}
+
+// SetProfileProxyEnabled updates only the explicitly identified profile.
+func (a *App) SetProfileProxyEnabled(id string, enabled bool) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.setProfileProxyEnabledLocked(id, enabled)
+}
+
+func (a *App) setProfileProxyEnabledLocked(id string, enabled bool) error {
+	c := a.connections[id]
+	if a.starting || a.shuttingDown || a.modeOps[id] || (c != nil && (c.status.Running || c.stopping)) || (id == a.appConfig.ActiveProfileID && a.status.Running) {
 		return fmt.Errorf("请先断开连接，再切换本地代理")
 	}
 	for i := range a.appConfig.Profiles {
-		if a.appConfig.Profiles[i].ID != a.appConfig.ActiveProfileID {
+		if a.appConfig.Profiles[i].ID != id {
 			continue
 		}
 		previous := a.appConfig.Profiles[i].DisableProxy
@@ -411,7 +423,7 @@ func (a *App) SetProxyEnabled(enabled bool) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("请先选择服务器配置")
+	return fmt.Errorf("服务器配置不存在")
 }
 
 // GetInterfaces returns available network adapter names

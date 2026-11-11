@@ -54,6 +54,10 @@ export function SetProfileTUNMode(arg1, arg2) {
   return window['go']['main']['App']['SetProfileTUNMode'](arg1, arg2);
 }
 
+export function SetProfileProxyEnabled(arg1, arg2) {
+  return window['go']['main']['App']['SetProfileProxyEnabled'](arg1, arg2);
+}
+
 export function SetProxyEnabled(arg1) {
   return window['go']['main']['App']['SetProxyEnabled'](arg1);
 }

@@ -31,7 +31,7 @@ export function installPreview(onStatus) {
     GetInterfaces:async()=>['WLAN','以太网'],
     SetActiveProfile:async id=>{ if(!profiles.some(p=>p.id===id)) return false; selected=id; return true; },
     SetProfileTUNMode:async(id,enabled)=>{ const p=profiles.find(p=>p.id===id); if(!p)throw new Error('配置不存在'); p.tunMode=enabled; const status=statuses.get(id); if(status.running){status.tunState=enabled?"attaching":"detaching";emit(id);await new Promise(r=>setTimeout(r,300));status.tunMode=enabled;status.tunState=enabled?"on":"off";status.tunError="";emit(id);} },
-    SetProxyEnabled:async enabled=>{ profiles.find(p=>p.id===selected).disableProxy=!enabled; },
+    SetProfileProxyEnabled:async (id,enabled)=>{ const p=profiles.find(p=>p.id===id); if(!p)throw new Error('配置不存在'); p.disableProxy=!enabled; },
     StartProfileVPN:async id=>{
       const status=statuses.get(id);
       const profile=profiles.find(p=>p.id===id);

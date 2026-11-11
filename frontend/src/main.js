@@ -564,10 +564,11 @@ tunModeToggle.addEventListener('change', async () => {
 
 proxyModeToggle.addEventListener('change', async () => {
   const enabled = proxyModeToggle.checked;
+  const id = activeProfile.id;
   modeSaving = true;
   updateStatusUI(currentStatus);
   try {
-    await window.go.main.App.SetProxyEnabled(enabled);
+    await window.go.main.App.SetProfileProxyEnabled(id, enabled);
     await refreshProfiles();
   } catch (err) {
     showToast(String(err));
