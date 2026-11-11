@@ -12,6 +12,7 @@ cleanup() {
 trap cleanup EXIT
 export XDG_CONFIG_HOME="$work_dir/config"
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
+export GTK_MODULES=atk-bridge
 openbox >"$work_dir/window-manager.log" 2>&1 &
 wm_pid=$!
 for attempt in $(seq 1 100); do
@@ -126,6 +127,7 @@ if [ "$after" -le "$before" ]; then
   echo 'GUI traffic did not pass through the mock tunnel' >&2
   exit 1
 fi
+python3 build/linux/wait-gui-button.py '断开连接'
 xdotool mousemove --window "$window" 1010 87 click 1
 if ! python3 - <<'PY'
 import socket, time
@@ -147,7 +149,7 @@ then
   exit 1
 fi
 # Reconnect and close the actual window while the VPN is active.
-sleep 1
+python3 build/linux/wait-gui-button.py '连接'
 xdotool mousemove --window "$window" 1010 87 click 1
 python3 - <<'PY'
 import socket, time

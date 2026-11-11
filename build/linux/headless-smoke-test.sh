@@ -143,7 +143,7 @@ if [ "$tcp_after" -le "$tcp_before" ]; then
 fi
 
 # Exercise the actual window with the same isolated mock gateway.
-ECS_MOCK_GATEWAY_LOG="$work_dir/gateway.log" timeout -k 5s 90s xvfb-run -a bash build/linux/gui-interaction-test.sh
+ECS_MOCK_GATEWAY_LOG="$work_dir/gateway.log" timeout -k 5s 90s dbus-run-session -- xvfb-run -a bash build/linux/gui-interaction-test.sh
 
 # Verify an explicit rejection ends the real headless process without retries.
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$work_dir/key.pem" \
