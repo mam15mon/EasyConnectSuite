@@ -91,7 +91,7 @@ func TestWorkerBlocksAfterReplacementCleanupFailure(t *testing.T) {
 
 func TestCanceledUpdateKeepsPreviousAttachmentIdentity(t *testing.T) {
 	ref := tunipc.Ref{Profile: "p", Session: "s", Attachment: "a", Policy: 1}
-	manager := newTUNManager()
+	manager := &tunManager{}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	ingress := &remoteTUN{manager: manager, spec: engine.TUNSpec{Ref: ref}}
