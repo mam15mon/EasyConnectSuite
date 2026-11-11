@@ -358,3 +358,50 @@ func TestLinuxRoutesPartialFailurePreservesCloseError(t *testing.T) {
 		t.Fatalf("partial cleanup failure lost: calls=%d result=%+v err=%v", calls, result, err)
 	}
 }
+
+// Check the kernel's deletion matching in an isolated namespace before using
+// route attributes as evidence of ownership. This does not prove ABA safety.
+func TestLinuxRouteDeletionMatching(t *testing.T) {
+	if os.Getenv("ECS_LINUX_TUN_SYSTEM_TEST") != "1" {
+		t.Skip("requires isolated Linux network namespace and TUN privileges")
+	}
+	file, name, err := createLinuxTUN(context.Background(), linuxTestSpec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	link, err := netlink.LinkByName(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = netlink.LinkSetUp(link); err != nil {
+		t.Fatal(err)
+	}
+	_, prefix, _ := net.ParseCIDR("198.18.42.0/24")
+	foreign := netlink.Route{LinkIndex: link.Attrs().Index, Dst: prefix, Scope: netlink.SCOPE_LINK, Table: unix.RT_TABLE_MAIN, Priority: 41002, Protocol: 187}
+	candidate := foreign
+	candidate.Priority = 41001
+	candidate.Protocol = 186
+	if err = netlink.RouteAdd(&foreign); err != nil {
+		t.Fatal(err)
+	}
+	err = netlink.RouteDel(&candidate)
+	routes, listErr := netlink.RouteListFiltered(netlink.FAMILY_V4, &netlink.Route{Dst: prefix, Table: unix.RT_TABLE_MAIN}, netlink.RT_FILTER_DST|netlink.RT_FILTER_TABLE)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if err == nil || len(routes) != 1 || routes[0].Priority != foreign.Priority || routes[0].Protocol != foreign.Protocol {
+		t.Fatalf("different route was removed or modified: delete=%v routes=%+v", err, routes)
+	}
+	t.Logf("different metric and protocol retained: delete=%v", err)
+	// An identical replacement cannot be distinguished by route attributes.
+	candidate = foreign
+	if err = netlink.RouteDel(&candidate); err != nil {
+		t.Fatal(err)
+	}
+	routes, err = netlink.RouteListFiltered(netlink.FAMILY_V4, &netlink.Route{Dst: prefix, Table: unix.RT_TABLE_MAIN}, netlink.RT_FILTER_DST|netlink.RT_FILTER_TABLE)
+	if err != nil || len(routes) != 0 {
+		t.Fatalf("identical route was not deleted: %+v %v", routes, err)
+	}
+	t.Log("identical route attributes do not encode creation identity")
+}

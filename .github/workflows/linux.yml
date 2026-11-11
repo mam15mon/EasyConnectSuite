@@ -36,7 +36,7 @@ jobs:
       - name: Test Linux TUN device in isolated network namespace
         run: |
           go test -c -o "$RUNNER_TEMP/linux-engine-test" ./engine
-          sudo env ECS_LINUX_TUN_SYSTEM_TEST=1 unshare --net "$RUNNER_TEMP/linux-engine-test" -test.run '^TestLinux(TUNDeviceOwnership|RoutesOwnership|RoutesConcurrentConflict|RoutesPartialFailureClosesOwner|RoutesPartialFailurePreservesCloseError|TUNCrashCleanup|TUNConfiguredPacket|TUNConfigureFailureCleansDevice|TUNBlockedReadCloses|TUNIngressTCPUDP|TUNIngressPartialRouteFailure|TUNIngressDNSLifecycle|TUNIngressDNSFailureCleanup)$' -test.v
+          sudo env ECS_LINUX_TUN_SYSTEM_TEST=1 unshare --net "$RUNNER_TEMP/linux-engine-test" -test.run '^TestLinux(TUNDeviceOwnership|RoutesOwnership|RouteDeletionMatching|RoutesConcurrentConflict|RoutesPartialFailureClosesOwner|RoutesPartialFailurePreservesCloseError|TUNCrashCleanup|TUNConfiguredPacket|TUNConfigureFailureCleansDevice|TUNBlockedReadCloses|TUNIngressTCPUDP|TUNIngressPartialRouteFailure|TUNIngressDNSLifecycle|TUNIngressDNSFailureCleanup)$' -test.v
       - name: Test real resolved with isolated TUN and private D-Bus
         run: |
           sudo env ECS_HOST_NET_NS="$(readlink /proc/self/ns/net)" ECS_HOST_MNT_NS="$(readlink /proc/self/ns/mnt)" ECS_TEST_BIN="$RUNNER_TEMP/linux-engine-test" unshare --mount --net bash build/linux/resolved-isolated-test.sh
