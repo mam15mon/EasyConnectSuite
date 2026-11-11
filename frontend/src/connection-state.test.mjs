@@ -317,3 +317,24 @@ test('diagnostic copy exports only the current profile summary and reports clipb
  await state.copyDiagnostics();
  assert.ok(state.notifications.some(s=>s.includes('复制诊断失败')));
 });
+
+test('connected status can precede the end of the pending start action', async () => {
+  const start = deferred(), entered = deferred();
+  const connected = {profileId:'a', running:true, state:'connected'};
+  let stops = 0;
+  const state = workspace({
+    StartProfileVPN:async()=>{entered.resolve(); return start.promise;},
+    StopProfileVPN:async()=>{stops++; return 'OK';},
+    GetConnections:async()=>[connected], GetStatus:async()=>connected,
+    GetProfileVPNResources:async()=>[],
+  });
+  const starting = state.toggleConnection('a');
+  await entered.promise;
+  state.receiveStatus(connected);
+  await state.toggleConnection('a');
+  assert.equal(stops, 0);
+  start.resolve('OK');
+  await starting;
+  await state.toggleConnection('a');
+  assert.equal(stops, 1);
+});
