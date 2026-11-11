@@ -205,7 +205,8 @@ PY
     done
     kill -0 "$resolved_pid"
     ! ip link show dev "$iface" >/dev/null 2>&1
-    ! resolvectl dns | grep -q "Link $ifindex "
+    resolved_dns=$(resolvectl dns)
+    ! grep -q "Link $ifindex " <<<"$resolved_dns"
     ip -o route show table all | sort >"$tun_work/routes-after"
     diff -u "$tun_work/routes-before" "$tun_work/routes-after"
     python3 - <<'PY'
