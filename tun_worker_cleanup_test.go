@@ -12,12 +12,13 @@ import (
 )
 
 type cleanupGuardIngress struct {
-	err    error
-	closed bool
+	err     error
+	closed  bool
+	updated bool
 }
 
 func (i *cleanupGuardIngress) Close() error                    { i.closed = true; return i.err }
-func (i *cleanupGuardIngress) UpdateSpec(engine.TUNSpec) error { return nil }
+func (i *cleanupGuardIngress) UpdateSpec(engine.TUNSpec) error { i.updated = true; return nil }
 
 func TestWorkerRejectsNewAttachmentsAfterCleanupFailure(t *testing.T) {
 	failure := errors.New("synthetic cleanup failure")
@@ -35,6 +36,14 @@ func TestWorkerRejectsNewAttachmentsAfterCleanupFailure(t *testing.T) {
 		if _, err := w.handle(context.Background(), tunipc.Message{Op: op, Ref: second}); !errors.Is(err, failure) {
 			t.Fatalf("%s did not preserve failure: %v", op, err)
 		}
+	}
+	updated := engine.TUNSpec{Ref: second}
+	updated.Policy++
+	if _, err := w.handle(context.Background(), tunipc.Message{Op: "update", Ref: updated.Ref, Spec: &updated}); !errors.Is(err, failure) {
+		t.Fatalf("update did not preserve cleanup failure: %v", err)
+	}
+	if other.updated {
+		t.Fatal("existing attachment updated after unconfirmed cleanup")
 	}
 	if other.closed {
 		t.Fatal("other attachment was closed")
