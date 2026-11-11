@@ -465,7 +465,7 @@ func TestResolvedSystemCallCanceledDuringHello(t *testing.T) {
 		t.Fatal(err)
 	}
 	line, err = reader.ReadString('\n')
-	if err != nil || !strings.HasPrefix(line, "DATA ") {
+	if err != nil || line != "DATA\r\n" && !strings.HasPrefix(line, "DATA ") {
 		t.Fatalf("authentication data: %q %v", line, err)
 	}
 	if _, err = peer.Write([]byte("OK 0123456789abcdef0123456789abcdef\r\n")); err != nil {
