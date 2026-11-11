@@ -9,6 +9,8 @@ import (
 	"runtime/debug"
 	"time"
 
+	"EasyConnectSuite/engine/topsec"
+
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -53,6 +55,13 @@ func setupNamedCrashLog(filename string) {
 }
 
 func main() {
+	if handled, err := topsec.RunDeviceCodeHelper(os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "--tun-worker" {
 		if err := setupWorkerCrashLog(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
