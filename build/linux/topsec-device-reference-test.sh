@@ -40,6 +40,19 @@ static constexpr int disk_fd = 901;
 // These symbols replace only the observed native hardware calls. Unexpected
 // calls fail the test; no real filesystem/device identity is consulted.
 extern "C" FILE *fopen(const char *path, const char *mode) {
+    // The library constructor probes these logging flags before dlopen returns.
+    // Model them as absent; never consult or create the installed client's files.
+    static const char *log_flags[] = {
+        "/opt/sslvpn/config/loglevel0.flag", "/opt/sslvpn/config/loglevel1.flag",
+        "/opt/sslvpn/config/loglevel2.flag", "/opt/sslvpn/config/loglevel3.flag",
+    };
+    for (const char *flag : log_flags) {
+        if (!std::strcmp(path, flag) &&
+            (!std::strcmp(mode, "rb") || !std::strcmp(mode, "a"))) {
+            errno = ENOENT;
+            return nullptr;
+        }
+    }
     if (std::strcmp(path, "/etc/mtab") || std::strcmp(mode, "r")) _exit(81);
     ++mount_reads;
     static char mounts[] = "/dev/ignored1 /boot ext4 rw 0 0\n/dev/sda12 / ext4 rw 0 0\n";
