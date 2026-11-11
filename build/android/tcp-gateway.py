@@ -24,15 +24,18 @@ listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 listener.bind(('10.90.0.3', 12345))
 listener.listen()
 
+def echo_connection(conn):
+    with conn:
+        while True:
+            data = conn.recv(4096)
+            if not data:
+                break
+            conn.sendall(data)
+
 def echo():
     while True:
         conn, _ = listener.accept()
-        with conn:
-            while True:
-                data = conn.recv(4096)
-                if not data:
-                    break
-                conn.sendall(data)
+        threading.Thread(target=echo_connection, args=(conn,), daemon=True).start()
 
 threading.Thread(target=echo, daemon=True).start()
 peer = None

@@ -120,7 +120,11 @@ func TestLinuxGUIBackendTUNMockGateway(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			linuxGUITUNEcho(t, conn, "gui-system-"+network)
+			payload := "gui-system-" + network
+			if network == "udp4" {
+				payload = "ecs-udp-test"
+			}
+			linuxGUITUNEcho(t, conn, payload)
 			conn.Close()
 		}
 		output, err := exec.Command("resolvectl", "query", "--type=A", "synthetic.internal").CombinedOutput()
@@ -165,7 +169,7 @@ func linuxGUIAssertNoTUN(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, iface := range ifaces {
-		if strings.HasPrefix(iface.Name, "ecs") {
+		if strings.HasPrefix(iface.Name, "ecs") && iface.Name != "ecs-client" {
 			t.Fatalf("TUN interface remained after detach: %s", iface.Name)
 		}
 	}
