@@ -217,6 +217,21 @@ func TestLinuxTUNIngressDNSFailureCleanup(t *testing.T) {
 	}
 	for _, rollbackFails := range []bool{false, true} {
 		t.Run(fmt.Sprintf("rollbackFails=%t", rollbackFails), func(t *testing.T) {
+			tunPolicies.Lock()
+			previous := make(map[*tunIngress]bool, len(tunPolicies.claims))
+			for ingress := range tunPolicies.claims {
+				previous[ingress] = true
+			}
+			tunPolicies.Unlock()
+			t.Cleanup(func() {
+				tunPolicies.Lock()
+				defer tunPolicies.Unlock()
+				for ingress := range tunPolicies.claims {
+					if !previous[ingress] {
+						delete(tunPolicies.claims, ingress)
+					}
+				}
+			})
 			other, otherName, err := createLinuxTUN(context.Background(), linuxTestSpec())
 			if err != nil {
 				t.Fatal(err)
