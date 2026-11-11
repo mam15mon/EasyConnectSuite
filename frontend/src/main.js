@@ -244,6 +244,8 @@ let platformInfo = {tunSupported: true, logDir: '%APPDATA%\\VPN\\logs'};
 let connectionStatuses = [];
 let connectionRevision = 0;
 let connectionRequest = 0;
+let connectionListRevision = 0;
+const profileStatusRevisions = new Map();
 let activeProfile = null;
 let modeSaving = false;
 let currentStatus = { running: false, state: 'disconnected' };
@@ -265,12 +267,14 @@ const protocolNames = { easyconnect: 'EasyConnect', univpn: 'UniVPN', topsec: 'T
 
 function receiveConnections(statuses) {
   connectionRevision++;
+  connectionListRevision++;
   connectionStatuses = statuses || [];
   renderConnections();
 }
 
 function receiveStatus(status) {
   connectionRevision++;
+  profileStatusRevisions.set(status.profileId, (profileStatusRevisions.get(status.profileId) || 0) + 1);
   const index = connectionStatuses.findIndex(s => s.profileId === status.profileId);
   const previous = connectionStatuses[index];
   const changed = !previous || previous.state !== status.state || previous.stage !== status.stage || previous.stageDetail !== status.stageDetail || previous.message !== status.message;
@@ -408,9 +412,11 @@ async function refreshProfiles() {
   profileSelect.value = activeProfile?.id || '';
   await refreshConnections();
   if (version !== selectionVersion) return;
-  const revision = connectionRevision;
+  const id = activeProfile?.id;
+  const revision = profileStatusRevisions.get(id) || 0;
+  const listRevision = connectionListRevision;
   const status = await window.go.main.App.GetStatus();
-  if (version === selectionVersion && revision === connectionRevision) updateStatusUI(status);
+  if (version === selectionVersion && revision === (profileStatusRevisions.get(id) || 0) && listRevision === connectionListRevision) updateStatusUI(status);
   await refreshResources(false);
 }
 
@@ -431,10 +437,11 @@ async function selectProfile(id) {
   try {
     if (!await selection) throw new Error('服务器配置不存在');
     if (version !== selectionVersion) return;
-    const revision = connectionRevision;
+    const revision = profileStatusRevisions.get(id) || 0;
+    const listRevision = connectionListRevision;
     const status = await window.go.main.App.GetStatus();
     if (version !== selectionVersion) return;
-    if (revision === connectionRevision) updateStatusUI(status);
+    if (revision === (profileStatusRevisions.get(id) || 0) && listRevision === connectionListRevision) updateStatusUI(status);
     await refreshResources(false);
   } catch (err) { showToast(String(err)); }
   finally { if (version === selectionVersion) { selectionPending = false; updateStatusUI(currentStatus); } }
@@ -636,9 +643,10 @@ async function toggleConnection(id) {
     await refreshConnections();
     if (id === activeProfile?.id) {
       const version = selectionVersion;
-      const revision = connectionRevision;
+      const revision = profileStatusRevisions.get(id) || 0;
+      const listRevision = connectionListRevision;
       const updated = await window.go.main.App.GetStatus();
-      if (version === selectionVersion && revision === connectionRevision) updateStatusUI(updated);
+      if (version === selectionVersion && revision === (profileStatusRevisions.get(id) || 0) && listRevision === connectionListRevision) updateStatusUI(updated);
       await refreshResources(false);
     }
   } catch (err) {

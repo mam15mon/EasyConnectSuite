@@ -22,7 +22,7 @@ function workspace(api = {}) {
     modeSaving:false, cachedProfiles:[{id:'a',name:'A'},{id:'b',name:'B'}],
     selectionVersion:0, selectionPending:false, activeProfile:{id:'a'}, workspacePage:'resources',
     profileSelect:{}, routesFilter:{}, currentStatus:{profileId:'a',running:false,state:'disconnected'},
-    connectionStatuses:[], connectionRevision:0, connectionRequest:0, selectionQueue:Promise.resolve(), profileResources:new Map(), resourceRequest:0,
+    connectionStatuses:[], connectionRevision:0, connectionRequest:0, connectionListRevision:0, profileStatusRevisions:new Map(), selectionQueue:Promise.resolve(), profileResources:new Map(), resourceRequest:0,
     pendingActions:new Set(), preparingConnections:new Map(), actionVersions:new Map(), rendered:[], notifications:[],
     document:{getElementById:()=>({classList:{add(){},remove(){}}})},
     window:{go:{main:{App:api}}}, renderConnections(){},
@@ -402,4 +402,21 @@ test('late status response cannot overwrite a newer disconnect event', async () 
   status.resolve(connected);
   await action;
   assert.equal(state.currentStatus.state, 'disconnected');
+});
+
+
+test('another profile event does not discard the selected profile status', async () => {
+  const status = deferred(), entered = deferred();
+  const selected = {profileId:'a', running:true, state:'connected'};
+  const state = workspace({
+    StartProfileVPN:async()=> 'OK', GetConnections:async()=>[selected],
+    GetStatus:async()=>{entered.resolve(); return status.promise;},
+    GetProfileVPNResources:async()=>[],
+  });
+  const action = state.toggleConnection('a');
+  await entered.promise;
+  state.receiveStatus({profileId:'b', running:false, state:'disconnected'});
+  status.resolve(selected);
+  await action;
+  assert.equal(state.currentStatus.state, 'connected');
 });
