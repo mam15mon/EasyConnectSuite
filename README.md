@@ -2,7 +2,7 @@
 
 支持深信服 EasyConnect、华为／联软 UniVPN 及天融信 TopSAP 标准模式协议子集的第三方桌面图形客户端。一个 EXE 可同时连接多个配置，分别管理连接状态、资源、本地代理和 TUN。EasyConnect 引擎基于 [zju-connect](https://github.com/mythologyli/zju-connect)(上游 commit `4031c52`)，UniVPN 和 TopSAP 使用 Go 协议核心；**引擎源码直接编译进 GUI 进程**，无需 OpenConnect 或 Python 子进程。支持范围见 [UniVPN 接入说明](docs/univpn-go.md)及 [TopSAP 测试版说明](docs/topsec-go.md)；TopSAP Windows fix4 曾由用户确认真实登录和内网访问成功，最新发布包与其他平台仍需分别验收。
 
-Windows x64、macOS Intel / Apple Silicon、Linux x64 图形版／命令行版及 Android APK 的下载、源码提交和测试记录见 [GitHub Releases](https://github.com/mam15mon/EasyConnectSuite/releases)。各平台功能范围不同：Linux 用户入口目前仅代理；Android 为 EasyConnect 原型，调试签名 APK 不代表具备桌面端全部协议和功能。
+Windows x64、macOS Intel / Apple Silicon、Linux x64 图形版／命令行版及 Android APK 的下载、源码提交和测试记录见 [GitHub Releases](https://github.com/mam15mon/EasyConnectSuite/releases)。Linux 提供资源分流 TUN 与本地代理；Android 为 EasyConnect 原型，调试签名 APK 不代表具备桌面端全部协议和功能。
 
 macOS 支持 EasyConnect、UniVPN 的代理模式和按 VPN 资源分流的 IPv4 TCP/UDP TUN。开启 TUN 时会请求管理员授权，主程序无需提权；域名资源使用系统 resolver。GitHub Actions 在 Intel 和 Apple Silicon 测试真实 utun、系统 DNS、多连接与模拟后端转发，并构建 `.app`。真实网关连接和管理员授权弹窗交互尚未验证，CI 成功不代表已验证真实连接。菜单栏支持查看各连接、连接或断开、打开工作台和退出；TopSAP 的 macOS 设备标识依据官方客户端静态分析实现，真实网关仍待验证。配置和主程序日志位于 `~/Library/Application Support/VPN`；TUN Worker 的管理员诊断日志位于 `/private/var/log/EasyConnectSuite/tun-worker-crash.log`。菜单栏成功启动后，关闭窗口会隐藏工作台并保持连接，使用菜单栏的退出操作可断开连接并退出；菜单栏和窗口的实际交互尚未在实体 Mac 验证。Actions 产物为保留可执行权限的 `.tar.gz`，应用尚未签名或公证。
 
@@ -84,7 +84,9 @@ upx -t build/bin/VPN.exe
 
 ## Linux 开发版
 
-Linux x86-64 提供图形版和无图形版预览产物，CI 环境为 Ubuntu 24.04。图形版使用 Wails、GTK 3 和 WebKitGTK 4.1，配置位于 `${XDG_CONFIG_HOME:-$HOME/.config}/VPN`；Linux 使用本地代理。保存配置时会将配置文件权限限制为 `0600`。内部 TUN、路由、DNS 和 Worker 已有隔离系统测试，但用户入口尚未开放，不能使用桌面端 TUN 功能。
+Linux x86-64 提供图形版和无图形版预览产物，目标环境为 Ubuntu 24.04。图形版使用 Wails、GTK 3 和 WebKitGTK 4.1，配置和主程序日志位于 `${XDG_CONFIG_HOME:-$HOME/.config}/VPN`，保存配置文件权限为 `0600`。支持 EasyConnect、UniVPN 和 TopSAP 标准模式的现有桌面协议范围，以及 IPv4 TCP/UDP 资源分流 TUN、SOCKS5/HTTP 代理和双模式。
+
+GUI 保持普通用户权限；开启 TUN 时通过 `pkexec` 启动独立 Worker，需要安装 polkit 并有可用的授权代理。新建配置默认开启 TUN、关闭代理，已有配置保留保存的选择；“连接设置”可在连接期间切换 TUN，已有代理流和 VPN 登录会话保持运行。域名分流要求正在运行的 `systemd-resolved`，仅 IP 资源不依赖该服务；程序只设置自有接口的 DNS/路由，不改全局 `resolv.conf`。TUN 配置失败会单独报告，保留已有代理；清理结果无法确认时禁止自动重接。Worker 管理员日志位于 `/var/log/EasyConnectSuite/tun-worker-crash.log`。Linux 当前关闭窗口会断开并退出，无托盘驻留。
 
 无图形版 `vpn-headless` 在前台运行单个连接，默认仅在 `127.0.0.1` 开放 SOCKS5 `1080` 和 HTTP `1081`；应用需要显式使用这些代理。可通过 `-socks-port`、`-http-port` 调整端口，`-proxy-all` 将代理请求送往 VPN，同时保留服务器资源访问限制。密码从标准输入读取，不接受作为命令行参数；输入第二行 TOTP 密钥时使用 `-totp-stdin`。例如在交互式 Bash 中：
 
@@ -94,7 +96,18 @@ printf '%s\n' "$vpn_password" | ./vpn-headless -server vpn.example.com -username
 unset vpn_password
 ```
 
-通过 Ctrl+C 或 SIGTERM 停止。支持的协议选项为 `easyconnect`、`univpn` 和 `topsec`，但 Linux TopSAP 设备身份尚未实现，不能作为可用协议；Linux 真实网关兼容性尚未验证。当前模拟测试已覆盖 EasyConnect 登录、SOCKS5 TCP 数据往返和信号退出，不代表真实网关、完整桌面功能或长期稳定性已验证。Linux Release 提供 GUI 和 headless 的 `.tar.gz` 压缩包，尚无 deb/rpm 安装包。
+headless 添加 `-tun` 开启系统 TUN，添加 `-no-proxy` 关闭代理，后者必须与 `-tun` 同用。TUN 要求以 root 运行，启动时在读密码前检查权限；服务器无图形会话时可先完成 `sudo` 授权，再通过管道提供密码：
+
+```bash
+sudo -v
+read -rs -p '密码: ' vpn_password; echo
+printf '%s\n' "$vpn_password" | sudo -n ./vpn-headless -server vpn.example.com -username user -tun -no-proxy
+unset vpn_password
+```
+
+通过 Ctrl+C 或 SIGTERM 停止并清理自有接口、路由和 DNS；系统清理失败会报告错误。`-protocol` 可选 `easyconnect`、`univpn`、`topsec`。TopSAP Linux 身份算法依据官方 Linux 客户端实现，需要读取根磁盘序列号或 DMI UUID；普通用户会请求管理员授权，root 直接读取。没有可核对硬件身份时明确失败，不使用随机注册文件或用户指定身份。身份原文和摘要均不写日志或配置。
+
+验证分为三协议模拟网关、隔离 Linux 内核/真实 resolved/Worker 测试、真实网关三层，具体通过记录随 Release 提供。Linux 真实网关、实体桌面授权弹窗和长期稳定性尚未验收；其他 Linux 发行版和 DNS 管理器也未验证。Linux Release 提供 GUI 和 headless 的 `.tar.gz` 压缩包，尚无 deb/rpm 安装包。
 
 ## 同时连接多个 VPN
 
@@ -103,7 +116,7 @@ unset vpn_password
 3. 每个配置使用独立 SOCKS5/HTTP 端口。新配置自动分配未被其他配置使用的端口对，通常依次为 `1080/1081`、`1082/1083`；端口已被外部程序占用时，该连接明确报错。
 4. 连接第一个配置，再选择另一个配置连接。切换配置只切换当前查看的状态和资源。可以逐条断开，也可以点击“断开全部”；退出程序关闭全部连接。
 
-TUN 通过独立后台 Worker 申请管理员权限，主 GUI 保持普通权限且不重启。已连接配置可热开启或关闭 TUN，已有 VPN 和代理流继续运行；只显示系统 UAC，不显示额外 MessageBox。每个 TUN 使用独立网卡、虚拟 DNS 地址和 NRPT 标记；本程序内完全相同的资源路由前缀或重叠 DNS 命名空间会明确报错。不同长度前缀仍按 Windows 最长匹配选择，程序不能让同一个系统目的地址同时路由到两条隧道；有资源重叠时，可用各配置的本地代理明确选择 VPN。
+TUN 通过独立后台 Worker 申请管理员权限，主 GUI 保持普通权限且不重启。已连接配置可热开启或关闭 TUN，已有 VPN 和代理流继续运行。每个 TUN 使用独立网卡和虚拟 DNS 地址；Windows 使用 UAC/NRPT，macOS 使用系统授权/resolver，Linux 使用 polkit/systemd-resolved。本程序内完全相同的资源路由前缀或重叠 DNS 命名空间会明确报错。不同长度前缀按系统最长匹配选择，程序不能让同一个系统目的地址同时路由到两条隧道；有资源重叠时，可用各配置的本地代理明确选择 VPN。
 
 ## Windows TUN 模式
 
