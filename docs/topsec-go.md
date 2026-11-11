@@ -47,7 +47,7 @@ TopSAP 标准模式已接入 Windows、macOS 和 Linux GUI/headless。协议核�
 
 ## Linux 设备身份与验证边界
 
-当前 Linux 目标是 Ubuntu 24.04/x86-64。普通用户启动 GUI 或 headless 时，TopSAP 身份读取通过 `pkexec` 启动本程序的 `--topsec-device-code` 专用入口；GUI 需要可用的 polkit 授权代理，headless 需要可用的终端授权环境或直接以 root 运行。此入口不接受额外参数或任意硬件路径。权限只用于读取设备身份，摘要从匿名管道返回，不保存到配置或日志。root 进程直接读取。
+当前 Linux 目标是 Ubuntu 24.04/x86-64。普通用户启动 GUI 时，TopSAP 身份读取通过 `pkexec` 启动本程序的 `--topsec-device-code` 专用入口，需要可用的 polkit 授权代理；headless 的 TopSAP 模式要求通过 `sudo` 以 root 运行，包括仅代理模式。此入口不接受额外参数或任意硬件路径。权限只用于读取设备身份，摘要从匿名管道返回，不保存到配置或日志。root 进程直接读取。
 
 研究来源是[官方 TopSAP 3.6.3.32.2.22375 amd64 包](https://app.topsec.com.cn/linux/general/x86_64/deb/TopSAP-3.6.3.32.2.22375_amd64.deb)，没有安装或重分发其程序。可核对标识：
 

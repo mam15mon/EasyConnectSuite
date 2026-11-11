@@ -6,12 +6,14 @@ set -euo pipefail
 [[ $(uname -sm) == 'Linux x86_64' ]]
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-curl --fail --location --retry 3 --output "$work/client.deb" \
+echo 'Downloading pinned official TopSAP package (90 MB)'
+curl --fail --location --connect-timeout 20 --max-time 600 --speed-time 60 --speed-limit 1024 --output "$work/client.deb" \
   https://app.topsec.com.cn/linux/general/x86_64/deb/TopSAP-3.6.3.32.2.22375_amd64.deb
 printf '%s  %s\n' b80632d99c9ae1a1283a03f0c6379285e652e1aec016788661d4d270eb705ba1 "$work/client.deb" | sha256sum --check --status
 dpkg-deb --fsys-tarfile "$work/client.deb" | tar -x -C "$work" ./opt/apps/cn.com.topvpn/files/libtopsec_vpn.so
 library="$work/opt/apps/cn.com.topvpn/files/libtopsec_vpn.so"
 printf '%s  %s\n' 4bad4c46933551d9e8e132821779b3b77230ea5306f4ee713dd40849d83dd981 "$library" | sha256sum --check --status
+echo 'Official package and library SHA-256 verified; building synthetic native probe'
 
 cat >"$work/reference.cpp" <<'CPP'
 #include <cerrno>
@@ -96,8 +98,8 @@ int main(int argc, char **argv) {
     auto ctor = reinterpret_cast<void (*)(void *)>(dlsym(library, "_ZN17FeatureCodeHelperC1Ev"));
     auto dtor = reinterpret_cast<void (*)(void *)>(dlsym(library, "_ZN17FeatureCodeHelperD1Ev"));
     auto feature = reinterpret_cast<std::string (*)(void *)>(dlsym(library, "_ZN17FeatureCodeHelper15getFeatureCodesB5cxx11Ev"));
-    auto unhex = reinterpret_cast<int (*)(const char *, size_t, void *)>(dlsym(library, "HexStringToByte"));
-    auto base64 = reinterpret_cast<int (*)(const void *, size_t, char *)>(dlsym(library, "Base64Encode"));
+    auto unhex = reinterpret_cast<void (*)(const char *, int, void *)>(dlsym(library, "HexStringToByte"));
+    auto base64 = reinterpret_cast<size_t (*)(const void *, size_t, char *)>(dlsym(library, "Base64Encode"));
     if (!ctor || !dtor || !feature || !unhex || !base64 || sizeof(std::string) != 32) return 88;
     deny_real_identity_io();
     alignas(std::string) unsigned char object[3 * sizeof(std::string)];
