@@ -129,6 +129,9 @@ func (a *linuxTUNAttachment) Update(ctx context.Context, spec TUNSpec) (err erro
 	if spec.Profile != a.spec.Profile || spec.Session != a.spec.Session || spec.Attachment != a.spec.Attachment || spec.Policy <= a.spec.Policy || spec.Slot != a.spec.Slot {
 		return errors.New("obsolete headless TUN update")
 	}
+	if err = ctx.Err(); err != nil {
+		return err
+	}
 	op.Step("close_previous_ingress")
 	a.generation.cancel()
 	if a.ingress != nil {

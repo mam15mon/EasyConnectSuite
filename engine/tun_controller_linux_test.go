@@ -294,3 +294,27 @@ func TestLinuxControllerCleanupFailureBlocksReplacement(t *testing.T) {
 		t.Fatalf("shutdown: err=%v starts=%d", err, starts)
 	}
 }
+
+func TestLinuxControllerAlreadyCancelledUpdatePreservesIngress(t *testing.T) {
+	controller := NewLinuxTUNController()
+	defer controller.Close()
+	closes := 0
+	controller.start = func(context.Context, TUNSpec, TUNBackend) (linuxControllerIngress, error) {
+		return controllerTestIngress(func() error { closes++; return nil }), nil
+	}
+	attachment, err := controller.Attach(context.Background(), linuxTestSpec(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := attachment.(*linuxTUNAttachment).generation
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	next := linuxTestSpec()
+	next.Policy++
+	if err := attachment.Update(ctx, next); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled update: %v", err)
+	}
+	if closes != 0 || previous.ctx.Err() != nil || attachment.(*linuxTUNAttachment).generation != previous {
+		t.Fatal("already cancelled request changed the active ingress")
+	}
+}
