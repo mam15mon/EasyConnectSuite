@@ -42,9 +42,11 @@ jobs:
           go test -tags webkit2_41 -c -o "$RUNNER_TEMP/linux-worker-test" .
           sudo env ECS_HOST_NET_NS="$(readlink /proc/self/ns/net)" ECS_HOST_MNT_NS="$(readlink /proc/self/ns/mnt)" ECS_TEST_BIN="$RUNNER_TEMP/linux-engine-test" ECS_WORKER_TEST_BIN="$RUNNER_TEMP/linux-worker-test" unshare --mount --net bash build/linux/resolved-isolated-test.sh
       - name: Test Linux TUN worker in isolated network namespace
+        if: ${{ !cancelled() }}
         run: |
           sudo env ECS_LINUX_TUN_SYSTEM_TEST=1 unshare --net "$RUNNER_TEMP/linux-worker-test" -test.run '^TestLinux(WorkerProcessLifecycle|ManagerWorkerLifecycle|ManagerWorkerCrash|ManagerPolicyReplacement|ManagerMultipleAttachments)$' -test.v
       - name: Test GUI lifecycle with race detector
+        if: ${{ !cancelled() }}
         run: go test -race -tags webkit2_41 . -run '^Test(LinuxShutdownWaits|CanceledUpdateKeepsPreviousAttachmentIdentity|WorkerRejectsNewAttachmentsAfterCleanupFailure|WorkerBlocksAfterReplacementCleanupFailure)' -count=1
       - name: Test headless lifecycle with race detector
         if: ${{ !cancelled() }}
@@ -63,18 +65,23 @@ jobs:
         run: |
           dbus-run-session -- sh -c 'export DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" ECS_RESOLVED_BUS_TEST=1; exec go test ./engine -run "^TestResolved(PrivateBus|SystemCallSaturatedBusQueue)" -count=1 -v'
       - name: Vet Linux packages
+        if: ${{ !cancelled() }}
         run: go vet -tags webkit2_41 ./...
       - name: Test VPN core
+        if: ${{ !cancelled() }}
         working-directory: zju-connect
         run: go test ./... -count=1
       - name: Vet VPN core
+        if: ${{ !cancelled() }}
         working-directory: zju-connect
         run: go vet ./...
       - name: Build Linux GUI
+        if: ${{ !cancelled() }}
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
           wails build -tags webkit2_41 -skipbindings -nosyncgomod -trimpath
       - name: Smoke-test Linux GUI startup
+        if: ${{ !cancelled() }}
         run: |
           export XDG_CONFIG_HOME="$RUNNER_TEMP/gui-config"
           export WEBKIT_DISABLE_COMPOSITING_MODE=1
@@ -123,12 +130,15 @@ jobs:
             done
           '
       - name: Test shutdown before GTK main loop
+        if: ${{ !cancelled() }}
         run: timeout -k 5s 60s xvfb-run -a bash build/linux/gtk-early-shutdown-test.sh
       - name: Build and smoke-test Suite headless command
+        if: ${{ !cancelled() }}
         run: |
           go build -o "$RUNNER_TEMP/vpn-headless-linux-amd64" ./cmd/vpn-headless
           "$RUNNER_TEMP/vpn-headless-linux-amd64" -h
       - name: Test headless client against mock gateway
+        if: ${{ !cancelled() }}
         run: bash build/linux/headless-smoke-test.sh
       - name: Build existing upstream command line
         working-directory: zju-connect
