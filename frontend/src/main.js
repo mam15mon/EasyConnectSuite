@@ -408,8 +408,9 @@ async function refreshProfiles() {
   profileSelect.value = activeProfile?.id || '';
   await refreshConnections();
   if (version !== selectionVersion) return;
+  const revision = connectionRevision;
   const status = await window.go.main.App.GetStatus();
-  if (version === selectionVersion) updateStatusUI(status);
+  if (version === selectionVersion && revision === connectionRevision) updateStatusUI(status);
   await refreshResources(false);
 }
 
@@ -430,9 +431,10 @@ async function selectProfile(id) {
   try {
     if (!await selection) throw new Error('服务器配置不存在');
     if (version !== selectionVersion) return;
+    const revision = connectionRevision;
     const status = await window.go.main.App.GetStatus();
     if (version !== selectionVersion) return;
-    updateStatusUI(status);
+    if (revision === connectionRevision) updateStatusUI(status);
     await refreshResources(false);
   } catch (err) { showToast(String(err)); }
   finally { if (version === selectionVersion) { selectionPending = false; updateStatusUI(currentStatus); } }
@@ -634,8 +636,9 @@ async function toggleConnection(id) {
     await refreshConnections();
     if (id === activeProfile?.id) {
       const version = selectionVersion;
+      const revision = connectionRevision;
       const updated = await window.go.main.App.GetStatus();
-      if (version === selectionVersion) updateStatusUI(updated);
+      if (version === selectionVersion && revision === connectionRevision) updateStatusUI(updated);
       await refreshResources(false);
     }
   } catch (err) {

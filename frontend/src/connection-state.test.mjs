@@ -386,3 +386,20 @@ test('connection list event wins over an older pending snapshot', async () => {
   await refresh;
   assert.equal(state.connectionStatuses[0].state, 'disconnected');
 });
+
+
+test('late status response cannot overwrite a newer disconnect event', async () => {
+  const status = deferred(), entered = deferred();
+  const connected = {profileId:'a', running:true, state:'connected'};
+  const state = workspace({
+    StartProfileVPN:async()=> 'OK', GetConnections:async()=>[connected],
+    GetStatus:async()=>{entered.resolve(); return status.promise;},
+    GetProfileVPNResources:async()=>[],
+  });
+  const action = state.toggleConnection('a');
+  await entered.promise;
+  state.receiveStatus({profileId:'a', running:false, state:'disconnected'});
+  status.resolve(connected);
+  await action;
+  assert.equal(state.currentStatus.state, 'disconnected');
+});
