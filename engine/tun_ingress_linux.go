@@ -51,7 +51,7 @@ func releaseIngressRoutes(t *tunIngress) error {
 		return nil
 	}
 	backend, _ := t.backend.(*linuxRoutes)
-	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q interface=%q] ", os.Getpid(), t.claimRef.Profile, t.claimRef.Session, t.claimRef.Attachment, t.name), "linux_tun_release", nil)
+	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q policy=%d interface=%q] ", os.Getpid(), t.claimRef.Profile, t.claimRef.Session, t.claimRef.Attachment, t.claimRef.Policy, t.name), "linux_tun_release", nil)
 	outcome := "interrupted"
 	var err error
 	defer func() { op.Finish(outcome, err) }()
@@ -106,7 +106,7 @@ func StartLinuxTUNIngress(ctx context.Context, spec TUNSpec, service TUNBackend)
 }
 
 func startLinuxTUNIngressWithDNS(ctx context.Context, spec TUNSpec, service TUNBackend, call resolvedCall) (ingress *tunIngress, err error) {
-	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), spec.Profile, spec.Session, spec.Attachment), "linux_tun_attach", ctx.Done())
+	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q policy=%d] ", os.Getpid(), spec.Profile, spec.Session, spec.Attachment, spec.Policy), "linux_tun_attach", ctx.Done())
 	outcome := "interrupted"
 	defer func() { op.Finish(outcome, err) }()
 	if err = spec.Validate(); err != nil {
@@ -122,7 +122,7 @@ func startLinuxTUNIngressWithDNS(ctx context.Context, spec TUNSpec, service TUNB
 		return nil, err
 	}
 	attachCtx, cancel := context.WithCancel(ctx)
-	obj := &tunIngress{service: service, ctx: attachCtx, cancel: cancel}
+	obj := &tunIngress{service: service, ctx: attachCtx, cancel: cancel, claimRef: spec.Ref}
 	defer func() {
 		if err != nil {
 			op.Step("cleanup_failed_attach")

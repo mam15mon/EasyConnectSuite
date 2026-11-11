@@ -94,7 +94,7 @@ type resolvedPending struct {
 }
 
 func newResolvedClient(ctx context.Context, ref TUNSpec) (client *resolvedClient, err error) {
-	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), ref.Profile, ref.Session, ref.Attachment), "linux_dns_connect", ctx.Done())
+	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q policy=%d] ", os.Getpid(), ref.Profile, ref.Session, ref.Attachment, ref.Policy), "linux_dns_connect", ctx.Done())
 	outcome := "failed"
 	defer func() { op.Finish(outcome, err) }()
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -189,7 +189,7 @@ func (c *resolvedClient) incoming(msg *dbus.Message) {
 }
 
 func (c *resolvedClient) Call(ctx context.Context, method string, args ...any) (err error) {
-	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), c.ref.Profile, c.ref.Session, c.ref.Attachment), "linux_dns_request", ctx.Done())
+	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q policy=%d] ", os.Getpid(), c.ref.Profile, c.ref.Session, c.ref.Attachment, c.ref.Policy), "linux_dns_request", ctx.Done())
 	outcome := "failed"
 	defer func() {
 		if err == nil {
@@ -284,7 +284,7 @@ type resolvedDNSOwner struct {
 }
 
 func (d *resolvedDNSOwner) Apply(ctx context.Context, names []string) (err error) {
-	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), d.ref.Profile, d.ref.Session, d.ref.Attachment), "linux_dns_apply", ctx.Done())
+	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q policy=%d] ", os.Getpid(), d.ref.Profile, d.ref.Session, d.ref.Attachment, d.ref.Policy), "linux_dns_apply", ctx.Done())
 	outcome := "interrupted"
 	defer func() {
 		if err != nil {
@@ -322,7 +322,7 @@ func (d *resolvedDNSOwner) Apply(ctx context.Context, names []string) (err error
 }
 
 func (d *resolvedDNSOwner) Close(ctx context.Context) (err error) {
-	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q] ", os.Getpid(), d.ref.Profile, d.ref.Session, d.ref.Attachment), "linux_dns_release", ctx.Done())
+	op := log.BeginOperation(fmt.Sprintf("[TUN pid=%d profile=%q session=%q attachment=%q policy=%d] ", os.Getpid(), d.ref.Profile, d.ref.Session, d.ref.Attachment, d.ref.Policy), "linux_dns_release", ctx.Done())
 	outcome := "interrupted"
 	defer func() {
 		if err != nil {

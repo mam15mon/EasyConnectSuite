@@ -211,12 +211,17 @@ func privateResolvedService(t *testing.T, service *resolvedTestService) *dbus.Co
 func TestResolvedPrivateBus(t *testing.T) {
 	service := &resolvedTestService{defaultRoute: true}
 	privateResolvedService(t, service)
+	logPath := filepath.Join(t.TempDir(), "engine.log")
+	capture, _, _ := recoveryTestEngine(t)
+	capture.opts.LogFile = logPath
+	capture.startLogCapture()
+	defer capture.stopLogCapture()
 	client, err := newResolvedClient(context.Background(), linuxTestSpec())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()
-	owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", call: client.Call, verify: func() error { return nil }}
+	owner := &resolvedDNSOwner{index: 7, server: "198.19.128.2", ref: linuxTestSpec(), call: client.Call, verify: func() error { return nil }}
 	if err = owner.Apply(context.Background(), []string{"example.invalid"}); err != nil {
 		t.Fatal(err)
 	}
@@ -232,6 +237,18 @@ func TestResolvedPrivateBus(t *testing.T) {
 	}
 	if err = owner.Close(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{`profile="test"`, `session="test"`, `attachment="test"`, "policy=1", "name=linux_dns_connect", "stage=resolve_unique_owner", "name=linux_dns_request", "stage=send_SetLinkDefaultRoute", "stage=wait_service_reply", "outcome=confirmed", "name=linux_dns_release", "stage=close_private_bus", "error_type=", "stage_elapsed="} {
+		if !strings.Contains(string(data), marker) {
+			t.Errorf("missing durable DNS evidence %q", marker)
+		}
+	}
+	if strings.Contains(string(data), "PRIVATE_DNS_REPLY_CANARY") {
+		t.Fatal("DNS reply body leaked to logs")
 	}
 	service.mu.Lock()
 	defer service.mu.Unlock()
