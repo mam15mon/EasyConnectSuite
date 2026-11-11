@@ -504,3 +504,43 @@ func TestResolvedSystemCallCanceledDuringHello(t *testing.T) {
 		t.Fatal("Hello did not stop after cancellation")
 	}
 }
+
+func TestResolvedSystemCallSaturatedBusQueue(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bus.sock")
+	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	if err := unix.Bind(fd, &unix.SockaddrUnix{Name: path}); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Listen(fd, 0); err != nil {
+		t.Fatal(err)
+	}
+	queued, err := net.Dial("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer queued.Close()
+	t.Setenv("DBUS_SYSTEM_BUS_ADDRESS", "unix:path="+path)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- resolvedSystemCall(ctx, "SetLinkDNS", int32(7), []resolvedAddress{}) }()
+	select {
+	case err = <-result:
+		t.Logf("saturated bus connection returned before cancellation: %v", err)
+	case <-time.After(200 * time.Millisecond):
+		cancel()
+		select {
+		case err = <-result:
+			t.Logf("saturated bus connection returned after cancellation: %v", err)
+		case <-time.After(2 * time.Second):
+			t.Fatal("saturated bus connection did not stop after cancellation")
+		}
+	}
+	if !errors.Is(err, errResolvedNotSent) || errors.Is(err, errResolvedOutcomeUnknown) {
+		t.Fatalf("saturated bus request classification: %v", err)
+	}
+}
