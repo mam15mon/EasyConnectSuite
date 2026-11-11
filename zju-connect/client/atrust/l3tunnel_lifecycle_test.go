@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"EasyConnectSuite/vpncore/client"
@@ -705,43 +706,48 @@ func TestHeartbeatSuccessfulCommandWriteSuppressesProbe(t *testing.T) {
 }
 
 func TestSuccessfulHeartbeatWriteClearsMissesOnNextTick(t *testing.T) {
-	transport := &trackingNetConn{closed: make(chan struct{})}
-	written := make(chan []byte, 2)
-	conn := &l3TunnelConn{
-		tlsConn:            tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
-		closeCh:            make(chan struct{}),
-		conntrackMgr:       newConntrackMgr(),
-		heartbeatInterval:  30 * time.Millisecond,
-		heartbeatMissLimit: 2,
-		writeFrameHook: func(frame []byte) error {
-			written <- append([]byte(nil), frame...)
-			return nil
-		},
-	}
-	go conn.heartbeatLoop()
-
-	select {
-	case frame := <-written:
-		if !bytes.Equal(frame, []byte{l3Version, cmdHeartbeatReq, 0x00, 0x00}) {
-			t.Fatalf("first idle frame = % X, want heartbeat", frame)
+	synctest.Test(t, func(t *testing.T) {
+		transport := &trackingNetConn{closed: make(chan struct{})}
+		written := make(chan []byte, 2)
+		conn := &l3TunnelConn{
+			tlsConn:            tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+			closeCh:            make(chan struct{}),
+			conntrackMgr:       newConntrackMgr(),
+			heartbeatInterval:  30 * time.Millisecond,
+			heartbeatMissLimit: 2,
+			writeFrameHook: func(frame []byte) error {
+				written <- append([]byte(nil), frame...)
+				return nil
+			},
 		}
-	case <-time.After(time.Second):
-		t.Fatal("idle heartbeat was not sent")
-	}
-	if misses := atomic.LoadInt32(&conn.heartbeatMisses); misses != 1 {
-		t.Fatalf("misses after heartbeat = %d, want 1", misses)
-	}
+		defer conn.Close()
+		go conn.heartbeatLoop()
 
-	time.Sleep(45 * time.Millisecond)
-	if misses := atomic.LoadInt32(&conn.heartbeatMisses); misses != 0 {
-		t.Fatalf("misses after successful heartbeat activity = %d, want 0", misses)
-	}
-	select {
-	case frame := <-written:
-		t.Fatalf("next tick sent a heartbeat instead of consuming hasWrite: % X", frame)
-	default:
-	}
-	_ = conn.Close()
+		select {
+		case frame := <-written:
+			if !bytes.Equal(frame, []byte{l3Version, cmdHeartbeatReq, 0x00, 0x00}) {
+				t.Fatalf("first idle frame = % X, want heartbeat", frame)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("idle heartbeat was not sent")
+		}
+		synctest.Wait()
+		if misses := atomic.LoadInt32(&conn.heartbeatMisses); misses != 1 {
+			t.Fatalf("misses after heartbeat = %d, want 1", misses)
+		}
+
+		time.Sleep(45 * time.Millisecond)
+		if misses := atomic.LoadInt32(&conn.heartbeatMisses); misses != 0 {
+			t.Fatalf("misses after successful heartbeat activity = %d, want 0", misses)
+		}
+		select {
+		case frame := <-written:
+			t.Fatalf("next tick sent a heartbeat instead of consuming hasWrite: % X", frame)
+		default:
+		}
+		_ = conn.Close()
+		synctest.Wait()
+	})
 }
 
 func TestFailedCommandWriteDoesNotSetHeartbeatActivity(t *testing.T) {
