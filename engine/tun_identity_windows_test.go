@@ -4,9 +4,12 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"testing"
 	"time"
+
+	"EasyConnectSuite/internal/tunipc"
 )
 
 func TestTUNSlotsAreDistinctAndInsideReservedRange(t *testing.T) {
@@ -85,5 +88,45 @@ func TestTUNClaimsRejectSamePrefixAndDNSButAllowSpecificRoutes(t *testing.T) {
 	}
 	if err := checkTUNConflicts(a, []string{"10.0.0.0/8"}, []string{".internal.example"}); err != nil {
 		t.Fatal("owner could not refresh")
+	}
+}
+
+type policyFailureBackend struct {
+	*fakeRoutes
+	err error
+}
+
+func (b *policyFailureBackend) setDNS([]string) error { return b.err }
+
+func TestTUNFailedPolicyUpdateRetainsOldAndNewClaims(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	backend := &policyFailureBackend{fakeRoutes: &fakeRoutes{present: map[string]bool{}}}
+	ingress := &tunIngress{ctx: ctx, cancel: cancel, backend: backend, routes: newRouteManager(backend)}
+	defer func() { tunPolicies.Lock(); delete(tunPolicies.claims, ingress); tunPolicies.Unlock() }()
+	old := TUNSpec{Ref: tunipc.Ref{Profile: "p", Session: "s", Attachment: "a", Policy: 1}, Prefixes: []string{"192.0.2.0/24"}, Names: []string{"old.invalid"}}
+	if err := ingress.UpdateSpec(old); err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("synthetic DNS failure")
+	backend.err = failure
+	next := old
+	next.Policy++
+	next.Prefixes = []string{"198.51.100.0/24"}
+	next.Names = []string{"new.invalid"}
+	if err := ingress.UpdateSpec(next); !errors.Is(err, failure) {
+		t.Fatalf("update: %v", err)
+	}
+	if err := ingress.Close(); !errors.Is(err, failure) {
+		t.Fatalf("cleanup: %v", err)
+	}
+	tunPolicies.Lock()
+	defer tunPolicies.Unlock()
+	for _, claim := range []TUNSpec{old, next} {
+		if err := checkTUNConflicts(&tunIngress{}, claim.Prefixes, nil); err == nil {
+			t.Fatalf("route claim lost: %v", claim.Prefixes)
+		}
+		if err := checkTUNConflicts(&tunIngress{}, nil, claim.Names); err == nil {
+			t.Fatalf("DNS claim lost: %v", claim.Names)
+		}
 	}
 }
