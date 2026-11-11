@@ -35,7 +35,7 @@ function workspace(api = {}) {
     renderResources(rows) { state.rendered = rows; }, showToast(message) { state.notifications.push(message); },
   };
   vm.createContext(state);
-  vm.runInContext(['canStartConnection','connectAll','selectProfile','refreshResources','toggleConnection','refreshConnections','receiveStatus'].map(productionFunction).join('\n'), state);
+  vm.runInContext(['canStartConnection','connectAll','selectProfile','refreshResources','toggleConnection','refreshConnections','receiveStatus','receiveConnections'].map(productionFunction).join('\n'), state);
   return state;
 }
 
@@ -373,5 +373,16 @@ test('newer requested connection snapshot wins even if the older finishes first'
   await first;
   recent.resolve([{profileId:'a', running:false, state:'disconnected'}]);
   await second;
+  assert.equal(state.connectionStatuses[0].state, 'disconnected');
+});
+
+
+test('connection list event wins over an older pending snapshot', async () => {
+  const snapshot = deferred();
+  const state = workspace({GetConnections:()=>snapshot.promise});
+  const refresh = state.refreshConnections();
+  state.receiveConnections([{profileId:'a', running:false, state:'disconnected'}]);
+  snapshot.resolve([{profileId:'a', running:true, state:'connected'}]);
+  await refresh;
   assert.equal(state.connectionStatuses[0].state, 'disconnected');
 });

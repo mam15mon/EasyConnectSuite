@@ -263,6 +263,12 @@ let logRequest = 0;
 let modalReturnFocus = null;
 const protocolNames = { easyconnect: 'EasyConnect', univpn: 'UniVPN', topsec: 'TopSAP' };
 
+function receiveConnections(statuses) {
+  connectionRevision++;
+  connectionStatuses = statuses || [];
+  renderConnections();
+}
+
 function receiveStatus(status) {
   connectionRevision++;
   const index = connectionStatuses.findIndex(s => s.profileId === status.profileId);
@@ -770,7 +776,7 @@ async function initApp() {
 
     window.runtime.EventsOn('status-tick', status => receiveStatus(status));
 
-    window.runtime.EventsOn('vpn-connections', (statuses) => { connectionStatuses = statuses || []; renderConnections(); });
+    window.runtime.EventsOn('vpn-connections', receiveConnections);
 
     window.runtime.EventsOn('profile-switched', async () => {
       await refreshProfiles();
