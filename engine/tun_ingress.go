@@ -112,12 +112,15 @@ func (t *tunIngress) Close() error {
 		// handlers observe closed before waiting for the stack to stop.
 		cleanupCompleted := false
 		defer func() {
+			tunPolicies.Lock()
+			_, retained := tunPolicies.claims[t]
 			if cleanupCompleted && t.closeErr == nil {
-				tunPolicies.Lock()
 				delete(tunPolicies.claims, t)
-				tunPolicies.Unlock()
-			} else {
-				log.Printf("[TUN pid=%d profile=%q session=%q attachment=%q] resource_claim_retained cleanup_completed=%t cause=%v", os.Getpid(), t.claimRef.Profile, t.claimRef.Session, t.claimRef.Attachment, cleanupCompleted, t.closeErr)
+				retained = false
+			}
+			tunPolicies.Unlock()
+			if !cleanupCompleted || t.closeErr != nil {
+				log.Printf("[TUN pid=%d profile=%q session=%q attachment=%q] resource_cleanup_unconfirmed claim_retained=%t cleanup_completed=%t cause=%v", os.Getpid(), t.claimRef.Profile, t.claimRef.Session, t.claimRef.Attachment, retained, cleanupCompleted, t.closeErr)
 			}
 		}()
 		t.cancel()
