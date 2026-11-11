@@ -108,7 +108,7 @@ PY
     grep -q '^TUN: on$' "$tun_work/client-$mode.log"
     iface=$(ip -j route get 10.90.0.3 | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["dev"])')
     [[ "$iface" == ecs* && "$iface" != ecs-client ]]
-    ifindex=$(cat "/sys/class/net/$iface/ifindex")
+    ifindex=$(ip -j link show dev "$iface" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["ifindex"])')
     resolvectl domain "$iface" | grep -q '~synthetic.internal'
     dns_ip=$(resolvectl dns "$iface" | awk '{print $NF}')
     [[ "$dns_ip" == 198.19.128.* ]]
@@ -187,6 +187,14 @@ PY
     if [ "$mode" = proxy ]; then kill -TERM "$client_pid"; fi
     if [ "$mode" = no-proxy ]; then kill -INT "$client_pid"; fi
     if [ "$mode" = crash ]; then kill -KILL "$client_pid"; fi
+    for _ in $(seq 1 150); do
+      if ! kill -0 "$client_pid" 2>/dev/null; then break; fi
+      sleep .1
+    done
+    if kill -0 "$client_pid" 2>/dev/null; then
+      echo "headless $mode process did not finish signal cleanup within 15 seconds" >&2
+      exit 1
+    fi
     result=0
     wait "$client_pid" || result=$?
     client_pid=
@@ -443,4 +451,4 @@ PY
 cp "$work_dir/gateway" "$RUNNER_TEMP/tun-smoke-gateway"
 sudo env RUNNER_TEMP="$RUNNER_TEMP" ECS_HOST_NET_NS="$(readlink /proc/self/ns/net)" \
   ECS_HOST_MNT_NS="$(readlink /proc/self/ns/mnt)" ECS_MOCK_GATEWAY_BIN="$RUNNER_TEMP/tun-smoke-gateway" \
-  unshare --mount --net bash build/linux/headless-smoke-test.sh --tun-isolated
+  timeout -k 5s 240s unshare --mount --net bash build/linux/headless-smoke-test.sh --tun-isolated
