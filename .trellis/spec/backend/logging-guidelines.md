@@ -75,3 +75,5 @@ Good: `tun_update` remains at `wait_backend_policy_lock`, its goroutine ID match
 ### 7. Wrong vs correct
 
 Wrong: only log `updating TUN`, and on a later hang conclude that the gateway failed. Correct: enter `wait_tun_operation_lock`, advance to `wait_backend_policy_lock`, then `worker_update_reply`; on a stall capture the matching caller's stack and record only what it establishes. A test must validate emitted evidence, not just search source for logging calls.
+
+Headless status callbacks can arrive concurrently. Serialize writes to the status output; log bounded `headless_status_output` operations with process/profile identity and the `wait_output_lock` and `write_output` stages so a blocked consumer leaves evidence. Do not include credentials or status payloads in these operation labels. The concurrent-output test checks that the writer is not entered concurrently, and the Linux workflow runs the headless package with the race detector.
