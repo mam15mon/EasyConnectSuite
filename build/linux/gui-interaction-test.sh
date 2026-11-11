@@ -127,7 +127,7 @@ if [ "$after" -le "$before" ]; then
   exit 1
 fi
 xdotool mousemove --window "$window" 1010 87 click 1
-python3 - <<'PY'
+if ! python3 - <<'PY'
 import socket, time
 for _ in range(100):
     with socket.socket() as sock:
@@ -138,6 +138,14 @@ for _ in range(100):
 else:
     raise SystemExit('GUI disconnect did not close the SOCKS proxy')
 PY
+then
+  if [ -d "$XDG_CONFIG_HOME/VPN/logs" ]; then
+    for file in "$XDG_CONFIG_HOME/VPN/logs/engine.log" "$XDG_CONFIG_HOME/VPN/logs/crash.log"; do
+      if [ -f "$file" ]; then sed 's/synthetic-password/[redacted]/g' "$file" >&2; fi
+    done
+  fi
+  exit 1
+fi
 # Reconnect and close the actual window while the VPN is active.
 sleep 1
 xdotool mousemove --window "$window" 1010 87 click 1
