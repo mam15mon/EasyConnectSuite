@@ -7,12 +7,13 @@ After a command changes project files, stage only those files and commit with a 
 For Go behavior changes:
 - Format touched files with gofmt.
 - Run go test ./... and go vet ./... from the root.
-- Run relevant nested zju-connect package tests when changing that module; root ./... does not traverse it.
+- Run relevant nested zju-connect package tests when changing that module; root ./... does not traverse it. Release CI must run the complete nested module tests and vet separately on Windows, macOS and Linux.
+- POSIX file-mode tests assert 0600 on Unix. On Windows, Go only uses the owner-write bit to control the read-only attribute; test that supported property while retaining content/data checks. FileMode does not verify Windows ACL isolation.
 - Use meaningful regression tests for lifecycle, routing, DNS and authentication. engine/tun_cleanup_windows_test.go and reconnect_test.go are examples.
 - Build the Windows desktop after exported Wails model or UI changes.
 - Distinguish compilation, mock integration, real TUN/routing tests and live gateway compatibility.
 
-Delivery covers Windows, macOS Intel/Apple Silicon and the current Android EasyConnect prototype. Push one source revision, wait for its GitHub Actions workflows to pass, and publish those workflow artifacts together in a GitHub Release with source revision, download links and validation limits. Windows CI uses `.github/workflows/windows.yml`. Its hosted VM can lack the required physical PCI device identity: `setupTopSAPIntegrationClient` skips only that exact hardware-unavailable error in adapter integration tests. All other errors still fail; synthetic TopSAP session and Windows device-enumeration tests remain required. Report these skipped hardware-dependent adapter cases rather than claiming they passed. Do not add a product identity override or alternate device algorithm to accommodate CI.
+Delivery covers Windows, macOS Intel/Apple Silicon, Linux GUI/headless and the current Android EasyConnect prototype. Linux user-facing TUN remains disabled; internal isolated system tests do not establish product support. Push one source revision, wait for its GitHub Actions workflows to pass, and publish those workflow artifacts together in a GitHub Release with source revision, download links and validation limits. Windows CI uses `.github/workflows/windows.yml`. Its hosted VM can lack the required physical PCI device identity: `setupTopSAPIntegrationClient` skips only that exact hardware-unavailable error in adapter integration tests. All other errors still fail; synthetic TopSAP session and Windows device-enumeration tests remain required. Report these skipped hardware-dependent adapter cases rather than claiming they passed. Do not add a product identity override or alternate device algorithm to accommodate CI.
 
 Frontend checks are in ../frontend/index.md. build/bin outputs are ignored. Record source revisions, licenses and reproducible native build steps. Do not claim a live connection without testing an authorized gateway.
 

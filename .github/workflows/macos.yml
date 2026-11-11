@@ -27,11 +27,22 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+      - name: Test frontend
+        working-directory: frontend
+        run: node --test src/*.test.mjs
       - name: Build frontend
         working-directory: frontend
         run: npm run build
       - name: Test
         run: go test ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test VPN core
+        working-directory: zju-connect
+        run: go test ./... -count=1
+      - name: Vet VPN core
+        working-directory: zju-connect
+        run: go vet ./...
       - name: Test long-running authorization script
         run: ECS_DARWIN_LONG_SCRIPT_TEST=1 go test . -run '^TestDarwinAuthorizationScriptLongRunning$' -timeout 3m
       - name: Test real utun lifecycle

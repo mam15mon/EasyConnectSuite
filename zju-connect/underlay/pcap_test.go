@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -72,7 +73,12 @@ func TestPCAPCaptureRecordsTCPInBothDirections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
+	// Windows exposes the read-only attribute, not POSIX permissions or ACLs.
+	if got := info.Mode().Perm(); runtime.GOOS == "windows" {
+		if got&0o200 == 0 {
+			t.Fatal("PCAP file is read-only")
+		}
+	} else if got != 0o600 {
 		t.Fatalf("PCAP permissions = %o, want 600", got)
 	}
 	packets := parsePCAPPackets(t, data)

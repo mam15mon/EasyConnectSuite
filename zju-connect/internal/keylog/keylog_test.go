@@ -3,6 +3,7 @@ package keylog
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -34,7 +35,12 @@ func TestOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
+	// Windows exposes the read-only attribute, not POSIX permissions or ACLs.
+	if got := info.Mode().Perm(); runtime.GOOS == "windows" {
+		if got&0o200 == 0 {
+			t.Fatal("key-log file is read-only")
+		}
+	} else if got != 0o600 {
 		t.Fatalf("key-log permissions = %o, want 600", got)
 	}
 }

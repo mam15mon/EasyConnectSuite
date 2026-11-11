@@ -33,6 +33,12 @@ jobs:
         run: go test ./...
       - name: Vet
         run: go vet ./...
+      - name: Test VPN core
+        working-directory: zju-connect
+        run: go test ./... -count=1
+      - name: Vet VPN core
+        working-directory: zju-connect
+        run: go vet ./...
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
       - name: Build Windows app
