@@ -17,6 +17,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"os"
 	"slices"
 	"sync"
 	"time"
@@ -55,6 +56,7 @@ type tunIngress struct {
 	cancel            context.CancelFunc
 	closeOnce         sync.Once
 	closeErr          error
+	claimRef          tunipc.Ref
 	closed            bool
 	connections       sync.Map
 }
@@ -81,6 +83,13 @@ func (t *tunIngress) update(spec TUNSpec, progress func(string, string)) error {
 	if progress != nil {
 		progress("配置路由", "正在配置 VPN 资源路由…")
 	}
+	// Reserve both the old and intended policy before making changes. A
+	// partially applied policy remains reserved until cleanup succeeds.
+	claim := tunPolicies.claims[t]
+	claim.prefixes = append(append([]string(nil), claim.prefixes...), prefixes...)
+	claim.names = append(append([]string(nil), claim.names...), spec.Names...)
+	tunPolicies.claims[t] = claim
+	t.claimRef = spec.Ref
 	if err := t.routes.replace(prefixes); err != nil {
 		return err
 	}
@@ -101,10 +110,15 @@ func (t *tunIngress) Close() error {
 		tunPolicies.Unlock()
 		// Keep resource claims until teardown completes, but let pending DNS
 		// handlers observe closed before waiting for the stack to stop.
+		cleanupCompleted := false
 		defer func() {
-			tunPolicies.Lock()
-			delete(tunPolicies.claims, t)
-			tunPolicies.Unlock()
+			if cleanupCompleted && t.closeErr == nil {
+				tunPolicies.Lock()
+				delete(tunPolicies.claims, t)
+				tunPolicies.Unlock()
+			} else {
+				log.Printf("[TUN pid=%d profile=%q session=%q attachment=%q] resource_claim_retained cleanup_completed=%t cause=%v", os.Getpid(), t.claimRef.Profile, t.claimRef.Session, t.claimRef.Attachment, cleanupCompleted, t.closeErr)
+			}
 		}()
 		t.cancel()
 		t.connections.Range(func(key, _ any) bool { _ = key.(io.Closer).Close(); return true })
@@ -115,6 +129,7 @@ func (t *tunIngress) Close() error {
 		if t.stack != nil {
 			t.closeErr = errors.Join(t.closeErr, t.stack.Close())
 		}
+		cleanupCompleted = true
 	})
 	return t.closeErr
 }

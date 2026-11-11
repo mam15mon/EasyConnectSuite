@@ -268,3 +268,56 @@ func TestLinuxTUNIngressDNSFailureCleanup(t *testing.T) {
 		})
 	}
 }
+
+type failingDNSClaimBackend struct {
+	*fakeRoutes
+	failure error
+}
+
+func (b *failingDNSClaimBackend) setDNS([]string) error { return b.failure }
+
+func TestLinuxFailedAttachRetainsClaimsWhenCleanupFails(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	failure := errors.New("synthetic DNS failure")
+	backend := &failingDNSClaimBackend{fakeRoutes: &fakeRoutes{present: map[string]bool{}}, failure: failure}
+	ingress := &tunIngress{ctx: ctx, cancel: cancel, dns: "198.19.128.2", backend: backend, routes: newRouteManager(backend)}
+	defer func() { tunPolicies.Lock(); delete(tunPolicies.claims, ingress); tunPolicies.Unlock() }()
+	spec := linuxTestSpec()
+	spec.Prefixes = []string{"192.0.2.0/24"}
+	spec.Names = []string{"example.invalid"}
+	if err := ingress.UpdateSpec(spec); !errors.Is(err, failure) {
+		t.Fatalf("update: %v", err)
+	}
+	if err := ingress.Close(); !errors.Is(err, failure) {
+		t.Fatalf("cleanup: %v", err)
+	}
+	tunPolicies.Lock()
+	err := checkTUNConflicts(&tunIngress{}, spec.Prefixes, spec.Names)
+	_, retained := tunPolicies.claims[ingress]
+	tunPolicies.Unlock()
+	if !retained || err == nil {
+		t.Fatalf("failed cleanup released claims: retained=%t conflict=%v", retained, err)
+	}
+}
+
+func TestLinuxFailedAttachReleasesClaimsAfterSuccessfulCleanup(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	failure := errors.New("synthetic DNS failure")
+	backend := &failingDNSClaimBackend{fakeRoutes: &fakeRoutes{present: map[string]bool{}}, failure: failure}
+	ingress := &tunIngress{ctx: ctx, cancel: cancel, dns: "198.19.128.2", backend: backend, routes: newRouteManager(backend)}
+	spec := linuxTestSpec()
+	spec.Prefixes = []string{"192.0.2.0/24"}
+	if err := ingress.UpdateSpec(spec); !errors.Is(err, failure) {
+		t.Fatalf("update: %v", err)
+	}
+	backend.failure = nil
+	if err := ingress.Close(); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	tunPolicies.Lock()
+	_, retained := tunPolicies.claims[ingress]
+	tunPolicies.Unlock()
+	if retained {
+		t.Fatal("successful cleanup retained claims")
+	}
+}
