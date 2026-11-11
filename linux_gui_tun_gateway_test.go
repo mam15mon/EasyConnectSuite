@@ -127,7 +127,7 @@ func TestLinuxGUIBackendTUNMockGateway(t *testing.T) {
 			linuxGUITUNEcho(t, conn, payload)
 			conn.Close()
 		}
-		output, err := exec.Command("resolvectl", "query", "--type=A", "synthetic.internal").CombinedOutput()
+		output, err := exec.Command("resolvectl", "query", "--type=A", "--cache=no", "synthetic.internal").CombinedOutput()
 		if err != nil || !bytes.Contains(output, []byte("10.90.0.3")) {
 			t.Fatalf("system split DNS: %s %v", output, err)
 		}
