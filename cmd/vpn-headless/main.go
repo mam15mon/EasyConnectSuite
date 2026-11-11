@@ -128,7 +128,7 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 	var outputMu sync.Mutex
 	opts := engine.Options{ConnectionID: "headless", Config: conf, Context: ctx, Domain: *domain,
 		OnStatus: func(status engine.Status) {
-			op := log.BeginOperation("[VPN profile=\"headless\"] ", "headless_status_output", ctx.Done())
+			op := log.BeginOperation(fmt.Sprintf("[VPN pid=%d profile=%q] ", os.Getpid(), "headless"), "headless_status_output", ctx.Done())
 			outcome := "interrupted"
 			var writeErr error
 			defer func() { op.Finish(outcome, writeErr) }()
