@@ -3,7 +3,9 @@ package engine
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
@@ -370,5 +372,48 @@ func TestResolvedSystemCallCanceledBeforeConnect(t *testing.T) {
 	err := resolvedSystemCall(ctx, "SetLinkDNS", int32(7), []resolvedAddress{})
 	if !errors.Is(err, context.Canceled) || !errors.Is(err, errResolvedNotSent) || errors.Is(err, errResolvedOutcomeUnknown) {
 		t.Fatalf("canceled request classification: %v", err)
+	}
+}
+
+func TestResolvedSystemCallCanceledDuringAuthentication(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bus.sock")
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	t.Setenv("DBUS_SYSTEM_BUS_ADDRESS", "unix:path="+path)
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- resolvedSystemCall(ctx, "SetLinkDNS", int32(7), []resolvedAddress{}) }()
+	var peer net.Conn
+	select {
+	case peer = <-accepted:
+		defer peer.Close()
+	case <-time.After(5 * time.Second):
+		t.Fatal("bus connection did not arrive")
+	}
+	// Read the authentication preamble, then leave the server silent.
+	_ = peer.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var buf [16]byte
+	if _, err := peer.Read(buf[:]); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) || !errors.Is(err, errResolvedNotSent) || errors.Is(err, errResolvedOutcomeUnknown) {
+			t.Fatalf("canceled authentication: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("authentication did not stop after cancellation")
 	}
 }

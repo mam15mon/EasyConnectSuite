@@ -81,9 +81,9 @@ func resolvedSystemCall(ctx context.Context, method string, args ...any) error {
 	if err := ctx.Err(); err != nil {
 		return errors.Join(err, errResolvedNotSent)
 	}
-	conn, err := dbus.ConnectSystemBus()
+	conn, err := dbus.ConnectSystemBus(dbus.WithContext(ctx))
 	if err != nil {
-		return errors.Join(err, errResolvedNotSent)
+		return errors.Join(err, ctx.Err(), errResolvedNotSent)
 	}
 	defer conn.Close()
 	obj := conn.Object("org.freedesktop.resolve1", dbus.ObjectPath("/org/freedesktop/resolve1"))
