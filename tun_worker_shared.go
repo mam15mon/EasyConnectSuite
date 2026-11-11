@@ -138,6 +138,12 @@ func (w *workerServer) handle(ctx context.Context, m tunipc.Message) (tunipc.Mes
 		if entry == nil || m.Spec == nil || m.Spec.Ref != m.Ref || entry.spec.Profile != m.Ref.Profile || entry.spec.Session != m.Ref.Session || m.Ref.Policy <= entry.spec.Policy || entry.spec.Slot != m.Spec.Slot {
 			return tunipc.Message{}, errors.New("obsolete TUN update")
 		}
+		if err := ctx.Err(); err != nil {
+			cleanupErr := entry.ingress.Close()
+			w.cleanupErr = errors.Join(w.cleanupErr, cleanupErr)
+			delete(w.entries, m.Ref.Attachment)
+			return tunipc.Message{}, errors.Join(err, cleanupErr)
+		}
 		if err := entry.ingress.UpdateSpec(*m.Spec); err != nil {
 			w.recordIngressCleanupFailure(err)
 			cleanupErr := entry.ingress.Close()

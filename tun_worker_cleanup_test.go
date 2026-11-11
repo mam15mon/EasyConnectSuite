@@ -104,3 +104,18 @@ func TestCanceledUpdateKeepsPreviousAttachmentIdentity(t *testing.T) {
 		t.Fatalf("canceled update changed identity: %+v", ingress.spec.Ref)
 	}
 }
+
+func TestWorkerCanceledUpdateRetiresOldAttachment(t *testing.T) {
+	ref := tunipc.Ref{Profile: "p", Session: "s", Attachment: "a", Policy: 1}
+	old := engine.TUNSpec{Ref: ref}
+	ingress := &cleanupGuardIngress{}
+	w := &workerServer{authenticated: true, entries: map[string]*workerEntry{"a": {spec: old, ingress: ingress}}}
+	next := old
+	next.Policy++
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := w.handle(ctx, tunipc.Message{Op: "update", Ref: next.Ref, Spec: &next})
+	if !errors.Is(err, context.Canceled) || ingress.updated || !ingress.closed || w.entries["a"] != nil {
+		t.Fatalf("canceled update: err=%v updated=%t closed=%t entries=%d", err, ingress.updated, ingress.closed, len(w.entries))
+	}
+}
