@@ -129,16 +129,20 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 	opts := engine.Options{ConnectionID: "headless", Config: conf, Context: ctx, Domain: *domain,
 		OnStatus: func(status engine.Status) {
 			op := log.BeginOperation("[VPN profile=\"headless\"] ", "headless_status_output", ctx.Done())
+			outcome := "interrupted"
+			var writeErr error
+			defer func() { op.Finish(outcome, writeErr) }()
 			op.Step("wait_output_lock")
 			outputMu.Lock()
-			op.Step("write_output")
-			_, writeErr := fmt.Fprintf(output, "状态: %s\n", status.Phase)
-			outputMu.Unlock()
-			outcome := "written"
+			func() {
+				defer outputMu.Unlock()
+				op.Step("write_output")
+				_, writeErr = fmt.Fprintf(output, "状态: %s\n", status.Phase)
+			}()
+			outcome = "written"
 			if writeErr != nil {
 				outcome = "failed"
 			}
-			op.Finish(outcome, writeErr)
 			if status.Phase == engine.PhaseError {
 				select {
 				case failed <- struct{}{}:
