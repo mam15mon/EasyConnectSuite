@@ -14,10 +14,10 @@
 
 ## Acceptance Criteria
 
-- [ ] 本地根模块、嵌套模块、前端测试与 vet 通过，跳过项可追溯。
-- [ ] 同一提交的 Windows、macOS 双架构、Linux、Android Actions 全部成功。
-- [ ] Release 包含六个二进制下载文件及 SHA256 校验清单，校验发布资源与 Actions 产物一致。
-- [ ] 发布说明给出提交、CI 链接、平台功能范围和未完成的真实环境验收。
+- [x] 本地根模块、嵌套模块、前端测试与 vet 通过，跳过项可追溯。
+- [x] 同一提交的 Windows、macOS 双架构、Linux、Android Actions 全部成功。
+- [x] Release 包含六个二进制下载文件及 SHA256 校验清单，校验发布资源与 Actions 产物一致。
+- [x] 发布说明给出提交、CI 链接、平台功能范围和未完成的真实环境验收。
 
 ## Notes
 
