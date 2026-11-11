@@ -64,7 +64,7 @@ try:
     expected = {'name': 'ci-profile', 'server': '127.0.0.1', 'port': 18445,
                 'username': 'mock-user', 'password': 'synthetic-password',
                 'socksPort': 19180, 'httpPort': 19181, 'protocol': 'easyconnect',
-                'tunMode': False, 'disableProxy': False}
+                'tunMode': True, 'disableProxy': True}
     ok = any(all(profile.get(key) == value for key, value in expected.items())
              for profile in data.get('profiles', []))
 except (OSError, ValueError):
@@ -82,6 +82,15 @@ if [ "$saved" -ne 1 ]; then
   echo 'GUI profile was not saved with the expected values' >&2
   exit 1
 fi
+/usr/bin/python3 build/linux/set-gui-proxy-mode.py
+python3 - "$config" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding='utf-8') as stream:
+    profiles = json.load(stream)['profiles']
+profile = next(p for p in profiles if p['name'] == 'ci-profile')
+if profile['tunMode'] or profile['disableProxy']:
+    raise SystemExit('GUI proxy-only preferences were not persisted')
+PY
 : "${ECS_MOCK_GATEWAY_LOG:?}"
 # SaveProfile makes this profile active; allow the frontend to refresh before clicking Connect.
 sleep 1
