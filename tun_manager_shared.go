@@ -170,6 +170,9 @@ func (a *remoteTUN) Update(ctx context.Context, spec engine.TUNSpec) (err error)
 	trace.Step("wait_manager_operation_lock")
 	a.manager.op.Lock()
 	defer a.manager.op.Unlock()
+	if err = ctx.Err(); err != nil {
+		return err
+	}
 	trace.Step("wait_attachment_lock")
 	a.mu.Lock()
 	a.spec = spec

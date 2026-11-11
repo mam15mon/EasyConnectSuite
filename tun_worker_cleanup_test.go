@@ -88,3 +88,19 @@ func TestWorkerBlocksAfterReplacementCleanupFailure(t *testing.T) {
 		t.Fatalf("shutdown lost cause: %v", err)
 	}
 }
+
+func TestCanceledUpdateKeepsPreviousAttachmentIdentity(t *testing.T) {
+	ref := tunipc.Ref{Profile: "p", Session: "s", Attachment: "a", Policy: 1}
+	manager := newTUNManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	ingress := &remoteTUN{manager: manager, spec: engine.TUNSpec{Ref: ref}}
+	next := ingress.spec
+	next.Policy++
+	if err := ingress.Update(ctx, next); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled update: %v", err)
+	}
+	if ingress.spec.Ref != ref {
+		t.Fatalf("canceled update changed identity: %+v", ingress.spec.Ref)
+	}
+}
