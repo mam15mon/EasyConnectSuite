@@ -50,7 +50,7 @@ jobs:
         run: go test -race ./cmd/vpn-headless
       - name: Test DNS calls over isolated D-Bus
         run: |
-          dbus-run-session -- sh -c 'export DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" ECS_RESOLVED_BUS_TEST=1; exec go test ./engine -run "^TestResolvedPrivateBus" -count=1 -v'
+          dbus-run-session -- sh -c 'export DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" ECS_RESOLVED_BUS_TEST=1; exec go test ./engine -run "^TestResolved(PrivateBus|SystemCallSaturatedBusQueue)" -count=1 -v'
       - name: Vet Linux packages
         run: go vet -tags webkit2_41 ./...
       - name: Test underlay networking
