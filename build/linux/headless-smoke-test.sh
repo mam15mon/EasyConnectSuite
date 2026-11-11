@@ -35,6 +35,8 @@ if [ "${1:-}" = --tun-isolated ]; then
   ip link add ecs-client type veth peer name ecs-uplink
   ip link set ecs-uplink netns ecs-gateway
   ip addr add 192.0.2.1/30 dev ecs-client
+  # This IPv4-only fixture must not add a link-local route after the baseline.
+  ip link set dev ecs-client addrgenmode none
   ip link set ecs-client up
   ip netns exec ecs-gateway ip addr add 192.0.2.2/30 dev ecs-uplink
   ip netns exec ecs-gateway ip link set ecs-uplink up
