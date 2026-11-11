@@ -4,13 +4,15 @@ set -euo pipefail
 # Run only synthetic identities through the pinned native library. Nothing from
 # the official package is installed, committed, or included in release outputs.
 [[ $(uname -sm) == 'Linux x86_64' ]]
+if [ "$#" -ne 1 ]; then
+  echo 'Usage: topsec-device-reference-test.sh /path/to/TopSAP-3.6.3.32.2.22375_amd64.deb' >&2
+  exit 2
+fi
+package=$1
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-echo 'Downloading pinned official TopSAP package (90 MB)'
-curl --fail --location --connect-timeout 20 --max-time 600 --speed-time 60 --speed-limit 1024 --output "$work/client.deb" \
-  https://app.topsec.com.cn/linux/general/x86_64/deb/TopSAP-3.6.3.32.2.22375_amd64.deb
-printf '%s  %s\n' b80632d99c9ae1a1283a03f0c6379285e652e1aec016788661d4d270eb705ba1 "$work/client.deb" | sha256sum --check --status
-dpkg-deb --fsys-tarfile "$work/client.deb" | tar -x -C "$work" ./opt/apps/cn.com.topvpn/files/libtopsec_vpn.so
+printf '%s  %s\n' b80632d99c9ae1a1283a03f0c6379285e652e1aec016788661d4d270eb705ba1 "$package" | sha256sum --check --status
+dpkg-deb --fsys-tarfile "$package" | tar -x -C "$work" ./opt/apps/cn.com.topvpn/files/libtopsec_vpn.so
 library="$work/opt/apps/cn.com.topvpn/files/libtopsec_vpn.so"
 printf '%s  %s\n' 4bad4c46933551d9e8e132821779b3b77230ea5306f4ee713dd40849d83dd981 "$library" | sha256sum --check --status
 echo 'Official package and library SHA-256 verified; building synthetic native probe'

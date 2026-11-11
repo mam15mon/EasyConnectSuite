@@ -70,3 +70,5 @@ TopSAP 标准模式已接入 Windows、macOS 和 Linux GUI/headless。协议核�
 取消时同时关闭私有管道并尝试结束辅助进程。等待 polkit 授权期间，pkexec 尚未读取 stdin，必须终止仍保留调用者真实 UID 的进程；完成 UID 切换后，辅助入口通过 EOF 退出。已经运行的辅助入口也在父进程退出后响应 EOF，避免硬件读取阻塞牵住调用者。该 UID 行为可对照 [polkit 125 pkexec 源码](https://github.com/polkit-org/polkit/blob/125/src/programs/pkexec.c)和 [Linux kill 权限规则](https://man7.org/linux/man-pages/man2/kill.2.html)。日志中的 `wait_privileged_device_identity` 包含授权与身份读取等待，不代表授权已获批准。
 
 Linux Go 回归覆盖读取顺序、字面向量、未知硬件明确失败、日志脱敏、辅助进程输出校验、授权等待取消、读取等待取消和已启动辅助入口的父进程死亡清理。跨平台适配器继续运行模拟网关 TCP/UDP 与三协议隔离检查；它们不证明 Linux/macOS 已通过真实网关认证，也不证明所有实体硬件都可读取上述身份。
+
+独立原生对照需在 Linux x86-64 准备 C++ 编译器、Go 和上文官方 Debian 包，然后运行 `bash build/linux/topsec-device-reference-test.sh /path/to/TopSAP-3.6.3.32.2.22375_amd64.deb`。脚本先验证包与库的固定哈希，再以纯合成输入执行原生函数；不安装官方客户端，也不读取真实硬件身份。GitHub 托管 Runner 连接官方下载站曾超时，因此发布 CI 保留 Go 向量与 race，原生对照在具备该包的独立 Linux 环境执行，具体结果和环境记录在发布验收中。

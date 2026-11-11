@@ -57,9 +57,6 @@ jobs:
       - name: Test TopSAP Linux identity lifecycle with race detector
         if: ${{ !cancelled() }}
         run: go test -race ./engine/topsec -count=1 -v
-      - name: Compare synthetic identity vectors with official TopSAP library
-        if: ${{ !cancelled() }}
-        run: bash build/linux/topsec-device-reference-test.sh
       - name: Test DNS calls over isolated D-Bus
         if: ${{ !cancelled() }}
         run: |
