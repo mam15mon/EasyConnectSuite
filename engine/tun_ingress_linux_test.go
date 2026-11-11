@@ -74,6 +74,12 @@ func TestLinuxTUNIngressTCPUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ingress.Close()
+	// DNS uses a separate address; TCP NAT must retain its own return route.
+	_, peer, _ := net.ParseCIDR("198.19.128.2/32")
+	peerRoutes, err := netlink.RouteListFiltered(netlink.FAMILY_V4, &netlink.Route{Dst: peer, Table: unix.RT_TABLE_MAIN}, netlink.RT_FILTER_DST|netlink.RT_FILTER_TABLE)
+	if err != nil || len(peerRoutes) != 1 || peerRoutes[0].LinkIndex != ingress.backend.(*linuxRoutes).index {
+		t.Fatalf("system TCP peer route missing or not owned: %+v %v", peerRoutes, err)
+	}
 	for _, network := range []string{"tcp4", "udp4"} {
 		t.Run(network, func(t *testing.T) {
 			conn, err := net.DialTimeout(network, "198.18.61.2:12345", 5*time.Second)
@@ -116,6 +122,10 @@ func TestLinuxTUNIngressTCPUDP(t *testing.T) {
 	}
 	if _, err := net.InterfaceByName(name); err == nil {
 		t.Fatal("interface still exists after ingress close")
+	}
+	peerRoutes, err = netlink.RouteListFiltered(netlink.FAMILY_V4, &netlink.Route{Dst: peer, Table: unix.RT_TABLE_MAIN}, netlink.RT_FILTER_DST|netlink.RT_FILTER_TABLE)
+	if err != nil || len(peerRoutes) != 0 {
+		t.Fatalf("system TCP peer route remained after close: %+v %v", peerRoutes, err)
 	}
 }
 

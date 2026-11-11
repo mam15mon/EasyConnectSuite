@@ -183,6 +183,15 @@ func startLinuxTUNIngressWithDNS(ctx context.Context, spec TUNSpec, service TUNB
 	}
 	obj.backend = backend
 	obj.routes = newRouteManager(backend)
+	// System TCP NAT uses the next interface address as its source. The
+	// interface has NOPREFIXROUTE, so replies need this explicit peer route
+	// independently of the DNS endpoint and resource policy.
+	op.Step("install_stack_peer_route")
+	peer := netip.MustParsePrefix(obj.prefix).Addr().Next()
+	if _, err = backend.Apply([]string{netip.PrefixFrom(peer, 32).String()}, nil); err != nil {
+		outcome = "failed"
+		return
+	}
 	op.Step("create_stack")
 	obj.stack, err = tun.NewStack("system", tun.StackOptions{Context: attachCtx, Tun: obj.device, Name: obj.name, MTU: 1400, Inet4Address: []netip.Prefix{netip.MustParsePrefix(obj.prefix)}, UDPTimeout: 60, Handler: obj, Logger: tunLogger{}})
 	if err != nil {
