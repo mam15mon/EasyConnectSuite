@@ -107,6 +107,32 @@ func TestLinuxGUIBackendTUNMockGateway(t *testing.T) {
 			linuxGUIAssertNoTUN(t)
 			continue
 		}
+		// SetTUN returns after attachment; DNS discovery then publishes policy 2
+		// asynchronously. Wait for its completed Worker reply before inspecting
+		// the interface, which that update deliberately replaces.
+		deadline := time.Now().Add(15 * time.Second)
+		for {
+			manager.op.Lock()
+			manager.mu.Lock()
+			updated := false
+			for _, attachment := range manager.attachments {
+				attachment.mu.RLock()
+				updated = attachment.spec.Profile == profile.ID && attachment.spec.Policy >= 2
+				attachment.mu.RUnlock()
+				if updated {
+					break
+				}
+			}
+			manager.mu.Unlock()
+			manager.op.Unlock()
+			if updated {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("initial DNS policy update did not complete")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 		routes, err := netlink.RouteGet(net.IPv4(10, 90, 0, 3))
 		if err != nil || len(routes) == 0 {
 			t.Fatalf("TUN resource route: %v", err)
