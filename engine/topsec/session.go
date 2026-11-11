@@ -53,7 +53,7 @@ type Session struct {
 var nextSessionID atomic.Uint64
 
 func Dial(ctx context.Context, opts Options) (*Session, error) {
-	code, err := localDeviceCode(opts.ConnectionID)
+	code, err := localDeviceCode(ctx, opts.ConnectionID)
 	if err != nil {
 		return nil, err
 	}

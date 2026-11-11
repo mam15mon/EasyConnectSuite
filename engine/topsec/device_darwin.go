@@ -33,6 +33,7 @@ static int ecs_topsec_identity(char *buf, size_t size, int *source) {
 import "C"
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/base64"
 	"fmt"
@@ -41,8 +42,8 @@ import (
 	vpnlog "EasyConnectSuite/vpncore/log"
 )
 
-func localDeviceCode(profileID string) (code string, err error) {
-	op := vpnlog.BeginOperation(fmt.Sprintf("[TopSAP pid=%d profile=%q] ", os.Getpid(), profileID), "darwin_device_identity", nil)
+func localDeviceCode(ctx context.Context, profileID string) (code string, err error) {
+	op := vpnlog.BeginOperation(fmt.Sprintf("[TopSAP pid=%d profile=%q] ", os.Getpid(), profileID), "darwin_device_identity", ctx.Done())
 	outcome := "interrupted"
 	defer func() { op.Finish(outcome, err) }()
 	op.Step("read_platform_identity")

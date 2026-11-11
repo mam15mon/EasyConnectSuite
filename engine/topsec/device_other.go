@@ -1,9 +1,12 @@
-//go:build !windows && !darwin
+//go:build !windows && !darwin && (!linux || android)
 
 package topsec
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
 
-func localDeviceCode(profileID string) (string, error) {
-	return "", errors.New("TopSAP 设备标识目前仅实现 Windows")
+func localDeviceCode(ctx context.Context, profileID string) (string, error) {
+	return "", errors.New("TopSAP 设备标识不支持当前平台")
 }

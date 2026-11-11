@@ -20,7 +20,7 @@ func TestDarwinDeviceIdentityReadsPlatformWithoutLoggingIt(t *testing.T) {
 	previous := log.Writer()
 	log.SetOutput(&output)
 	defer log.SetOutput(previous)
-	code, err := localDeviceCode("synthetic-profile")
+	code, err := localDeviceCode(context.Background(), "synthetic-profile")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestDarwinDeviceIdentityReadsPlatformWithoutLoggingIt(t *testing.T) {
 }
 
 func TestDarwinDialSendsPlatformDeviceCode(t *testing.T) {
-	code, err := localDeviceCode("synthetic-profile")
+	code, err := localDeviceCode(context.Background(), "synthetic-profile")
 	if err != nil {
 		t.Fatal(err)
 	}

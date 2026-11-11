@@ -2,6 +2,7 @@ package topsec
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -15,7 +16,7 @@ import (
 
 // This is the observed native PCI-NIC identity path, without calling TopSAP's
 // local service or copying its saved identifier. Preserve GetAdaptersInfo order.
-func localDeviceCode(profileID string) (string, error) {
+func localDeviceCode(ctx context.Context, profileID string) (string, error) {
 	var size uint32
 	if err := windows.GetAdaptersInfo(nil, &size); !errors.Is(err, windows.ERROR_BUFFER_OVERFLOW) {
 		return "", fmt.Errorf("TopSAP 读取网卡失败: %w", err)
