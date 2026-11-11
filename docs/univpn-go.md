@@ -47,6 +47,8 @@ UniVPN Go 核心已接入 GUI、gVisor TCP/UDP、本地 SOCKS5/HTTP 代理及 Wi
 | Wails 生产 EXE 构建 | 通过，原版 20,516,352 字节 |
 | UPX ultra-brute/LZMA 与 `upx -t` | 通过，压缩版 5,882,368 字节，为原版 28.67% |
 
+2026-11-11 更新：上述 keylog／PCAP 权限测试改为 Unix 检查 `0600`，Windows 检查 Go 支持的可写属性；文件内容和双向报文检查继续执行，不跳过整个测试。这不验证 Windows ACL 隔离。Windows、macOS 和 Linux 发布 CI 现分别运行完整 `zju-connect` 模块测试及 vet，结果以对应 Release 的同提交 Actions 记录为准。
+
 测试覆盖分段帧读取、认证转义、错误密码只连接一次、地址和路由、两条 TLS 通道身份绑定、不受信证书拒绝、IPv4 报文往返、两种心跳、控制连接丢失、连接期间与会话期间取消，以及损坏的帧、TLV、路由和数据报文。
 
 协议参考的原生 codec 测试通过；上游 Python 测试 44 项中 43 项通过，1 项 Unix 文件权限测试在 Windows 跳过。完整 C/OpenConnect Windows 构建未通过，遇到 TLS 声明／结构字段相关编译错误；该构建不作为 Go 核心的运行依赖。

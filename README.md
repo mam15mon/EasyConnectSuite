@@ -1,6 +1,8 @@
 # VPN
 
-支持深信服 EasyConnect、华为／联软 UniVPN 及天融信 TopSAP 标准模式协议子集的第三方桌面图形客户端。一个 EXE 可同时连接多个配置，分别管理连接状态、资源、本地代理和 TUN。EasyConnect 引擎基于 [zju-connect](https://github.com/mythologyli/zju-connect)(上游 commit `4031c52`)，UniVPN 和 TopSAP 使用 Go 协议核心；**引擎源码直接编译进 GUI 进程**，无需 OpenConnect 或 Python 子进程。支持范围见 [UniVPN 接入说明](docs/univpn-go.md)及 [TopSAP 测试版说明](docs/topsec-go.md)；TopSAP 的新版 EXE 仍待真实网关验证。
+支持深信服 EasyConnect、华为／联软 UniVPN 及天融信 TopSAP 标准模式协议子集的第三方桌面图形客户端。一个 EXE 可同时连接多个配置，分别管理连接状态、资源、本地代理和 TUN。EasyConnect 引擎基于 [zju-connect](https://github.com/mythologyli/zju-connect)(上游 commit `4031c52`)，UniVPN 和 TopSAP 使用 Go 协议核心；**引擎源码直接编译进 GUI 进程**，无需 OpenConnect 或 Python 子进程。支持范围见 [UniVPN 接入说明](docs/univpn-go.md)及 [TopSAP 测试版说明](docs/topsec-go.md)；TopSAP Windows fix4 曾由用户确认真实登录和内网访问成功，最新发布包与其他平台仍需分别验收。
+
+Windows x64、macOS Intel / Apple Silicon、Linux x64 图形版／命令行版及 Android APK 的下载、源码提交和测试记录见 [GitHub Releases](https://github.com/mam15mon/EasyConnectSuite/releases)。各平台功能范围不同：Linux 用户入口目前仅代理；Android 为 EasyConnect 原型，调试签名 APK 不代表具备桌面端全部协议和功能。
 
 macOS 支持 EasyConnect、UniVPN 的代理模式和按 VPN 资源分流的 IPv4 TCP/UDP TUN。开启 TUN 时会请求管理员授权，主程序无需提权；域名资源使用系统 resolver。GitHub Actions 在 Intel 和 Apple Silicon 测试真实 utun、系统 DNS、多连接与模拟后端转发，并构建 `.app`。真实网关连接和管理员授权弹窗交互尚未验证，CI 成功不代表已验证真实连接。菜单栏支持查看各连接、连接或断开、打开工作台和退出；TopSAP 的 macOS 设备标识依据官方客户端静态分析实现，真实网关仍待验证。配置和主程序日志位于 `~/Library/Application Support/VPN`；TUN Worker 的管理员诊断日志位于 `/private/var/log/EasyConnectSuite/tun-worker-crash.log`。菜单栏成功启动后，关闭窗口会隐藏工作台并保持连接，使用菜单栏的退出操作可断开连接并退出；菜单栏和窗口的实际交互尚未在实体 Mac 验证。Actions 产物为保留可执行权限的 `.tar.gz`，应用尚未签名或公证。
 
@@ -82,7 +84,7 @@ upx -t build/bin/VPN.exe
 
 ## Linux 开发版
 
-Linux x86-64 的图形版和无图形版正在适配，首发目标是 Ubuntu/Debian。图形版使用 Wails、GTK 3 和 WebKitGTK 4.1，配置位于 `${XDG_CONFIG_HOME:-$HOME/.config}/VPN`；Linux 默认使用本地代理。保存配置时会将配置文件权限限制为 `0600`。Linux 系统 TUN、路由与 DNS 接管尚未实现，不能使用桌面端 TUN 功能。
+Linux x86-64 提供图形版和无图形版预览产物，CI 环境为 Ubuntu 24.04。图形版使用 Wails、GTK 3 和 WebKitGTK 4.1，配置位于 `${XDG_CONFIG_HOME:-$HOME/.config}/VPN`；Linux 使用本地代理。保存配置时会将配置文件权限限制为 `0600`。内部 TUN、路由、DNS 和 Worker 已有隔离系统测试，但用户入口尚未开放，不能使用桌面端 TUN 功能。
 
 无图形版 `vpn-headless` 在前台运行单个连接，默认仅在 `127.0.0.1` 开放 SOCKS5 `1080` 和 HTTP `1081`；应用需要显式使用这些代理。可通过 `-socks-port`、`-http-port` 调整端口，`-proxy-all` 将代理请求送往 VPN，同时保留服务器资源访问限制。密码从标准输入读取，不接受作为命令行参数；输入第二行 TOTP 密钥时使用 `-totp-stdin`。例如在交互式 Bash 中：
 
@@ -92,7 +94,7 @@ printf '%s\n' "$vpn_password" | ./vpn-headless -server vpn.example.com -username
 unset vpn_password
 ```
 
-通过 Ctrl+C 或 SIGTERM 停止。支持的协议选项为 `easyconnect`、`univpn` 和 `topsec`，但 Linux TopSAP 设备身份尚未实现；Linux 真实网关兼容性尚未验证。当前模拟测试已覆盖 EasyConnect 登录、SOCKS5 TCP 数据往返和信号退出，不代表真实网关、完整桌面功能或长期稳定性已验证。正式安装包和各平台发布产物仍在准备中。
+通过 Ctrl+C 或 SIGTERM 停止。支持的协议选项为 `easyconnect`、`univpn` 和 `topsec`，但 Linux TopSAP 设备身份尚未实现，不能作为可用协议；Linux 真实网关兼容性尚未验证。当前模拟测试已覆盖 EasyConnect 登录、SOCKS5 TCP 数据往返和信号退出，不代表真实网关、完整桌面功能或长期稳定性已验证。Linux Release 提供 GUI 和 headless 的 `.tar.gz` 压缩包，尚无 deb/rpm 安装包。
 
 ## 同时连接多个 VPN
 
