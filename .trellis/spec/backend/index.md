@@ -11,5 +11,6 @@ The desktop backend is Go 1.25.6 with Wails v2. It embeds the local zju-connect 
 | [Quality](quality-guidelines.md) | Minimal changes and Windows verification |
 | [TopSAP](topsec-protocol.md) | Observed authentication, device identity and IPv4 wire contracts |
 | [TUN Worker](tun-worker.md) | Independent elevation, hot attachment, IPC identity, data flow and cleanup |
+| [Linux TUN](linux-tun.md) | GUI/headless modes, resolved completion, generation isolation and real system tests |
 
 For UI changes read ../frontend/index.md. User rules in root AGENTS.md take precedence over generated workflow defaults.
