@@ -18,6 +18,7 @@ import (
 
 	"EasyConnectSuite/engine"
 	"EasyConnectSuite/vpncore/configs"
+	"EasyConnectSuite/vpncore/log"
 )
 
 type runningEngine interface{ Stop() }
@@ -127,9 +128,17 @@ func run(ctx context.Context, args []string, input io.Reader, output, diagnostic
 	var outputMu sync.Mutex
 	opts := engine.Options{ConnectionID: "headless", Config: conf, Context: ctx, Domain: *domain,
 		OnStatus: func(status engine.Status) {
+			op := log.BeginOperation("[VPN profile=\"headless\"] ", "headless_status_output", ctx.Done())
+			op.Step("wait_output_lock")
 			outputMu.Lock()
-			fmt.Fprintf(output, "状态: %s\n", status.Phase)
+			op.Step("write_output")
+			_, writeErr := fmt.Fprintf(output, "状态: %s\n", status.Phase)
 			outputMu.Unlock()
+			outcome := "written"
+			if writeErr != nil {
+				outcome = "failed"
+			}
+			op.Finish(outcome, writeErr)
 			if status.Phase == engine.PhaseError {
 				select {
 				case failed <- struct{}{}:
