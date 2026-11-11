@@ -53,7 +53,11 @@ func main() {
 		panic(err)
 	}
 	config := &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}, MinVersion: tls.VersionTLS11, CipherSuites: []uint16{tls.TLS_RSA_WITH_RC4_128_SHA}}
-	listener, err := tls.Listen("tcp", "127.0.0.1:18445", config)
+	listenAddress := "127.0.0.1:18445"
+	if address := os.Getenv("ECS_MOCK_LISTEN_ADDRESS"); address != "" {
+		listenAddress = address
+	}
+	listener, err := tls.Listen("tcp", listenAddress, config)
 	if err != nil {
 		panic(err)
 	}
@@ -162,7 +166,7 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 			}
 		case 6:
 			session := loginCount.Load()
-			if recvCount.Add(1) == 1 {
+			if recvCount.Add(1) == 1 && os.Getenv("ECS_MOCK_TUN_RESOURCES") != "1" {
 				for {
 					packet := <-udpReplies
 					if _, err := conn.Write(packet); err != nil {
@@ -228,6 +232,10 @@ func serve(conn net.Conn, key *rsa.PrivateKey) {
 		body = "<Auth><Message>success</Message><ErrorCode>1</ErrorCode></Auth>"
 	case "/por/conf.csp":
 	case "/por/rclist.csp":
+		if os.Getenv("ECS_MOCK_TUN_RESOURCES") == "1" {
+			body = `<Resource><Rcs><Rc type="1" proto="-1" host="10.90.0.3" port="12345~12345"/><Rc type="1" proto="-1" host="synthetic.internal" port="12345~12345"/></Rcs><Dns data="1:synthetic.internal:10.90.0.3" dnsserver="10.90.0.1"/></Resource>`
+			break
+		}
 		marker := os.Getenv("ECS_MOCK_GUI_RESOURCES")
 		if marker == "" {
 			return
