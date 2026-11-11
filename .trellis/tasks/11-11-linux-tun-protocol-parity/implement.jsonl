@@ -1,0 +1,3 @@
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"关键生命周期的操作身份、取消与阻塞证据"}
+{"file":".trellis/spec/backend/tun-worker.md","reason":"TUN所有权、热切换、IPC和清理"}
+{"file":".trellis/spec/backend/topsec-protocol.md","reason":"TopSAP已观察协议与禁止猜测身份"}
