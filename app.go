@@ -55,7 +55,7 @@ type PlatformInfo struct {
 }
 
 func (a *App) GetPlatformInfo() PlatformInfo {
-	return PlatformInfo{TUNSupported: goruntime.GOOS == "windows" || goruntime.GOOS == "darwin", LogDir: applicationLogDir(), CloseToTray: platformCloseToTray()}
+	return PlatformInfo{TUNSupported: goruntime.GOOS == "windows" || goruntime.GOOS == "darwin" || goruntime.GOOS == "linux", LogDir: applicationLogDir(), CloseToTray: platformCloseToTray()}
 }
 
 // VPNStatus contains current connection status

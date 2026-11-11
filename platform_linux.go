@@ -44,4 +44,4 @@ func applicationStorageRoot() string {
 	}
 	return ""
 }
-func configureDefaultProfile(p *Profile) { p.TUNMode = false; p.DisableProxy = false }
+func configureDefaultProfile(*Profile) {}

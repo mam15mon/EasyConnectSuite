@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"EasyConnectSuite/engine"
@@ -48,58 +47,63 @@ func TestLinuxProfileConfigRestrictsNewAndExistingFiles(t *testing.T) {
 	}
 }
 
-func TestLinuxImportedTUNRequiresExplicitDisableBeforeConnecting(t *testing.T) {
+func TestLinuxImportedTUNUsesControllerAndPreservesProxyPreference(t *testing.T) {
 	setTestStorage(t)
 	a := multiTestApp(t)
 	a.appConfig.Profiles[0].TUNMode = true
+	manager := &fakeTUNControl{}
+	a.tunManager = manager
 	id := a.appConfig.Profiles[0].ID
 	started := false
 	start := func(o engine.Options) (vpnEngine, error) {
 		started = true
-		if o.TUNEnabled {
-			t.Fatal("TUN unexpectedly enabled")
+		if !o.TUNEnabled || o.TUNController != manager || o.Config.TUNMode {
+			t.Fatal("desktop TUN was not passed to the independent controller")
+		}
+		if o.Config.SocksBind == "" || o.Config.HTTPBind == "" {
+			t.Fatal("TUN disabled the saved proxy listeners")
 		}
 		e := &fakeVPNEngine{opts: o}
 		o.OnStatus(engine.Status{Phase: engine.PhaseConnected})
 		return e, nil
 	}
 	result := a.startConnectionID(id, start)
-	if !strings.Contains(result, "关闭 TUN") || started || !a.appConfig.Profiles[0].TUNMode {
-		t.Fatalf("unsupported imported TUN: result=%q started=%t enabled=%t", result, started, a.appConfig.Profiles[0].TUNMode)
-	}
-	if err := a.SetProfileTUNMode(id, false); err != nil {
-		t.Fatal(err)
-	}
-	if result = a.startConnectionID(id, start); result != "OK" || !started {
-		t.Fatalf("proxy connection: %q started=%t", result, started)
+	if result != "OK" || !started || !a.appConfig.Profiles[0].TUNMode {
+		t.Fatalf("imported TUN: result=%q started=%t enabled=%t", result, started, a.appConfig.Profiles[0].TUNMode)
 	}
 	a.stopConnection(id)
 }
 
-func TestLinuxImportedDisabledProxyRequiresExplicitEnable(t *testing.T) {
+func TestLinuxTUNOnlyPreservesDisabledProxy(t *testing.T) {
 	setTestStorage(t)
 	a := multiTestApp(t)
 	a.appConfig.Profiles[0].DisableProxy = true
+	a.appConfig.Profiles[0].TUNMode = true
+	a.tunManager = &fakeTUNControl{}
 	id := a.appConfig.Profiles[0].ID
 	started := false
 	start := func(o engine.Options) (vpnEngine, error) {
 		started = true
-		if o.Config.SocksBind == "" || o.Config.HTTPBind == "" {
-			t.Fatal("proxy listeners disabled")
+		if o.Config.SocksBind != "" || o.Config.HTTPBind != "" || !o.TUNEnabled {
+			t.Fatal("TUN-only connection changed the saved transport preferences")
 		}
 		e := &fakeVPNEngine{opts: o}
 		o.OnStatus(engine.Status{Phase: engine.PhaseConnected})
 		return e, nil
 	}
 	result := a.startConnectionID(id, start)
-	if !strings.Contains(result, "启用本地代理") || started || !a.appConfig.Profiles[0].DisableProxy {
-		t.Fatalf("disabled proxy: result=%q started=%t disabled=%t", result, started, a.appConfig.Profiles[0].DisableProxy)
-	}
-	if err := a.SetProxyEnabled(true); err != nil {
-		t.Fatal(err)
-	}
-	if result = a.startConnectionID(id, start); result != "OK" || !started {
-		t.Fatalf("proxy connection: %q started=%t", result, started)
+	if result != "OK" || !started || !a.appConfig.Profiles[0].DisableProxy {
+		t.Fatalf("TUN-only connection: %q started=%t", result, started)
 	}
 	a.stopConnection(id)
+}
+
+func TestLinuxPlatformAdvertisesTUNAndUsesWorkerManager(t *testing.T) {
+	if !new(App).GetPlatformInfo().TUNSupported {
+		t.Fatal("Linux TUN capability is hidden")
+	}
+	manager := newTUNManager()
+	if manager.launch == nil || manager.attachments == nil || manager.reservations == nil {
+		t.Fatal("Linux TUN manager is not initialized")
+	}
 }
