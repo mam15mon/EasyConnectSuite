@@ -673,36 +673,40 @@ func TestHeartbeatWaitsForFirstInterval(t *testing.T) {
 }
 
 func TestHeartbeatSuccessfulCommandWriteSuppressesProbe(t *testing.T) {
-	transport := &trackingNetConn{closed: make(chan struct{})}
-	written := make(chan []byte, 2)
-	conn := &l3TunnelConn{
-		tlsConn:            tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
-		closeCh:            make(chan struct{}),
-		conntrackMgr:       newConntrackMgr(),
-		heartbeatInterval:  40 * time.Millisecond,
-		heartbeatMissLimit: 2,
-		writeFrameHook: func(frame []byte) error {
-			written <- append([]byte(nil), frame...)
-			return nil
-		},
-	}
-	atomic.StoreInt32(&conn.heartbeatMisses, 1)
-	if err := conn.writeFrame([]byte{l3Version, cmdDataReq}); err != nil {
-		t.Fatal(err)
-	}
-	<-written
-	go conn.heartbeatLoop()
+	synctest.Test(t, func(t *testing.T) {
+		transport := &trackingNetConn{closed: make(chan struct{})}
+		written := make(chan []byte, 2)
+		conn := &l3TunnelConn{
+			tlsConn:            tls.Client(transport, &tls.Config{InsecureSkipVerify: true}),
+			closeCh:            make(chan struct{}),
+			conntrackMgr:       newConntrackMgr(),
+			heartbeatInterval:  40 * time.Millisecond,
+			heartbeatMissLimit: 2,
+			writeFrameHook: func(frame []byte) error {
+				written <- append([]byte(nil), frame...)
+				return nil
+			},
+		}
+		atomic.StoreInt32(&conn.heartbeatMisses, 1)
+		if err := conn.writeFrame([]byte{l3Version, cmdDataReq}); err != nil {
+			t.Fatal(err)
+		}
+		<-written
+		go conn.heartbeatLoop()
+		synctest.Wait()
 
-	time.Sleep(60 * time.Millisecond)
-	if misses := atomic.LoadInt32(&conn.heartbeatMisses); misses != 0 {
-		t.Fatalf("heartbeat misses = %d, want command activity to clear misses", misses)
-	}
-	select {
-	case frame := <-written:
-		t.Fatalf("heartbeat sent despite command activity: % X", frame)
-	default:
-	}
-	_ = conn.Close()
+		time.Sleep(60 * time.Millisecond)
+		if misses := atomic.LoadInt32(&conn.heartbeatMisses); misses != 0 {
+			t.Fatalf("heartbeat misses = %d, want command activity to clear misses", misses)
+		}
+		select {
+		case frame := <-written:
+			t.Fatalf("heartbeat sent despite command activity: % X", frame)
+		default:
+		}
+		_ = conn.Close()
+		synctest.Wait()
+	})
 }
 
 func TestSuccessfulHeartbeatWriteClearsMissesOnNextTick(t *testing.T) {
