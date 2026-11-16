@@ -108,6 +108,14 @@ PY
       sleep .1
     done
     grep -q '^TUN: on$' "$tun_work/client-$mode.log"
+    # Initial DNS discovery replaces the first TUN policy asynchronously.
+    # Inspect the interface only after that replacement has completed.
+    for _ in $(seq 1 300); do
+      if grep -q 'name=tun_update .*phase=end outcome=updated' "$tun_work/client-$mode.log"; then break; fi
+      kill -0 "$client_pid"
+      sleep .1
+    done
+    grep -q 'name=tun_update .*phase=end outcome=updated' "$tun_work/client-$mode.log"
     iface=$(ip -j route get 10.90.0.3 | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["dev"])')
     [[ "$iface" == ecs* && "$iface" != ecs-client ]]
     ifindex=$(ip -j link show dev "$iface" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["ifindex"])')
