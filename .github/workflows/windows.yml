@@ -43,9 +43,11 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
       - name: Build Windows app
         run: wails build -s -skipbindings -m -nosyncgomod -trimpath
+      - name: Name Windows download
+        run: Copy-Item build/bin/VPN.exe build/bin/EasyConnectSuite-Windows-x86_64.exe
       - name: Upload app
         uses: actions/upload-artifact@v4
         with:
           name: VPN-windows-amd64
-          path: build/bin/VPN.exe
+          path: build/bin/EasyConnectSuite-Windows-x86_64.exe
           if-no-files-found: error

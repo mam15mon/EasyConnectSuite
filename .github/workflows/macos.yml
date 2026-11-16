@@ -59,11 +59,12 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
       - name: Build macOS app
         run: wails build -platform darwin/${{ runner.arch == 'ARM64' && 'arm64' || 'amd64' }} -m -nosyncgomod -trimpath
-      - name: Archive app with executable permissions
-        run: tar -czf "build/bin/VPN-${{ runner.arch }}.tar.gz" -C build/bin VPN.app
+      - name: Package macOS app
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent build/bin/VPN.app "build/bin/EasyConnectSuite-macOS-${{ runner.arch == 'ARM64' && 'Apple-Silicon' || 'Intel' }}.zip"
       - name: Upload app
         uses: actions/upload-artifact@v4
         with:
           name: VPN-${{ matrix.os }}
-          path: build/bin/*.tar.gz
+          path: build/bin/*.zip
           if-no-files-found: error

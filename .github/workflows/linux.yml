@@ -144,17 +144,17 @@ jobs:
         run: go build -o "$RUNNER_TEMP/zju-connect-linux-amd64" .
       - name: Package Linux artifacts
         run: |
-          tar -czf "$RUNNER_TEMP/VPN-linux-amd64.tar.gz" -C build/bin VPN
-          tar -czf "$RUNNER_TEMP/vpn-headless-linux-amd64.tar.gz" -C "$RUNNER_TEMP" vpn-headless-linux-amd64
+          tar -czf "$RUNNER_TEMP/EasyConnectSuite-Linux-x86_64-Desktop.tar.gz" -C build/bin VPN
+          tar -czf "$RUNNER_TEMP/EasyConnectSuite-Linux-x86_64-Command-Line.tar.gz" -C "$RUNNER_TEMP" vpn-headless-linux-amd64
       - name: Upload Linux GUI artifact
         uses: actions/upload-artifact@v4
         with:
           name: VPN-linux-amd64
-          path: ${{ runner.temp }}/VPN-linux-amd64.tar.gz
+          path: ${{ runner.temp }}/EasyConnectSuite-Linux-x86_64-Desktop.tar.gz
           if-no-files-found: error
       - name: Upload Linux headless artifact
         uses: actions/upload-artifact@v4
         with:
           name: vpn-headless-linux-amd64
-          path: ${{ runner.temp }}/vpn-headless-linux-amd64.tar.gz
+          path: ${{ runner.temp }}/EasyConnectSuite-Linux-x86_64-Command-Line.tar.gz
           if-no-files-found: error
