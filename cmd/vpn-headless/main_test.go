@@ -33,6 +33,9 @@ func TestRunCancelsAndStopsWithLocalProxyAndPrivateSecrets(t *testing.T) {
 		if !o.Config.ProxyAll {
 			t.Fatal("proxy-all was not passed to engine")
 		}
+		if !o.Config.AutoDetectInterface || o.Config.BindInterface != "" || o.OnResources != nil {
+			t.Fatal("manual interface or resource output enabled by default")
+		}
 		if o.Config.TUNMode || o.TUNEnabled {
 			t.Fatal("TUN unexpectedly enabled")
 		}
@@ -63,6 +66,9 @@ func TestRunRejectsInvalidArgumentsBeforeStarting(t *testing.T) {
 	for _, args := range [][]string{
 		{"-server", "x", "-username", "u", "-socks-port", "1081"},
 		{"-server", "x", "-username", "u", "-protocol", "unknown"},
+		{"-server", "x", "-username", "u", "-insecure-skip-verify"},
+		{"-server", "x", "-username", "u", "-protocol", "univpn", "-keepalive-url", "https://probe.invalid"},
+		{"-server", "x", "-username", "u", "-protocol", "topsec", "-disable-keepalive"},
 		{"-server", "x", "-username", "u", "-protocol", "univpn", "-totp-stdin"},
 		{"-server", "x", "-username", "u", "secret-argument"},
 	} {
@@ -72,6 +78,94 @@ func TestRunRejectsInvalidArgumentsBeforeStarting(t *testing.T) {
 		})
 		if err == nil {
 			t.Fatalf("accepted invalid arguments: %v", args)
+		}
+	}
+}
+
+func TestRunCertificateVerification(t *testing.T) {
+	for _, protocol := range []string{"univpn", "topsec"} {
+		t.Run(protocol, func(t *testing.T) {
+			if err := checkHeadlessProtocol(protocol); err != nil {
+				t.Skip(err)
+			}
+			for _, tc := range []struct {
+				name string
+				flag string
+				skip bool
+			}{
+				{name: "default"},
+				{name: "explicit opt-in", flag: "-insecure-skip-verify", skip: true},
+				{name: "explicit verification", flag: "-insecure-skip-verify=false"},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					args := []string{"-protocol", protocol, "-server", "vpn.invalid", "-username", "test"}
+					if tc.flag != "" {
+						args = append(args, tc.flag)
+					}
+					started := errors.New("engine reached")
+					err := run(context.Background(), args, strings.NewReader("password\n"), io.Discard, io.Discard, func(o engine.Options) (runningEngine, error) {
+						if o.Config.Protocol != protocol || o.InsecureSkipVerify != tc.skip {
+							t.Fatalf("protocol=%q skip verification=%t, want %q and %t", o.Config.Protocol, o.InsecureSkipVerify, protocol, tc.skip)
+						}
+						return nil, started
+					})
+					if !errors.Is(err, started) {
+						t.Fatalf("engine was not reached: %v", err)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestRunEasyConnectUnderlayAndKeepAlive(t *testing.T) {
+	for _, disable := range []bool{false, true} {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		args := []string{"-server", "vpn.invalid", "-username", "test", "-bind-interface", "eth0", "-keepalive-url", " https://probe.invalid "}
+		wantURL := "https://probe.invalid"
+		if disable {
+			args = append(args, "-disable-keepalive")
+			wantURL = ""
+		}
+		err := run(ctx, args, strings.NewReader("password\n"), io.Discard, io.Discard, func(o engine.Options) (runningEngine, error) {
+			if o.Config.BindInterface != "eth0" || o.Config.AutoDetectInterface {
+				t.Fatal("explicit underlay interface was not passed to engine")
+			}
+			if o.Config.DisableKeepAlive != disable || o.Config.KeepAliveURL != wantURL {
+				t.Fatalf("keepalive disabled=%t URL=%q, want %t and %q", o.Config.DisableKeepAlive, o.Config.KeepAliveURL, disable, wantURL)
+			}
+			cancel()
+			return &fakeEngine{}, nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestRunShowsStatusAndResourceUpdates(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var out bytes.Buffer
+	args := []string{"-server", "vpn.invalid", "-username", "test", "-show-resources"}
+	err := run(ctx, args, strings.NewReader("password\n"), &out, io.Discard, func(o engine.Options) (runningEngine, error) {
+		if o.OnResources == nil {
+			t.Fatal("resource callback was not wired")
+		}
+		o.OnResources([]engine.ResourceEntry{{Kind: "ip", Target: "192.0.2.1", Ports: "443", Protocol: "TCP"}})
+		o.OnStatus(engine.Status{Phase: engine.PhaseConnected, ClientIP: "198.51.100.2", DNS: "198.51.100.53"})
+		o.OnStatus(engine.Status{Phase: engine.PhaseReconnecting, Stage: "认证中", Message: "正在重新登录"})
+		o.OnResources(nil)
+		cancel()
+		return &fakeEngine{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, part := range []string{`授权资源: 1`, `类型="ip" 目标="192.0.2.1" 端口="443" 协议="TCP"`, `VPN地址="198.51.100.2" DNS="198.51.100.53"`, `状态: reconnecting 阶段="认证中" 消息="正在重新登录"`, `授权资源: 0`} {
+		if !strings.Contains(out.String(), part) {
+			t.Errorf("output missing %q: %s", part, out.String())
 		}
 	}
 }
@@ -90,7 +184,7 @@ func TestHelpDoesNotReadSecretsOrStartEngine(t *testing.T) {
 		t.Fatal("help started engine")
 		return nil, nil
 	})
-	if err != nil || !strings.Contains(help.String(), "-server") {
+	if err != nil || !strings.Contains(help.String(), "-server") || !strings.Contains(help.String(), "-insecure-skip-verify") {
 		t.Fatalf("help result: %v, %q", err, help.String())
 	}
 }

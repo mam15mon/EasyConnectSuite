@@ -59,6 +59,11 @@ func runWithTUN(ctx context.Context, args []string, input io.Reader, output, dia
 	port := flags.Int("port", 443, "网关端口")
 	username := flags.String("username", "", "账号")
 	domain := flags.String("domain", "", "UniVPN 认证域")
+	insecureSkipVerify := flags.Bool("insecure-skip-verify", false, "跳过 UniVPN 或 TopSAP 的 TLS 证书校验，无法验证网关身份")
+	bindInterface := flags.String("bind-interface", "", "指定出口物理网卡（默认自动检测）")
+	keepAliveURL := flags.String("keepalive-url", "", "EasyConnect 保活目标 URL")
+	disableKeepAlive := flags.Bool("disable-keepalive", false, "关闭 EasyConnect 保活")
+	showResources := flags.Bool("show-resources", false, "输出网关授权资源，重连后刷新")
 	socks := flags.Int("socks-port", 1080, "本地 SOCKS5 端口")
 	httpPort := flags.Int("http-port", 1081, "本地 HTTP 代理端口")
 	proxyAll := flags.Bool("proxy-all", false, "将代理请求路由至 VPN（仍遵守网关资源限制）")
@@ -76,6 +81,13 @@ func runWithTUN(ctx context.Context, args []string, input io.Reader, output, dia
 	}
 	if *protocol != "easyconnect" && *protocol != "univpn" && *protocol != "topsec" {
 		return errors.New("不支持的 VPN 协议")
+	}
+	if *insecureSkipVerify && *protocol == "easyconnect" {
+		return errors.New("-insecure-skip-verify 仅支持 UniVPN 和 TopSAP")
+	}
+	keepAliveTarget := strings.TrimSpace(*keepAliveURL)
+	if *protocol != "easyconnect" && (*disableKeepAlive || keepAliveTarget != "") {
+		return errors.New("保活选项仅支持 EasyConnect")
 	}
 	if *server == "" || *username == "" || *port < 1 || *port > 65535 {
 		return errors.New("服务器、账号或端口无效")
@@ -152,7 +164,12 @@ func runWithTUN(ctx context.Context, args []string, input io.Reader, output, dia
 	if *noProxy {
 		conf.SocksBind, conf.HTTPBind = "", ""
 	}
-	conf.AutoDetectInterface, conf.DisableZJUConfig = true, true
+	conf.BindInterface = *bindInterface
+	conf.AutoDetectInterface, conf.DisableZJUConfig = conf.BindInterface == "", true
+	conf.DisableKeepAlive = *disableKeepAlive
+	if !conf.DisableKeepAlive {
+		conf.KeepAliveURL = keepAliveTarget
+	}
 	conf.ProxyAll = *proxyAll
 	if *protocol == "univpn" {
 		conf.DisableRemoteDNS, conf.DisableKeepAlive = true, true
@@ -181,7 +198,7 @@ func runWithTUN(ctx context.Context, args []string, input io.Reader, output, dia
 		}
 	}
 	opts := engine.Options{ConnectionID: "headless", Config: conf, Context: ctx, Domain: *domain,
-		TUNEnabled: *tunEnabled, TUNController: controller,
+		InsecureSkipVerify: *insecureSkipVerify, TUNEnabled: *tunEnabled, TUNController: controller,
 		OnTUNStatus: func(status engine.TUNStatus) {
 			if status.Error == "" {
 				writeStatus("TUN: %s\n", status.State)
@@ -198,7 +215,12 @@ func runWithTUN(ctx context.Context, args []string, input io.Reader, output, dia
 			}
 		},
 		OnStatus: func(status engine.Status) {
-			writeStatus("状态: %s\n", status.Phase)
+			if status.Stage == "" && status.Message == "" && status.ClientIP == "" && status.DNS == "" {
+				writeStatus("状态: %s\n", status.Phase)
+			} else {
+				writeStatus("状态: %s 阶段=%q 消息=%q VPN地址=%q DNS=%q\n",
+					status.Phase, status.Stage, status.Message, status.ClientIP, status.DNS)
+			}
 			if status.Phase == engine.PhaseError {
 				select {
 				case failed <- struct{}{}:
@@ -206,6 +228,16 @@ func runWithTUN(ctx context.Context, args []string, input io.Reader, output, dia
 				}
 			}
 		},
+	}
+	if *showResources {
+		opts.OnResources = func(entries []engine.ResourceEntry) {
+			var lines strings.Builder
+			fmt.Fprintf(&lines, "授权资源: %d\n", len(entries))
+			for _, entry := range entries {
+				fmt.Fprintf(&lines, "  类型=%q 目标=%q 端口=%q 协议=%q\n", entry.Kind, entry.Target, entry.Ports, entry.Protocol)
+			}
+			writeStatus("%s", lines.String())
+		}
 	}
 	session, err := start(opts)
 	if err != nil {

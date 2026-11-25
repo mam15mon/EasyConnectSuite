@@ -69,7 +69,8 @@ type Options struct {
 	// OnLog receives every log line produced by the engine.
 	OnLog func(line string)
 	// OnStatus receives lifecycle transitions.
-	OnStatus    func(Status)
+	OnStatus func(Status)
+	// OnResources receives the initial policy and subsequent reconnect updates.
 	OnResources func([]ResourceEntry)
 	// LogFile, when set, receives a persistent copy of every engine log
 	// line so post-mortem analysis survives a UI-level crash.
@@ -240,6 +241,10 @@ func Start(opts Options) (_ *Engine, err error) {
 	})
 	e.logf("network stack=%p resources=%d", vpnStack, len(policy.entries))
 	vpnStack.SetupIPPool(policy.resolver.IPPool)
+	if opts.OnResources != nil {
+		diagnostic.Step("resources_callback")
+		opts.OnResources(policy.entries)
+	}
 	vpnStack.SetupRelogin(func() (err error) {
 		trace := log.BeginOperation(e.logPrefix(), "relogin_resources", e.ctx.Done())
 		outcome := "interrupted"

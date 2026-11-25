@@ -283,7 +283,7 @@ for _ in range(100):
 else:
     raise SystemExit('mock gateway did not start')
 PY
-printf '%s\n' 'headless-private-canary' | "$RUNNER_TEMP/vpn-headless-linux-amd64" -server 127.0.0.1 -port 18445 -username mock-user -socks-port 19080 -http-port 19081 -proxy-all >"$work_dir/client.log" 2>&1 &
+printf '%s\n' 'headless-private-canary' | "$RUNNER_TEMP/vpn-headless-linux-amd64" -server 127.0.0.1 -port 18445 -username mock-user -socks-port 19080 -http-port 19081 -proxy-all -show-resources >"$work_dir/client.log" 2>&1 &
 client_pid=$!
 if ! python3 - <<'PY'
 import socket, time
@@ -344,6 +344,11 @@ print('SOCKS and HTTP CONNECT TCP payloads returned through the mock VPN gateway
 PY
 then
   cat "$work_dir/client.log" "$work_dir/gateway.log" "$work_dir/tcp-gateway.log"
+  exit 1
+fi
+if ! grep -q '状态: connected' "$work_dir/client.log" || ! grep -q '授权资源:' "$work_dir/client.log"; then
+  cat "$work_dir/client.log"
+  echo 'headless did not report connected status and its initial resource snapshot' >&2
   exit 1
 fi
 if ! grep -q 'login=1' "$work_dir/gateway.log"; then

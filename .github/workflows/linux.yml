@@ -52,7 +52,10 @@ jobs:
         run: go test -race -tags webkit2_41 . -run '^Test(LinuxShutdownWaits|CanceledUpdateKeepsPreviousAttachmentIdentity|WorkerRejectsNewAttachmentsAfterCleanupFailure|WorkerBlocksAfterReplacementCleanupFailure)' -count=1
       - name: Test headless lifecycle with race detector
         if: ${{ !cancelled() }}
-        run: go test -race ./cmd/vpn-headless
+        run: |
+          go test -race ./cmd/vpn-headless
+          go test -race -c -o "$RUNNER_TEMP/headless-test" ./cmd/vpn-headless
+          sudo "$RUNNER_TEMP/headless-test" -test.run '^TestRunCertificateVerification/topsec$' -test.v
       - name: Test headless TUN policy generations with race detector
         if: ${{ !cancelled() }}
         run: go test -race ./engine -run '^TestLinuxController' -count=1

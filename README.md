@@ -107,6 +107,10 @@ unset vpn_password
 
 通过 Ctrl+C 或 SIGTERM 停止并清理自有接口、路由和 DNS；系统清理失败会报告错误。`-protocol` 可选 `easyconnect`、`univpn`、`topsec`。TopSAP Linux 身份算法依据官方 Linux 客户端实现，需要读取根磁盘序列号或 DMI UUID；GUI 普通用户会请求管理员授权，headless 的 TopSAP 模式须用 `sudo` 启动（包括仅代理模式）。没有可核对硬件身份时明确失败，不使用随机注册文件或用户指定身份。身份原文和摘要均不写日志或配置。
 
+UniVPN 和 TopSAP 默认校验网关证书。如果你明确接受无法验证网关身份，可添加 `-insecure-skip-verify`。UniVPN 可用 `-domain` 指定认证域。三种协议都可用 `-bind-interface` 指定出口物理网卡，省略时自动检测。EasyConnect 可用 `-keepalive-url` 指定保活地址，`-disable-keepalive` 关闭保活。
+
+命令行版在前台运行一个连接，标准输出显示连接阶段、重连、VPN 地址、DNS 和 TUN 状态。添加 `-show-resources` 可查看网关授权的 IP 或域名、端口和协议，重连后会重新输出。引擎诊断写到标准错误，可在启动命令末尾加入 `2>vpn.log` 单独保存。
+
 验证分为三协议模拟网关、隔离 Linux 内核/真实 resolved/Worker 测试、真实网关三层，具体通过记录随 Release 提供。Linux 真实网关、实体桌面授权弹窗和长期稳定性尚未验收；其他 Linux 发行版和 DNS 管理器也未验证。Linux Release 提供 GUI 和 headless 的 `.tar.gz` 压缩包，尚无 deb/rpm 安装包。
 
 ## 同时连接多个 VPN
